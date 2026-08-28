@@ -13,11 +13,12 @@
 1. `AGENTS.md`
 2. `docs/product/SPEC.md`
 3. `docs/data/DATA_CONTRACTS.md`
-4. `docs/architecture/ARCHITECTURE.md`
-5. `docs/ux/UX_AND_EXPORT.md`
-6. `docs/testing/ACCEPTANCE_CRITERIA.md`
-7. `docs/superpowers/specs/2026-08-28-orders-auto-design.md`
-8. `docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`
+4. `docs/data/DERIVED_PROJECTIONS.md`
+5. `docs/architecture/ARCHITECTURE.md`
+6. `docs/ux/UX_AND_EXPORT.md`
+7. `docs/testing/ACCEPTANCE_CRITERIA.md`
+8. `docs/superpowers/specs/2026-08-28-orders-auto-design.md`
+9. `docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`
 
 После этого исполняй implementation plan последовательно, task-by-task, с TDD и небольшими commits.
 
@@ -27,7 +28,8 @@
 - production build должен быть одним самодостаточным `dist/index.html`, открывающимся локально через `file://` в Chrome/Edge;
 - импортировать `.xlsx` Min-Max и `.xls/.xlsx` отчёт поставщиков в браузере;
 - связывать отчёты только по коду 1С;
-- расчёт статусов, MIN/MAX, поставщиков, цен, порогов и заказов реализовать строго по `SPEC.md`;
+- расчёт статусов, MIN/MAX, поставщиков, цен, порогов и заказов реализовать строго по спецификации;
+- дефицит с неразрешённым поставщиком нельзя терять: он должен оставаться в `unassigned` до решения пользователя;
 - реальные файлы компании не добавлять в git;
 - unit/integration tests должны создавать синтетические workbook fixtures программно;
 - интерфейс на русском языке;
