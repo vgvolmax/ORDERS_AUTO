@@ -32,8 +32,11 @@ jobs:
       - name: Tests
         run: npm test -- --run
 
-      - name: Build and single-file check
+      - name: Build root ORDERS_AUTO.html
         run: npm run build
+
+      - name: Verify committed root artifact is current
+        run: git diff --exit-code -- ORDERS_AUTO.html
 
       - name: Chrome file protocol smoke
         run: npm run test:e2e
@@ -41,15 +44,10 @@ jobs:
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
 
-      - name: Stage user-facing HTML
-        run: |
-          mkdir -p release
-          cp dist/index.html release/ORDERS_AUTO.html
-
       - name: Publish testable HTML
         uses: actions/upload-artifact@v4
         with:
           name: ORDERS_AUTO-preview
-          path: release/ORDERS_AUTO.html
+          path: ORDERS_AUTO.html
           if-no-files-found: error
           retention-days: 14
