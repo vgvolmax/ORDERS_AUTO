@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useRef, type CSSProperties, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 const VIRTUALIZATION_THRESHOLD = 100;
@@ -128,7 +128,7 @@ function TableRow<T>({
   details: ReactNode;
   measureRef?: ((node: Element | null) => void) | undefined;
   dataIndex: number;
-  style?: React.CSSProperties | undefined;
+  style?: CSSProperties | undefined;
   staticRow?: boolean | undefined;
 }) {
   return (
