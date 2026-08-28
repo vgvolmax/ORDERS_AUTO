@@ -40,6 +40,7 @@ describe('SuppliersPage', () => {
     renderWithStore(<SuppliersPage />, state);
 
     expect(screen.getByText('SKU ниже MIN')).toBeInTheDocument();
-    expect(screen.getByText(/сумма неизвестна/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/сумма неизвестна/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/без цены:\s*1/i)).toBeInTheDocument();
   });
 });
