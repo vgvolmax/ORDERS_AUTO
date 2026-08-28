@@ -10,4 +10,12 @@ if (/<script[^>]+src=|<link[^>]+rel=["']stylesheet/i.test(html)) {
   throw new Error('Build is not self-contained');
 }
 
-console.log('Single-file artifact verified');
+if (/<script[^>]+type=["']module["']/i.test(html)) {
+  throw new Error('Build still contains an ES module script and will not start reliably via file://');
+}
+
+if (!/<script(?:\s[^>]*)?>[\s\S]+<\/script>/i.test(html)) {
+  throw new Error('Build does not contain an inlined executable script');
+}
+
+console.log('Single-file offline artifact verified');
