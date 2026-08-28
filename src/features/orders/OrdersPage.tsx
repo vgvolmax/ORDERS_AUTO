@@ -1,19 +1,27 @@
 import { useMemo, useState } from 'react';
-import { derive } from '../../app/selectors';
 import { useStore } from '../../app/appStore';
+import { derive, type WorkflowOrder } from '../../app/selectors';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import { Alert, Button, EmptyState, Input, MetricCard } from '../../components/ui';
-import type { Order } from '../../domain/types';
+import {
+  applyOrderQtyChange,
+  setOrderReviewed,
+  setOrdersReviewed,
+} from '../../domain/orderWorkflow';
 import { downloadCsv, downloadReadyOrdersZip, save } from '../../export/download';
 import { supplierWorkbookFilename } from '../../export/orderFilenames';
 import { buildSupplierWorkbook } from '../../export/supplierWorkbook';
 import { fmtQty, money } from '../demand/DemandPage';
 import { OrderDrawer } from './OrderDrawer';
+import { SupplierOrdersDrawer } from './SupplierOrdersDrawer';
+
+type ExportMode = 'ALL' | 'REVIEWED';
 
 export function OrdersPage() {
   const { state, set } = useStore();
-  const derived = derive(state)!;
+  const derived = derive(state);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
   const [supplierQuery, setSupplierQuery] = useState('');
   const [showBelowThreshold, setShowBelowThreshold] = useState(false);
@@ -22,44 +30,71 @@ export function OrdersPage() {
   const visibleOrders = useMemo(() => {
     const query = supplierQuery.trim().toLocaleLowerCase('ru-RU');
     return orders.filter((order) => {
-      if (query && !order.supplier.toLocaleLowerCase('ru-RU').includes(query)) return false;
-      if (!showBelowThreshold && order.belowThreshold && !hasHardBlocker(order)) return false;
+      if (
+        query &&
+        !order.supplier.toLocaleLowerCase('ru-RU').includes(query)
+      ) {
+        return false;
+      }
+      if (
+        !showBelowThreshold &&
+        order.belowThreshold &&
+        !hasHardBlocker(order)
+      ) {
+        return false;
+      }
       return true;
     });
   }, [orders, supplierQuery, showBelowThreshold]);
-  const exportable = visibleOrders.filter(
-    (order) => order.status === 'READY' || order.status === 'EXPORTED',
-  );
+
+  const exportable = visibleOrders.filter(isExportable);
+  const reviewedExportable = exportable.filter((order) => order.reviewed);
   const suppliers = [...new Set(visibleOrders.map((order) => order.supplier))];
   const branches = state.minMax!.branches;
   const selected = selectedId
     ? orders.find((order) => order.id === selectedId) ?? null
     : null;
+  const selectedSupplierOrders = selectedSupplier
+    ? orders.filter((order) => order.supplier === selectedSupplier)
+    : [];
 
   const markExported = (ids: string[]) => {
-    set({ exportedOrderIds: [...new Set([...(state.exportedOrderIds ?? []), ...ids])] });
+    set({
+      exportedOrderIds: [
+        ...new Set([...(state.exportedOrderIds ?? []), ...ids]),
+      ],
+    });
   };
 
-  async function zip() {
-    if (exportable.length === 0) return;
-    setBusy(`Формирование ${exportable.length} CSV…`);
+  async function zip(mode: ExportMode) {
+    const target = mode === 'REVIEWED' ? reviewedExportable : exportable;
+    if (target.length === 0) return;
+    setBusy(`Формирование ${target.length} CSV…`);
     try {
-      await downloadReadyOrdersZip(exportable);
-      markExported(exportable.map((order) => order.id));
-      set({ toast: `Создан ZIP: ${exportable.length} CSV.` });
+      await downloadReadyOrdersZip(target);
+      markExported(target.map((order) => order.id));
+      set({
+        toast:
+          mode === 'REVIEWED'
+            ? `Создан ZIP проверенных заказов: ${target.length} CSV.`
+            : `Создан ZIP: ${target.length} CSV.`,
+      });
     } catch (error) {
       console.error('Failed to export orders ZIP', error);
-      set({ toast: 'Не удалось сформировать ZIP с заказами. Повторите выгрузку.' });
+      set({
+        toast: 'Не удалось сформировать ZIP с заказами. Повторите выгрузку.',
+      });
     } finally {
       setBusy('');
     }
   }
 
-  async function excel(supplier: string) {
+  async function excel(supplier: string, mode: ExportMode) {
     const supplierOrders = visibleOrders.filter(
       (order) =>
         order.supplier === supplier &&
-        (order.status === 'READY' || order.status === 'EXPORTED'),
+        isExportable(order) &&
+        (mode === 'ALL' || order.reviewed),
     );
     if (supplierOrders.length === 0) return;
     setBusy(`Создание Excel для ${supplier}…`);
@@ -72,29 +107,71 @@ export function OrdersPage() {
         supplierWorkbookFilename(supplier),
       );
       markExported(supplierOrders.map((order) => order.id));
-      set({ toast: `Excel для ${supplier} сформирован.` });
+      set({
+        toast:
+          mode === 'REVIEWED'
+            ? `Excel проверенных заказов для ${supplier} сформирован.`
+            : `Excel для ${supplier} сформирован.`,
+      });
     } catch (error) {
       console.error(`Failed to export supplier workbook for ${supplier}`, error);
-      set({ toast: `Не удалось сформировать Excel для ${supplier}. Повторите выгрузку.` });
+      set({
+        toast: `Не удалось сформировать Excel для ${supplier}. Повторите выгрузку.`,
+      });
     } finally {
       setBusy('');
     }
   }
 
-  function editOrder(skuCode: string, branch: string, qty: number, orderId: string) {
+  function editOrder(
+    order: WorkflowOrder,
+    skuCode: string,
+    qty: number,
+  ): void {
+    try {
+      const next = applyOrderQtyChange({
+        edits: state.edits,
+        reviewedOrderIds: state.reviewedOrderIds,
+        exportedOrderIds: state.exportedOrderIds,
+        order,
+        skuCode,
+        qty,
+      });
+      set({
+        ...next,
+        toast: 'Количество и сумма заказа пересчитаны. Проверка заказа снята.',
+      });
+    } catch (error) {
+      console.error('Failed to edit order quantity', error);
+      set({ toast: 'Не удалось изменить количество в заказе.' });
+    }
+  }
+
+  function setReviewed(orderId: string, reviewed: boolean): void {
     set({
-      edits: [
-        ...state.edits.filter(
-          (edit) => edit.skuCode !== skuCode || edit.branch !== branch,
-        ),
-        { skuCode, branch, qty },
-      ],
-      exportedOrderIds: (state.exportedOrderIds ?? []).filter((id) => id !== orderId),
-      toast: 'Количество и сумма заказа пересчитаны.',
+      reviewedOrderIds: setOrderReviewed(
+        state.reviewedOrderIds,
+        orderId,
+        reviewed,
+      ),
+      toast: reviewed ? 'Заказ отмечен проверенным.' : 'Проверка заказа снята.',
     });
   }
 
-  function exportSingle(order: Order, allowBelowThreshold: boolean) {
+  function setAllReviewed(orderIds: string[], reviewed: boolean): void {
+    set({
+      reviewedOrderIds: setOrdersReviewed(
+        state.reviewedOrderIds,
+        orderIds,
+        reviewed,
+      ),
+      toast: reviewed
+        ? `Проверены заказы: ${orderIds.length}.`
+        : `Проверка снята: ${orderIds.length}.`,
+    });
+  }
+
+  function exportSingle(order: WorkflowOrder, allowBelowThreshold: boolean) {
     const hardBlockers = order.blockers.filter(
       (blocker) => blocker !== 'Ниже минимальной суммы',
     );
@@ -107,7 +184,9 @@ export function OrdersPage() {
     try {
       downloadCsv(order);
       markExported([order.id]);
-      set({ toast: `CSV заказа ${order.branch} → ${order.supplier} сформирован.` });
+      set({
+        toast: `CSV заказа ${order.branch} → ${order.supplier} сформирован.`,
+      });
     } catch (error) {
       console.error(`Failed to export CSV for order ${order.id}`, error);
       set({ toast: 'Не удалось сформировать CSV заказа. Повторите выгрузку.' });
@@ -120,16 +199,32 @@ export function OrdersPage() {
         <div>
           <p className="eyebrow">Шаг 4 из 4</p>
           <h1>Заказы</h1>
-          <p>Каждая ячейка — отдельный заказ подразделения конкретному поставщику.</p>
+          <p>
+            Каждая ячейка — отдельный заказ подразделения конкретному поставщику.
+          </p>
         </div>
-        <Button disabled={exportable.length === 0 || Boolean(busy)} onClick={zip}>
-          {busy || `Скачать все CSV (${exportable.length})`}
-        </Button>
+        <div className="export-actions">
+          <Button
+            disabled={exportable.length === 0 || Boolean(busy)}
+            onClick={() => zip('ALL')}
+          >
+            {busy || `Скачать все (${exportable.length})`}
+          </Button>
+          <Button
+            className="secondary"
+            disabled={reviewedExportable.length === 0 || Boolean(busy)}
+            onClick={() => zip('REVIEWED')}
+          >
+            Скачать проверенные ({reviewedExportable.length})
+          </Button>
+        </div>
       </header>
 
       <ThresholdControls
         settings={state.settings}
-        onChange={(settings) => set({ settings, toast: 'Порог закупки пересчитан.' })}
+        onChange={(settings) =>
+          set({ settings, toast: 'Порог закупки пересчитан.' })
+        }
         showBelowThreshold={showBelowThreshold}
         onShowBelowThresholdChange={setShowBelowThreshold}
       />
@@ -159,6 +254,10 @@ export function OrdersPage() {
           value={orders.filter((order) => order.status === 'READY').length}
         />
         <MetricCard
+          label="Проверены"
+          value={orders.filter((order) => order.reviewed).length}
+        />
+        <MetricCard
           label="Выгружены"
           value={orders.filter((order) => order.status === 'EXPORTED').length}
         />
@@ -166,13 +265,13 @@ export function OrdersPage() {
           label="Заблокированы"
           value={orders.filter((order) => order.status === 'BLOCKED').length}
         />
-        <MetricCard label="Требуют поставщика" value={derived.projection.unassigned.length} />
       </div>
 
       {derived.projection.unassigned.length > 0 && (
         <Alert tone="danger">
-          Не выбран поставщик для {derived.projection.unassigned.length} строк потребности.
-          Перейдите в «Поставщики» и разрешите их до финальной выгрузки.
+          Не выбран поставщик для {derived.projection.unassigned.length} строк
+          потребности. Перейдите в «Поставщики» и разрешите их до финальной
+          выгрузки.
         </Alert>
       )}
 
@@ -195,69 +294,130 @@ export function OrdersPage() {
                   (order) => order.supplier === supplier,
                 );
                 const supplierTotal = summarizeOrders(allSupplierOrders);
-                const hidden = allSupplierOrders.filter(
-                  (order) => !visibleOrders.some((visible) => visible.id === order.id),
+                const reviewedCount = allSupplierOrders.filter(
+                  (order) => order.reviewed,
                 ).length;
+                const manualEditCount = allSupplierOrders.reduce(
+                  (sum, order) => sum + order.manualEditCount,
+                  0,
+                );
+                const hidden = allSupplierOrders.filter(
+                  (order) =>
+                    !visibleOrders.some((visible) => visible.id === order.id),
+                ).length;
+                const supplierExportable = visibleOrders.filter(
+                  (order) => order.supplier === supplier && isExportable(order),
+                );
+                const supplierReviewedExportable = supplierExportable.filter(
+                  (order) => order.reviewed,
+                );
+
                 return (
                   <tr key={supplier}>
                     <th>{supplier}</th>
                     {branches.map((branch) => {
                       const order = visibleOrders.find(
-                        (item) => item.supplier === supplier && item.branch === branch,
+                        (item) =>
+                          item.supplier === supplier && item.branch === branch,
                       );
+                      if (!order) {
+                        return <td key={branch} />;
+                      }
+                      const hardBlocked = hasHardBlocker(order);
                       return (
                         <td key={branch}>
-                          {order && (
-                            <button
-                              className={`order-cell ${order.status} ${order.belowThreshold ? 'below-threshold' : ''}`}
-                              onClick={() => setSelectedId(order.id)}
-                            >
-                              <strong>
-                                {order.totalAmount == null
-                                  ? 'Сумма неизвестна'
-                                  : money(order.totalAmount)}
-                              </strong>
-                              <span>
-                                {order.lines.filter((line) => line.orderQty > 0).length} SKU ·{' '}
-                                {order.status === 'READY'
-                                  ? 'Готов'
-                                  : order.status === 'EXPORTED'
-                                    ? 'Выгружен'
-                                    : 'Заблокирован'}
-                              </span>
-                              {order.blockers.map((blocker) => (
-                                <small key={blocker}>{blocker}</small>
-                              ))}
-                            </button>
-                          )}
+                          <button
+                            className={`order-cell ${order.status} ${order.belowThreshold ? 'below-threshold' : ''} ${order.reviewed && !hardBlocked ? 'reviewed' : ''} ${order.manualEditCount > 0 ? 'manual-edited' : ''}`}
+                            onClick={() => setSelectedId(order.id)}
+                          >
+                            <span className="order-status-icons">
+                              {order.reviewed && (
+                                <span aria-label="Проверен" title="Проверен">
+                                  ✓
+                                </span>
+                              )}
+                              {order.manualEditCount > 0 && (
+                                <span
+                                  aria-label={`Изменено вручную ${order.manualEditCount}`}
+                                  title="Количество изменено вручную"
+                                >
+                                  ✋ {order.manualEditCount}
+                                </span>
+                              )}
+                            </span>
+                            <strong>
+                              {order.totalAmount == null
+                                ? 'Сумма неизвестна'
+                                : money(order.totalAmount)}
+                            </strong>
+                            <span>
+                              {
+                                order.lines.filter((line) => line.orderQty > 0)
+                                  .length
+                              }{' '}
+                              SKU ·{' '}
+                              {order.status === 'READY'
+                                ? 'Готов'
+                                : order.status === 'EXPORTED'
+                                  ? 'Выгружен'
+                                  : 'Заблокирован'}
+                            </span>
+                            {order.blockers.map((blocker) => (
+                              <small key={blocker}>{blocker}</small>
+                            ))}
+                          </button>
                         </td>
                       );
                     })}
                     <td className="supplier-total-cell">
-                      <strong>
-                        {supplierTotal.amount == null
-                          ? 'Сумма неизвестна'
-                          : money(supplierTotal.amount)}
-                      </strong>
-                      <small>
-                        {fmtQty(supplierTotal.qty)} ед. · {allSupplierOrders.length} заказов
-                      </small>
-                      {hidden > 0 && <small>Скрыто порогом: {hidden}</small>}
+                      <button
+                        className="supplier-total-button"
+                        aria-label={`Все заказы ${supplier}`}
+                        onClick={() => setSelectedSupplier(supplier)}
+                      >
+                        <strong>
+                          {supplierTotal.amount == null
+                            ? 'Сумма неизвестна'
+                            : money(supplierTotal.amount)}
+                        </strong>
+                        <small>
+                          {fmtQty(supplierTotal.qty)} ед. ·{' '}
+                          {allSupplierOrders.length} заказов
+                        </small>
+                        <small>
+                          ✓ {reviewedCount} из {allSupplierOrders.length} проверено
+                        </small>
+                        {manualEditCount > 0 && (
+                          <small className="manual-indicator">
+                            ✋ {manualEditCount} изменений
+                          </small>
+                        )}
+                        {hidden > 0 && <small>Скрыто порогом: {hidden}</small>}
+                      </button>
                     </td>
                     <td>
-                      <Button
-                        className="secondary"
-                        disabled={
-                          !visibleOrders.some(
-                            (order) =>
-                              order.supplier === supplier &&
-                              (order.status === 'READY' || order.status === 'EXPORTED'),
-                          ) || Boolean(busy)
-                        }
-                        onClick={() => excel(supplier)}
-                      >
-                        Excel
-                      </Button>
+                      <div className="supplier-export-actions">
+                        <Button
+                          className="secondary"
+                          disabled={
+                            supplierExportable.length === 0 || Boolean(busy)
+                          }
+                          onClick={() => excel(supplier, 'ALL')}
+                        >
+                          Excel все
+                        </Button>
+                        <Button
+                          className="secondary"
+                          disabled={
+                            supplierReviewedExportable.length === 0 ||
+                            Boolean(busy)
+                          }
+                          onClick={() => excel(supplier, 'REVIEWED')}
+                        >
+                          Проверенные {supplierReviewedExportable.length}/
+                          {supplierExportable.length}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -266,28 +426,49 @@ export function OrdersPage() {
           </table>
         </div>
       ) : (
-        <EmptyState>Нет заказов, соответствующих текущему порогу и фильтрам.</EmptyState>
+        <EmptyState>
+          Нет заказов, соответствующих текущему порогу и фильтрам.
+        </EmptyState>
       )}
 
       {selected && (
         <OrderDrawer
           order={selected}
           onClose={() => setSelectedId(null)}
-          onEdit={(skuCode, branch, qty) =>
-            editOrder(skuCode, branch, qty, selected.id)
+          onEdit={(skuCode, _branch, qty) => editOrder(selected, skuCode, qty)}
+          onReviewedChange={(reviewed) => setReviewed(selected.id, reviewed)}
+          onExport={(allowBelowThreshold) =>
+            exportSingle(selected, allowBelowThreshold)
           }
-          onExport={(allowBelowThreshold) => exportSingle(selected, allowBelowThreshold)}
+        />
+      )}
+
+      {selectedSupplier && selectedSupplierOrders.length > 0 && (
+        <SupplierOrdersDrawer
+          supplier={selectedSupplier}
+          orders={selectedSupplierOrders}
+          branchOrder={branches}
+          onClose={() => setSelectedSupplier(null)}
+          onEdit={editOrder}
+          onSetReviewed={setReviewed}
+          onSetAllReviewed={setAllReviewed}
         />
       )}
     </main>
   );
 }
 
-function hasHardBlocker(order: Order) {
-  return order.blockers.some((blocker) => blocker !== 'Ниже минимальной суммы');
+function isExportable(order: WorkflowOrder): boolean {
+  return order.status === 'READY' || order.status === 'EXPORTED';
 }
 
-function summarizeOrders(orders: Order[]) {
+function hasHardBlocker(order: WorkflowOrder): boolean {
+  return order.blockers.some(
+    (blocker) => blocker !== 'Ниже минимальной суммы',
+  );
+}
+
+function summarizeOrders(orders: WorkflowOrder[]) {
   const positiveLines = orders.flatMap((order) =>
     order.lines.filter((line) => line.orderQty > 0),
   );
