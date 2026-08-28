@@ -124,4 +124,12 @@ Generated orders use only three effective states in MVP:
 
 ## 6. Unit conflict rule
 
-If supplier history for one `supplier + skuCode` contains more than one distinct non-empty unit after normalization, set aggregated `unit=null`. Do not invent a conversion. The quantity/amount history remains usable, and UI displays `—` for unit.
+If supplier history for one `supplier + skuCode` contains more than one distinct non-empty unit after normalization:
+
+- aggregated `unit=null`;
+- do not invent a conversion;
+- emit validation issue code `MIXED_UNITS` with severity `WARNING`;
+- quantity/amount history remains usable;
+- UI displays `—` for unit.
+
+`MIXED_UNITS` extends the `ValidationIssue.code` union declared in `DATA_CONTRACTS.md` and must be included in the TypeScript implementation.
