@@ -1,4 +1,28 @@
-export const normalizeText=(v:unknown)=>String(v??'').replace(/\u00a0/g,' ').trim().replace(/\s+/g,' ');
-export const normalizeKey=(v:unknown)=>normalizeText(v).toLocaleLowerCase('ru-RU');
-export function parseOptionalNumber(v:unknown):number|null{if(typeof v==='number'&&Number.isFinite(v))return v;const s=normalizeText(v);if(!s)return null;const n=Number(s.replace(/\s/g,'').replace(',','.'));return Number.isFinite(n)?n:null}
-export const parseStockNumber=(v:unknown)=>parseOptionalNumber(v)??0;
+export function normalizeText(value: unknown): string {
+  return String(value ?? '')
+    .replace(/\u00a0/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+export function normalizeKey(value: unknown): string {
+  return normalizeText(value).toLocaleLowerCase('ru-RU');
+}
+
+export function parseOptionalNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  const text = normalizeText(value);
+  if (!text) {
+    return null;
+  }
+
+  const parsed = Number(text.replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseStockNumber(value: unknown): number {
+  return parseOptionalNumber(value) ?? 0;
+}

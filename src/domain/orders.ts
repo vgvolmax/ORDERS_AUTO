@@ -1,2 +1,140 @@
-import type{Order,OrderProjection,OrderQtyEdit,OrderSettings,PricedDemandLine,SupplierResolution}from'./types';
-export function buildOrderProjection(demand:PricedDemandLine[],resolutions:SupplierResolution[],edits:OrderQtyEdit[],settings:OrderSettings):OrderProjection{const rm=new Map(resolutions.map(x=>[x.skuCode,x])),em=new Map(edits.map(x=>[`${x.skuCode}\0${x.branch}`,x.qty])),groups=new Map<string,Order>();const unassigned:OrderProjection['unassigned']=[];for(const d of demand){if(d.deficitQty<=0||d.status==='INVALID_NORM'||d.status==='NO_NORM')continue;const r=rm.get(d.skuCode);if(!r?.selectedSupplier){unassigned.push({demand:d,supplierResolution:r??{skuCode:d.skuCode,selectedSupplier:null,status:'UNRESOLVED',candidates:[],recommendedSupplier:null},blocker:r?.status==='MANUAL_REQUIRED'?'MULTIPLE_SUPPLIERS_REQUIRE_CHOICE':r?.status==='STALE_OVERRIDE'?'STALE_SUPPLIER_OVERRIDE':'NO_SUPPLIER'});continue}const id=`${d.branch}\0${r.selectedSupplier}`,o=groups.get(id)??{id,branch:d.branch,supplier:r.selectedSupplier,lines:[],totalQty:0,totalAmount:0,belowThreshold:false,status:'READY',blockers:[]};const qty=em.get(`${d.skuCode}\0${d.branch}`)??d.deficitQty;if(qty<0)throw new Error('Количество не может быть отрицательным');o.lines.push({skuCode:d.skuCode,article:d.article,name:d.name,branch:d.branch,supplier:r.selectedSupplier,calculatedQty:d.deficitQty,orderQty:qty,unit:d.unit,unitPrice:d.unitPrice,priceSource:d.priceSource,amount:d.unitPrice==null?null:qty*d.unitPrice,warnings:qty>d.deficitQty?['Количество выше расчётного']:[],stock:d.stock,min:d.min,max:d.max});groups.set(id,o)}const orders=[...groups.values()];for(const o of orders){const positive=o.lines.filter(x=>x.orderQty>0);o.totalQty=positive.reduce((s,x)=>s+x.orderQty,0);o.totalAmount=positive.some(x=>x.amount==null)?null:positive.reduce((s,x)=>s+(x.amount??0),0);if(o.totalAmount==null)o.blockers.push('Не хватает цены')}const supplierTotals=new Map<string,number|null>();for(const o of orders){const old=supplierTotals.get(o.supplier)??0;supplierTotals.set(o.supplier,old==null||o.totalAmount==null?null:old+o.totalAmount)}for(const o of orders){const compared=settings.thresholdMode==='SUPPLIER_TOTAL'?supplierTotals.get(o.supplier):o.totalAmount;o.belowThreshold=compared==null||compared<settings.minimumOrderAmount;if(o.belowThreshold)o.blockers.push('Ниже минимальной суммы');o.status=o.blockers.length?'BLOCKED':'READY'}return{orders,unassigned}}
+import type {
+  Order,
+  OrderProjection,
+  OrderQtyEdit,
+  OrderSettings,
+  PricedDemandLine,
+  SupplierResolution,
+} from './types';
+
+export function buildOrderProjection(
+  demand: PricedDemandLine[],
+  resolutions: SupplierResolution[],
+  edits: OrderQtyEdit[],
+  settings: OrderSettings,
+): OrderProjection {
+  const resolutionBySku = new Map(
+    resolutions.map((resolution) => [resolution.skuCode, resolution]),
+  );
+  const editBySkuBranch = new Map(
+    edits.map((edit) => [`${edit.skuCode}\0${edit.branch}`, edit.qty]),
+  );
+  const groups = new Map<string, Order>();
+  const unassigned: OrderProjection['unassigned'] = [];
+
+  for (const line of demand) {
+    if (
+      line.deficitQty <= 0 ||
+      line.status === 'INVALID_NORM' ||
+      line.status === 'NO_NORM'
+    ) {
+      continue;
+    }
+
+    const resolution = resolutionBySku.get(line.skuCode);
+    if (!resolution?.selectedSupplier) {
+      const fallbackResolution: SupplierResolution = resolution ?? {
+        skuCode: line.skuCode,
+        selectedSupplier: null,
+        status: 'UNRESOLVED',
+        candidates: [],
+        recommendedSupplier: null,
+      };
+
+      unassigned.push({
+        demand: line,
+        supplierResolution: fallbackResolution,
+        blocker:
+          fallbackResolution.status === 'MANUAL_REQUIRED'
+            ? 'MULTIPLE_SUPPLIERS_REQUIRE_CHOICE'
+            : fallbackResolution.status === 'STALE_OVERRIDE'
+              ? 'STALE_SUPPLIER_OVERRIDE'
+              : 'NO_SUPPLIER',
+      });
+      continue;
+    }
+
+    const id = `${line.branch}\0${resolution.selectedSupplier}`;
+    const order = groups.get(id) ?? {
+      id,
+      branch: line.branch,
+      supplier: resolution.selectedSupplier,
+      lines: [],
+      totalQty: 0,
+      totalAmount: 0,
+      belowThreshold: false,
+      status: 'READY',
+      blockers: [],
+    };
+
+    const orderQty =
+      editBySkuBranch.get(`${line.skuCode}\0${line.branch}`) ?? line.deficitQty;
+    if (orderQty < 0) {
+      throw new Error('Количество не может быть отрицательным');
+    }
+
+    order.lines.push({
+      skuCode: line.skuCode,
+      article: line.article,
+      name: line.name,
+      branch: line.branch,
+      supplier: resolution.selectedSupplier,
+      calculatedQty: line.deficitQty,
+      orderQty,
+      unit: line.unit,
+      unitPrice: line.unitPrice,
+      priceSource: line.priceSource,
+      amount: line.unitPrice == null ? null : orderQty * line.unitPrice,
+      warnings:
+        orderQty > line.deficitQty ? ['Количество выше расчётного'] : [],
+      stock: line.stock,
+      min: line.min,
+      max: line.max,
+    });
+
+    groups.set(id, order);
+  }
+
+  const orders = [...groups.values()];
+  for (const order of orders) {
+    const positiveLines = order.lines.filter((line) => line.orderQty > 0);
+    order.totalQty = positiveLines.reduce((sum, line) => sum + line.orderQty, 0);
+
+    const hasMissingPrice = positiveLines.some((line) => line.amount == null);
+    order.totalAmount = hasMissingPrice
+      ? null
+      : positiveLines.reduce((sum, line) => sum + (line.amount ?? 0), 0);
+
+    if (hasMissingPrice) {
+      order.blockers.push('Не хватает цены');
+    }
+  }
+
+  const supplierTotals = new Map<string, number | null>();
+  for (const order of orders) {
+    const previous = supplierTotals.get(order.supplier);
+    if (previous === null || order.totalAmount == null) {
+      supplierTotals.set(order.supplier, null);
+    } else {
+      supplierTotals.set(order.supplier, (previous ?? 0) + order.totalAmount);
+    }
+  }
+
+  for (const order of orders) {
+    const comparedAmount =
+      settings.thresholdMode === 'SUPPLIER_TOTAL'
+        ? supplierTotals.get(order.supplier)
+        : order.totalAmount;
+
+    order.belowThreshold =
+      comparedAmount != null && comparedAmount < settings.minimumOrderAmount;
+
+    if (order.belowThreshold) {
+      order.blockers.push('Ниже минимальной суммы');
+    }
+
+    order.status = order.blockers.length > 0 ? 'BLOCKED' : 'READY';
+  }
+
+  return { orders, unassigned };
+}

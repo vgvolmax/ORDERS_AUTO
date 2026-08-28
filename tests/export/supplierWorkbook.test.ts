@@ -77,6 +77,7 @@ describe('buildSupplierWorkbook', () => {
     ]);
 
     const dashboard = workbook.getWorksheet('Общий заказ')!;
+    expect(dashboard.getCell('A1').value).toBe('Поставщик');
     expect(dashboard.getCell('B1').value).toBe('Поставщик');
     expect(dashboard.getCell('B2').value).toBe(300);
     expect(dashboard.getCell('B3').value).toBe(1);

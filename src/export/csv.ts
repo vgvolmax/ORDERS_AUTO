@@ -1,1 +1,45 @@
-import type{Order}from'../domain/types';const esc=(v:unknown)=>{const s=String(v??'');return /[;"\r\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s};export function orderToCsv(o:Order){const head=['Код','Артикул','Номенклатура','Подразделение','Поставщик','Количество','Ед.','Цена','Сумма'];const rows=o.lines.filter(x=>x.orderQty>0).map(x=>[x.skuCode,x.article,x.name,o.branch,o.supplier,x.orderQty,x.unit,x.unitPrice,x.amount]);return '\ufeff'+[head,...rows].map(r=>r.map(esc).join(';')).join('\r\n')+'\r\n'}
+import type { Order } from '../domain/types';
+
+const HEADERS = [
+  'Код',
+  'Артикул',
+  'Номенклатура',
+  'Подразделение',
+  'Поставщик',
+  'Количество',
+  'Ед.',
+  'Цена',
+  'Сумма',
+];
+
+function escapeCell(value: unknown): string {
+  const text = String(value ?? '');
+  if (!/[;"\r\n]/.test(text)) {
+    return text;
+  }
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+export function orderToCsv(order: Order): string {
+  const rows = order.lines
+    .filter((line) => line.orderQty > 0)
+    .map((line) => [
+      line.skuCode,
+      line.article,
+      line.name,
+      order.branch,
+      order.supplier,
+      line.orderQty,
+      line.unit,
+      line.unitPrice,
+      line.amount,
+    ]);
+
+  return (
+    '\ufeff' +
+    [HEADERS, ...rows]
+      .map((row) => row.map(escapeCell).join(';'))
+      .join('\r\n') +
+    '\r\n'
+  );
+}

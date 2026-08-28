@@ -63,13 +63,25 @@ describe('buildOrderProjection', () => {
     );
 
     expect(projection.orders[0]).toMatchObject({ totalQty: 12, totalAmount: 1200 });
-    expect(projection.orders[0]?.lines[0]?.warnings).toContain('Количество выше расчётного');
+    expect(projection.orders[0]?.lines[0]?.warnings).toContain(
+      'Количество выше расчётного',
+    );
   });
 
   it('supports supplier-total and branch-supplier threshold modes', () => {
     const lines = [
-      demand({ branch: 'Ленина', deficitQty: 6, demandAmount: 6000 }),
-      demand({ branch: 'Ступино', deficitQty: 6, demandAmount: 6000 }),
+      demand({
+        branch: 'Ленина',
+        deficitQty: 6,
+        unitPrice: 1000,
+        demandAmount: 6000,
+      }),
+      demand({
+        branch: 'Ступино',
+        deficitQty: 6,
+        unitPrice: 1000,
+        demandAmount: 6000,
+      }),
     ];
 
     const totalMode = buildOrderProjection(lines, [resolved], [], {
@@ -93,7 +105,10 @@ describe('buildOrderProjection', () => {
       { minimumOrderAmount: 0, thresholdMode: 'SUPPLIER_TOTAL' },
     );
 
-    expect(projection.orders[0]).toMatchObject({ totalAmount: null, status: 'BLOCKED' });
+    expect(projection.orders[0]).toMatchObject({
+      totalAmount: null,
+      status: 'BLOCKED',
+    });
     expect(projection.orders[0]?.blockers).toContain('Не хватает цены');
   });
 });

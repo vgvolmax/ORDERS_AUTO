@@ -1,1 +1,28 @@
-import{openDB,type DBSchema}from'idb';import type{OrderSettings,SupplierOverride}from'../domain/types';interface Schema extends DBSchema{supplierOverrides:{key:string;value:SupplierOverride;indexes:{}};settings:{key:string;value:OrderSettings;indexes:{}}}export const db=()=>openDB<Schema>('orders-auto',1,{upgrade(d){d.createObjectStore('supplierOverrides',{keyPath:'skuCode'});d.createObjectStore('settings')}});
+import { openDB, type DBSchema } from 'idb';
+import type { OrderSettings, SupplierOverride } from '../domain/types';
+
+interface OrdersAutoSchema extends DBSchema {
+  supplierOverrides: {
+    key: string;
+    value: SupplierOverride;
+    indexes: Record<string, never>;
+  };
+  settings: {
+    key: string;
+    value: OrderSettings;
+    indexes: Record<string, never>;
+  };
+}
+
+export function db() {
+  return openDB<OrdersAutoSchema>('orders-auto', 1, {
+    upgrade(database) {
+      if (!database.objectStoreNames.contains('supplierOverrides')) {
+        database.createObjectStore('supplierOverrides', { keyPath: 'skuCode' });
+      }
+      if (!database.objectStoreNames.contains('settings')) {
+        database.createObjectStore('settings');
+      }
+    },
+  });
+}
