@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -23,18 +25,21 @@ jobs:
           node-version: 22
           cache: npm
 
-      # Temporary migration step: once the generated lockfile is committed in
-      # this PR this step and its artifact are removed and CI returns to npm ci.
       - name: Refresh dependency lock candidate
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
-      - name: Publish lock candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-lock-candidate
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit dependency lock migration
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already current"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "build: refresh dependency lock"
+            git push origin HEAD:${GITHUB_HEAD_REF}
+          fi
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
