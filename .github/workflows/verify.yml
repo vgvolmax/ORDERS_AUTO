@@ -2,6 +2,10 @@ name: Verify ORDERS_AUTO
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -30,3 +34,11 @@ jobs:
 
       - name: Build and single-file check
         run: npm run build
+
+      - name: Publish testable HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORDERS_AUTO-preview
+          path: dist/index.html
+          if-no-files-found: error
+          retention-days: 14
