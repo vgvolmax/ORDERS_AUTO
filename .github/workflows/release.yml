@@ -1,0 +1,51 @@
+name: Release ORDERS_AUTO
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test -- --run
+
+      - name: Build and single-file check
+        run: npm run build
+
+      - name: Chrome file protocol smoke
+        run: npm run test:e2e
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Prepare release file
+        run: cp dist/index.html ORDERS_AUTO.html
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" ORDERS_AUTO.html \
+            --title "ORDERS_AUTO $GITHUB_REF_NAME" \
+            --generate-notes
