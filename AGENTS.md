@@ -8,12 +8,13 @@
 
 1. `docs/product/SPEC.md`
 2. `docs/data/DATA_CONTRACTS.md`
-3. `docs/architecture/ARCHITECTURE.md`
-4. `docs/ux/UX_AND_EXPORT.md`
-5. `docs/testing/ACCEPTANCE_CRITERIA.md`
-6. `docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`
+3. `docs/data/DERIVED_PROJECTIONS.md`
+4. `docs/architecture/ARCHITECTURE.md`
+5. `docs/ux/UX_AND_EXPORT.md`
+6. `docs/testing/ACCEPTANCE_CRITERIA.md`
+7. `docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`
 
-Если документы противоречат друг другу, приоритет: `SPEC.md` → `DATA_CONTRACTS.md` → `UX_AND_EXPORT.md` → `ARCHITECTURE.md` → implementation plan.
+Если документы противоречат друг другу, приоритет: `SPEC.md` → `DATA_CONTRACTS.md` + `DERIVED_PROJECTIONS.md` → `UX_AND_EXPORT.md` → `ARCHITECTURE.md` → implementation plan.
 
 ## 2. Неподвижные архитектурные ограничения
 
