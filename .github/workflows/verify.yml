@@ -35,14 +35,6 @@ jobs:
       - name: Build and single-file check
         run: npm run build
 
-      - name: Retain built HTML for browser diagnostics
-        uses: actions/upload-artifact@v4
-        with:
-          name: ORDERS_AUTO-built-diagnostic
-          path: dist/index.html
-          if-no-files-found: error
-          retention-days: 1
-
       - name: Chrome file protocol smoke
         run: npm run test:e2e
 
