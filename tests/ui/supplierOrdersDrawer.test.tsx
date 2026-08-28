@@ -73,8 +73,10 @@ describe('SupplierOrdersDrawer', () => {
       />,
     );
 
-    expect(screen.getByRole('columnheader', { name: /Ленина/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /Ступино/i })).toBeInTheDocument();
+    const leninaHeader = screen.getByRole('columnheader', { name: /Ленина/i });
+    const stupinoHeader = screen.getByRole('columnheader', { name: /Ступино/i });
+    expect(leninaHeader).toBeInTheDocument();
+    expect(stupinoHeader).toBeInTheDocument();
     expect(screen.getByText('ART-SKU1')).toBeInTheDocument();
     expect(screen.getByText('ART-SKU2')).toBeInTheDocument();
 
@@ -82,8 +84,8 @@ describe('SupplierOrdersDrawer', () => {
     expect(sku1Row).not.toBeNull();
     expect(sku1Row).toHaveTextContent('7');
     expect(sku1Row).toHaveTextContent('700');
-    expect(screen.getByText(/500/)).toBeInTheDocument();
-    expect(screen.getByText(/400/)).toBeInTheDocument();
+    expect(leninaHeader).toHaveTextContent('500');
+    expect(stupinoHeader).toHaveTextContent('400');
   });
 
   it('edits the concrete branch order from a SKU × branch cell', () => {
