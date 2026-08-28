@@ -23,6 +23,19 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Temporary migration step: once the generated lockfile is committed in
+      # this PR this step and its artifact are removed and CI returns to npm ci.
+      - name: Refresh dependency lock candidate
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Publish lock candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock-candidate
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
@@ -35,10 +48,21 @@ jobs:
       - name: Build and single-file check
         run: npm run build
 
+      - name: Chrome file protocol smoke
+        run: npm run test:e2e
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Stage user-facing HTML
+        run: |
+          mkdir -p release
+          cp dist/index.html release/ORDERS_AUTO.html
+
       - name: Publish testable HTML
         uses: actions/upload-artifact@v4
         with:
           name: ORDERS_AUTO-preview
-          path: dist/index.html
+          path: release/ORDERS_AUTO.html
           if-no-files-found: error
           retention-days: 14
