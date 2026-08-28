@@ -7,7 +7,7 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "build": "vite build && node scripts/assert-single-file.mjs",
+    "build": "vite build && node scripts/make-file-protocol-safe.mjs && node scripts/assert-single-file.mjs",
     "verify": "npm run typecheck && npm test -- --run && npm run build"
   },
   "dependencies": {
