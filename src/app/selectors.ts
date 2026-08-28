@@ -1,17 +1,29 @@
 import { calculateDemand, priceDemand } from '../domain/demand';
+import { getManualEditCount } from '../domain/orderWorkflow';
 import { buildOrderProjection } from '../domain/orders';
 import { resolveSuppliers } from '../domain/suppliers';
 import type {
+  Order,
   OrderProjection,
   PricedDemandLine,
   SupplierResolution,
 } from '../domain/types';
 import type { AppState } from './appStore';
 
+export interface WorkflowOrder extends Order {
+  reviewed: boolean;
+  manualEditCount: number;
+}
+
+export interface WorkflowOrderProjection
+  extends Omit<OrderProjection, 'orders'> {
+  orders: WorkflowOrder[];
+}
+
 export interface DerivedState {
   resolutions: SupplierResolution[];
   demand: PricedDemandLine[];
-  projection: OrderProjection;
+  projection: WorkflowOrderProjection;
 }
 
 const EMPTY_DERIVED_STATE: DerivedState = {
@@ -61,14 +73,19 @@ export function derive(state: AppState): DerivedState {
     state.settings,
   );
   const exportedIds = new Set(state.exportedOrderIds ?? []);
+  const reviewedIds = new Set(state.reviewedOrderIds ?? []);
 
-  // EXPORTED is session state, not a business recalculation. If an order later
-  // becomes blocked, the blocker always wins over its previous export marker.
-  const orders = baseProjection.orders.map((order) =>
-    exportedIds.has(order.id) && order.status === 'READY'
-      ? { ...order, status: 'EXPORTED' as const }
-      : order,
-  );
+  // EXPORTED/reviewed/manual-edit metadata is session/presentation state, not a
+  // business recalculation. A blocker always wins over an old export marker.
+  const orders: WorkflowOrder[] = baseProjection.orders.map((order) => ({
+    ...order,
+    status:
+      exportedIds.has(order.id) && order.status === 'READY'
+        ? ('EXPORTED' as const)
+        : order.status,
+    reviewed: reviewedIds.has(order.id),
+    manualEditCount: getManualEditCount(order),
+  }));
 
   const result: DerivedState = {
     resolutions,
