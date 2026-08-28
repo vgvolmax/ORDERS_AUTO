@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.log
+.DS_Store
+
+# Company reports and local smoke data
+samples/private/*
+!samples/private/README.md
+!samples/private/.gitignore
