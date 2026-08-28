@@ -1,2 +1,213 @@
-import{useState}from'react';import{useStore}from'../../app/appStore';import{derive}from'../../app/selectors';import type{Order}from'../../domain/types';import{downloadCsv,downloadReadyOrdersZip,save}from'../../export/download';import{buildSupplierWorkbook}from'../../export/supplierWorkbook';import{safeFilename}from'../../export/filenames';import{money,fmtQty}from'../demand/DemandPage';import{Alert,Button,EmptyState,Input,MetricCard,Select}from'../../components/ui';export function OrdersPage(){const{state,set}=useStore(),d=derive(state)!,[selected,setSelected]=useState<Order|null>(null),[busy,setBusy]=useState('');const orders=d.projection.orders,ready=orders.filter(x=>x.status==='READY');async function zip(){setBusy(`Формирование ${ready.length} CSV…`);await downloadReadyOrdersZip(orders);setBusy('');set({toast:`Создано ${ready.length} CSV`})}async function excel(supplier:string){setBusy(`Создание Excel для ${supplier}…`);const buf=await buildSupplierWorkbook(supplier,orders.filter(x=>x.supplier===supplier&&x.status==='READY'));save(new Blob([buf]),`${safeFilename(supplier)}__Заказ__${new Date().toISOString().slice(0,10)}.xlsx`);setBusy('');set({toast:`Excel для ${supplier} сформирован`})}const suppliers=[...new Set(orders.map(x=>x.supplier))],branches=state.minMax!.branches;return <main><header className="header-actions"><div><p className="eyebrow">Шаг 3 из 4</p><h1>Заказы</h1><p>Проверьте готовность заказов «подразделение → поставщик», скорректируйте количество и выгрузите.</p></div><Button disabled={!ready.length||!!busy} onClick={zip}>{busy||`Скачать все CSV (${ready.length})`}</Button></header><section className="settings"><label>Минимальная сумма заказа<Input type="number" min="0" value={state.settings.minimumOrderAmount} onChange={e=>set({settings:{...state.settings,minimumOrderAmount:Math.max(0,Number(e.target.value))},toast:'Порог применён'})}/></label><label>Режим порога<Select value={state.settings.thresholdMode} onChange={e=>set({settings:{...state.settings,thresholdMode:e.target.value as any},toast:'Режим порога изменён'})}><option value="SUPPLIER_TOTAL">По поставщику в целом</option><option value="BRANCH_SUPPLIER">По каждому заказу</option></Select></label></section><div className="metrics"><MetricCard label="Готовы" value={ready.length}/><MetricCard label="Заблокированы" value={orders.length-ready.length}/><MetricCard label="Требуют поставщика" value={d.projection.unassigned.length}/></div>{d.projection.unassigned.length>0&&<Alert tone="danger">Не выбран поставщик для {d.projection.unassigned.length} позиций. Перейдите в раздел «Поставщики» и разрешите их.</Alert>}{orders.length?<div className="table-wrap"><table className="matrix"><thead><tr><th>Поставщик</th>{branches.map(b=><th key={b}>{b}</th>)}<th>Действия</th></tr></thead><tbody>{suppliers.map(s=><tr key={s}><th>{s}</th>{branches.map(b=>{const o=orders.find(x=>x.supplier===s&&x.branch===b);return <td key={b}>{o&&<button className={`order-cell ${o.status}`} onClick={()=>setSelected(o)}><strong>{o.totalAmount==null?'Сумма неизвестна':money(o.totalAmount)}</strong><span>{o.lines.length} SKU · {o.status==='READY'?'Готов':'Заблокирован'}</span>{o.blockers.map(x=><small key={x}>{x}</small>)}</button>}</td>})}<td><Button className="secondary" disabled={!orders.some(x=>x.supplier===s&&x.status==='READY')} onClick={()=>excel(s)}>Excel</Button></td></tr>)}</tbody></table></div>:<EmptyState>Заказы ещё не сформированы. Сначала загрузите отчёты и разрешите позиции без выбранного поставщика.</EmptyState>}{selected&&<Drawer order={orders.find(x=>x.id===selected.id)??selected} close={()=>setSelected(null)} onEdit={(sku,branch,qty)=>{if(qty<0)return;set({edits:[...state.edits.filter(x=>x.skuCode!==sku||x.branch!==branch),{skuCode:sku,branch,qty}],toast:'Количество и сумма заказа пересчитаны'})}}/>}</main>}
-function Drawer({order,close,onEdit}:{order:Order;close:()=>void;onEdit:(s:string,b:string,q:number)=>void}){return <div className="drawer-back"><aside className="drawer" aria-label="Состав заказа"><div className="drawer-head"><div><p className="eyebrow">Состав заказа</p><h2>{order.supplier} → {order.branch}</h2><p>{order.lines.length} SKU · {fmtQty(order.totalQty)} ед. · {order.totalAmount==null?'Сумма неизвестна':money(order.totalAmount)}</p></div><button className="close" onClick={close} aria-label="Закрыть">×</button></div>{order.blockers.length>0&&<Alert tone="danger"><strong>Заказ заблокирован.</strong> {order.blockers.join('. ')}</Alert>}<div className="table-wrap"><table><thead><tr><th>Код / товар</th><th className="num">Остаток / MIN / MAX</th><th className="num">Расчёт</th><th>К заказу</th><th className="num">Цена</th><th className="num">Сумма</th></tr></thead><tbody>{order.lines.map(x=><tr key={x.skuCode}><td><strong>{x.skuCode}</strong><br/>{x.name}</td><td className="num">{fmtQty(x.stock)} / {x.min??'—'} / {x.max??'—'}</td><td className="num">{fmtQty(x.calculatedQty)}</td><td><Input aria-label={`Количество ${x.skuCode}`} type="number" min="0" step="any" value={x.orderQty} onChange={e=>onEdit(x.skuCode,x.branch,Number(e.target.value))}/>{x.warnings.map(w=><small className="warning-text" key={w}>{w}</small>)}</td><td className="num">{x.unitPrice==null?'Нет цены':money(x.unitPrice)}<small>{x.priceSource==='SUPPLIER_HISTORY'?'История':'MIN/MAX'}</small></td><td className="num">{x.amount==null?'—':money(x.amount)}</td></tr>)}</tbody></table></div><div className="drawer-actions"><Button disabled={order.status!=='READY'} onClick={()=>{downloadCsv(order);close()}}>Скачать CSV заказа</Button></div></aside></div>}
+import { useMemo, useState } from 'react';
+import { derive } from '../../app/selectors';
+import { useStore } from '../../app/appStore';
+import { ThresholdControls } from '../../components/ThresholdControls';
+import { Alert, Button, EmptyState, Input, MetricCard } from '../../components/ui';
+import type { Order } from '../../domain/types';
+import { downloadCsv, downloadReadyOrdersZip, save } from '../../export/download';
+import { safeFilename } from '../../export/filenames';
+import { buildSupplierWorkbook } from '../../export/supplierWorkbook';
+import { fmtQty, money } from '../demand/DemandPage';
+import { OrderDrawer } from './OrderDrawer';
+
+export function OrdersPage() {
+  const { state, set } = useStore();
+  const derived = derive(state)!;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [busy, setBusy] = useState('');
+  const [supplierQuery, setSupplierQuery] = useState('');
+  const [showBelowThreshold, setShowBelowThreshold] = useState(false);
+
+  const orders = derived.projection.orders;
+  const visibleOrders = useMemo(() => {
+    const query = supplierQuery.trim().toLocaleLowerCase('ru-RU');
+    return orders.filter((order) => {
+      if (query && !order.supplier.toLocaleLowerCase('ru-RU').includes(query)) return false;
+      if (!showBelowThreshold && order.belowThreshold && !hasHardBlocker(order)) return false;
+      return true;
+    });
+  }, [orders, supplierQuery, showBelowThreshold]);
+  const exportable = visibleOrders.filter((order) => order.status === 'READY' || order.status === 'EXPORTED');
+  const suppliers = [...new Set(visibleOrders.map((order) => order.supplier))];
+  const branches = state.minMax!.branches;
+  const selected = selectedId ? orders.find((order) => order.id === selectedId) ?? null : null;
+
+  const markExported = (ids: string[]) => {
+    set({ exportedOrderIds: [...new Set([...(state.exportedOrderIds ?? []), ...ids])] });
+  };
+
+  async function zip() {
+    if (exportable.length === 0) return;
+    setBusy(`Формирование ${exportable.length} CSV…`);
+    try {
+      await downloadReadyOrdersZip(exportable);
+      markExported(exportable.map((order) => order.id));
+      set({ toast: `Создан ZIP: ${exportable.length} CSV.` });
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function excel(supplier: string) {
+    const supplierOrders = visibleOrders.filter(
+      (order) => order.supplier === supplier && (order.status === 'READY' || order.status === 'EXPORTED'),
+    );
+    if (supplierOrders.length === 0) return;
+    setBusy(`Создание Excel для ${supplier}…`);
+    try {
+      const buffer = await buildSupplierWorkbook(supplier, supplierOrders);
+      save(
+        new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        `${safeFilename(supplier)}__Заказ__${today()}.xlsx`,
+      );
+      markExported(supplierOrders.map((order) => order.id));
+      set({ toast: `Excel для ${supplier} сформирован.` });
+    } finally {
+      setBusy('');
+    }
+  }
+
+  function editOrder(skuCode: string, branch: string, qty: number, orderId: string) {
+    set({
+      edits: [
+        ...state.edits.filter((edit) => edit.skuCode !== skuCode || edit.branch !== branch),
+        { skuCode, branch, qty },
+      ],
+      exportedOrderIds: (state.exportedOrderIds ?? []).filter((id) => id !== orderId),
+      toast: 'Количество и сумма заказа пересчитаны.',
+    });
+  }
+
+  function exportSingle(order: Order, allowBelowThreshold: boolean) {
+    const hardBlockers = order.blockers.filter((blocker) => blocker !== 'Ниже минимальной суммы');
+    if (hardBlockers.length > 0) {
+      set({ toast: `Экспорт невозможен: ${hardBlockers.join(', ')}.` });
+      return;
+    }
+    if (order.belowThreshold && !allowBelowThreshold) return;
+    downloadCsv(order);
+    markExported([order.id]);
+    set({ toast: `CSV заказа ${order.branch} → ${order.supplier} сформирован.` });
+  }
+
+  return (
+    <main>
+      <header className="header-actions">
+        <div>
+          <p className="eyebrow">Шаг 4 из 4</p>
+          <h1>Заказы</h1>
+          <p>Каждая ячейка — отдельный заказ подразделения конкретному поставщику.</p>
+        </div>
+        <Button disabled={exportable.length === 0 || Boolean(busy)} onClick={zip}>
+          {busy || `Скачать все CSV (${exportable.length})`}
+        </Button>
+      </header>
+
+      <ThresholdControls
+        settings={state.settings}
+        onChange={(settings) => set({ settings, toast: 'Порог закупки пересчитан.' })}
+        showBelowThreshold={showBelowThreshold}
+        onShowBelowThresholdChange={setShowBelowThreshold}
+      />
+
+      <section className="filters compact-filters">
+        <label>
+          Поиск поставщика
+          <Input value={supplierQuery} onChange={(event) => setSupplierQuery(event.target.value)} placeholder="Название поставщика" />
+        </label>
+        <span>В матрице: <strong>{visibleOrders.length}</strong> заказов</span>
+        {supplierQuery && <button className="link" onClick={() => setSupplierQuery('')}>Сбросить поиск</button>}
+      </section>
+
+      <div className="metrics">
+        <MetricCard label="Готовы" value={orders.filter((order) => order.status === 'READY').length} />
+        <MetricCard label="Выгружены" value={orders.filter((order) => order.status === 'EXPORTED').length} />
+        <MetricCard label="Заблокированы" value={orders.filter((order) => order.status === 'BLOCKED').length} />
+        <MetricCard label="Требуют поставщика" value={derived.projection.unassigned.length} />
+      </div>
+
+      {derived.projection.unassigned.length > 0 && (
+        <Alert tone="danger">Не выбран поставщик для {derived.projection.unassigned.length} строк потребности. Перейдите в «Поставщики» и разрешите их до финальной выгрузки.</Alert>
+      )}
+
+      {visibleOrders.length > 0 ? (
+        <div className="table-wrap matrix-wrap">
+          <table className="matrix">
+            <thead>
+              <tr>
+                <th>Поставщик</th>
+                {branches.map((branch) => <th key={branch}>{branch}</th>)}
+                <th>Итого поставщику</th>
+                <th>Excel</th>
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers.map((supplier) => {
+                const allSupplierOrders = orders.filter((order) => order.supplier === supplier);
+                const supplierTotal = summarizeOrders(allSupplierOrders);
+                const hidden = allSupplierOrders.filter((order) => !visibleOrders.some((visible) => visible.id === order.id)).length;
+                return (
+                  <tr key={supplier}>
+                    <th>{supplier}</th>
+                    {branches.map((branch) => {
+                      const order = visibleOrders.find((item) => item.supplier === supplier && item.branch === branch);
+                      return (
+                        <td key={branch}>
+                          {order && (
+                            <button className={`order-cell ${order.status} ${order.belowThreshold ? 'below-threshold' : ''}`} onClick={() => setSelectedId(order.id)}>
+                              <strong>{order.totalAmount == null ? 'Сумма неизвестна' : money(order.totalAmount)}</strong>
+                              <span>{order.lines.filter((line) => line.orderQty > 0).length} SKU · {order.status === 'READY' ? 'Готов' : order.status === 'EXPORTED' ? 'Выгружен' : 'Заблокирован'}</span>
+                              {order.blockers.map((blocker) => <small key={blocker}>{blocker}</small>)}
+                            </button>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="supplier-total-cell">
+                      <strong>{supplierTotal.amount == null ? 'Сумма неизвестна' : money(supplierTotal.amount)}</strong>
+                      <small>{fmtQty(supplierTotal.qty)} ед. · {allSupplierOrders.length} заказов</small>
+                      {hidden > 0 && <small>Скрыто порогом: {hidden}</small>}
+                    </td>
+                    <td>
+                      <Button className="secondary" disabled={!visibleOrders.some((order) => order.supplier === supplier && (order.status === 'READY' || order.status === 'EXPORTED')) || Boolean(busy)} onClick={() => excel(supplier)}>
+                        Excel
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptyState>Нет заказов, соответствующих текущему порогу и фильтрам.</EmptyState>
+      )}
+
+      {selected && (
+        <OrderDrawer
+          order={selected}
+          onClose={() => setSelectedId(null)}
+          onEdit={(skuCode, branch, qty) => editOrder(skuCode, branch, qty, selected.id)}
+          onExport={(allowBelowThreshold) => exportSingle(selected, allowBelowThreshold)}
+        />
+      )}
+    </main>
+  );
+}
+
+function hasHardBlocker(order: Order) {
+  return order.blockers.some((blocker) => blocker !== 'Ниже минимальной суммы');
+}
+
+function summarizeOrders(orders: Order[]) {
+  const positiveLines = orders.flatMap((order) => order.lines.filter((line) => line.orderQty > 0));
+  const missing = positiveLines.some((line) => line.amount == null);
+  return {
+    qty: positiveLines.reduce((sum, line) => sum + line.orderQty, 0),
+    amount: missing ? null : positiveLines.reduce((sum, line) => sum + (line.amount ?? 0), 0),
+  };
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
