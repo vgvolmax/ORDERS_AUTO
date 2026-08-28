@@ -100,6 +100,12 @@ export function buildOrderProjection(
     const positiveLines = order.lines.filter((line) => line.orderQty > 0);
     order.totalQty = positiveLines.reduce((sum, line) => sum + line.orderQty, 0);
 
+    if (positiveLines.length === 0) {
+      order.totalAmount = 0;
+      order.blockers.push('Нет позиций с количеством больше нуля');
+      continue;
+    }
+
     const hasMissingPrice = positiveLines.some((line) => line.amount == null);
     order.totalAmount = hasMissingPrice
       ? null
