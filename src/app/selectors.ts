@@ -20,6 +20,11 @@ const EMPTY_DERIVED_STATE: DerivedState = {
   projection: { orders: [], unassigned: [] },
 };
 
+// AppState is replaced immutably by React setState. A WeakMap therefore lets
+// local component state (search/filter text) re-render without rebuilding the
+// full demand/supplier/order graph, while old snapshots remain collectable.
+const derivedCache = new WeakMap<AppState, DerivedState>();
+
 /**
  * Builds every computed purchasing projection from normalized application state.
  *
@@ -29,7 +34,13 @@ const EMPTY_DERIVED_STATE: DerivedState = {
  * business calculation may run on a half-imported data set.
  */
 export function derive(state: AppState): DerivedState {
+  const cached = derivedCache.get(state);
+  if (cached) {
+    return cached;
+  }
+
   if (!state.minMax || !state.suppliers) {
+    derivedCache.set(state, EMPTY_DERIVED_STATE);
     return EMPTY_DERIVED_STATE;
   }
 
@@ -59,9 +70,11 @@ export function derive(state: AppState): DerivedState {
       : order,
   );
 
-  return {
+  const result: DerivedState = {
     resolutions,
     demand,
     projection: { ...baseProjection, orders },
   };
+  derivedCache.set(state, result);
+  return result;
 }

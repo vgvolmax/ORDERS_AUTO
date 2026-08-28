@@ -68,6 +68,22 @@ describe('buildOrderProjection', () => {
     );
   });
 
+  it('blocks an order when every edited line is zero', () => {
+    const projection = buildOrderProjection(
+      [demand()],
+      [resolved],
+      [{ skuCode: 'SKU1', branch: 'Ленина', qty: 0 }],
+      { minimumOrderAmount: 0, thresholdMode: 'SUPPLIER_TOTAL' },
+    );
+
+    expect(projection.orders[0]).toMatchObject({
+      totalQty: 0,
+      totalAmount: 0,
+      status: 'BLOCKED',
+    });
+    expect(projection.orders[0]?.blockers).toContain('Нет позиций с количеством больше нуля');
+  });
+
   it('supports supplier-total and branch-supplier threshold modes', () => {
     const lines = [
       demand({

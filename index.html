@@ -8,9 +8,43 @@
       content="Локальное приложение для формирования заказов поставщикам по MIN/MAX"
     />
     <title>ORDERS_AUTO</title>
+    <style>
+      .startup-fallback {
+        box-sizing: border-box;
+        max-width: 720px;
+        margin: 64px auto;
+        padding: 24px;
+        font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #1f2937;
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+      }
+      .startup-fallback strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 20px;
+      }
+      .startup-fallback p {
+        margin: 0;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="startup-fallback" role="status">
+        <strong>ORDERS_AUTO запускается…</strong>
+        <p>
+          Если этот экран не сменился на форму импорта, откройте готовый файл
+          ORDERS_AUTO.html из GitHub Actions/Release, а не исходный index.html репозитория.
+        </p>
+      </div>
+    </div>
+    <noscript>
+      <div class="startup-fallback" role="alert">
+        Для работы ORDERS_AUTO необходимо разрешить JavaScript в браузере.
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

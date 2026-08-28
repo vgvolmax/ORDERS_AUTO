@@ -1,17 +1,15 @@
-name: Verify ORDERS_AUTO
+name: Release ORDERS_AUTO
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  verify:
+  release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -41,15 +39,13 @@ jobs:
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
 
-      - name: Stage user-facing HTML
-        run: |
-          mkdir -p release
-          cp dist/index.html release/ORDERS_AUTO.html
+      - name: Prepare release file
+        run: cp dist/index.html ORDERS_AUTO.html
 
-      - name: Publish testable HTML
-        uses: actions/upload-artifact@v4
-        with:
-          name: ORDERS_AUTO-preview
-          path: release/ORDERS_AUTO.html
-          if-no-files-found: error
-          retention-days: 14
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" ORDERS_AUTO.html \
+            --title "ORDERS_AUTO $GITHUB_REF_NAME" \
+            --generate-notes

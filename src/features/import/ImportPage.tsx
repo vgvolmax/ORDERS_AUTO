@@ -9,6 +9,7 @@ import { Alert, Button } from '../../components/ui';
 
 export function ImportPage() {
   const { state, set } = useStore();
+  const anyLoading = state.minMaxLoading || state.supplierLoading;
 
   const supplierResolutionSummary = useMemo(() => {
     if (!state.minMax || !state.suppliers) {
@@ -34,7 +35,7 @@ export function ImportPage() {
   }, [state.minMax, state.suppliers, state.overrides]);
 
   async function load(file: File, kind: 'min' | 'sup') {
-    set({ loading: true });
+    set(kind === 'min' ? { minMaxLoading: true } : { supplierLoading: true });
     try {
       const buffer = await file.arrayBuffer();
       if (kind === 'min') {
@@ -85,7 +86,7 @@ export function ImportPage() {
         });
       }
     } finally {
-      set({ loading: false });
+      set(kind === 'min' ? { minMaxLoading: false } : { supplierLoading: false });
     }
   }
 
@@ -100,7 +101,7 @@ export function ImportPage() {
         </p>
       </header>
 
-      {state.loading && <Alert>Обработка отчёта…</Alert>}
+      {anyLoading && <Alert>Обработка отчёта…</Alert>}
 
       <div className="upload-grid">
         <FileCard
@@ -108,6 +109,7 @@ export function ImportPage() {
           accept=".xlsx"
           fileName={state.minMaxFileName}
           ready={Boolean(state.minMax)}
+          busy={state.minMaxLoading}
           summary={
             state.minMax
               ? `${state.minMax.skus.length} SKU · ${state.minMax.branches.length} подразделений`
@@ -121,6 +123,7 @@ export function ImportPage() {
           accept=".xls,.xlsx"
           fileName={state.supplierFileName}
           ready={Boolean(state.suppliers)}
+          busy={state.supplierLoading}
           summary={
             state.suppliers
               ? `${state.suppliers.suppliers.length} поставщиков · ${state.suppliers.history.length} связок поставщик–SKU`
@@ -153,7 +156,7 @@ export function ImportPage() {
       )}
 
       <Button
-        disabled={!state.minMax || !state.suppliers || state.loading}
+        disabled={!state.minMax || !state.suppliers || anyLoading}
         onClick={() => set({ page: 'all', toast: 'Потребность рассчитана.' })}
       >
         Перейти к потребности
@@ -167,6 +170,7 @@ function FileCard({
   accept,
   fileName,
   ready,
+  busy,
   summary,
   issues,
   onFile,
@@ -175,6 +179,7 @@ function FileCard({
   accept: string;
   fileName: string | null;
   ready: boolean;
+  busy: boolean;
   summary: string | null;
   issues: ValidationIssue[];
   onFile: (file: File) => void;
@@ -183,7 +188,10 @@ function FileCard({
   const errors = issues.filter((issue) => issue.severity === 'ERROR');
 
   return (
-    <section className={`upload ${errors.length > 0 ? 'has-error' : ''}`}>
+    <section
+      className={`upload ${errors.length > 0 ? 'has-error' : ''}`}
+      aria-busy={busy}
+    >
       <div className="upload-icon" aria-hidden="true">
         {ready ? '✓' : '⇧'}
       </div>
@@ -192,12 +200,13 @@ function FileCard({
       {fileName && <div className="file-name">{fileName}</div>}
 
       <label className="button secondary">
-        {fileName ? 'Заменить файл' : 'Выбрать файл'}
+        {busy ? 'Обработка…' : fileName ? 'Заменить файл' : 'Выбрать файл'}
         <input
           className="sr-only"
           aria-label={`Выбрать файл ${title}`}
           type="file"
           accept={accept}
+          disabled={busy}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) {
@@ -208,12 +217,16 @@ function FileCard({
       </label>
 
       <strong className={ready ? 'success' : errors.length ? 'danger-text' : ''}>
-        {ready ? 'Успешно распознан' : errors.length ? 'Файл требует исправления' : 'Файл не загружен'}
+        {busy
+          ? 'Обработка файла…'
+          : ready
+            ? 'Успешно распознан'
+            : errors.length
+              ? 'Файл требует исправления'
+              : 'Файл не загружен'}
       </strong>
       {summary && <small>{summary}</small>}
-      {(warnings.length > 0 || errors.length > 0) && (
-        <IssueList issues={issues} />
-      )}
+      {(warnings.length > 0 || errors.length > 0) && <IssueList issues={issues} />}
     </section>
   );
 }

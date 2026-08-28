@@ -44,12 +44,18 @@ export function baseState(overrides: Partial<AppState> = {}): AppState {
         },
       ],
     },
+    minMaxFileName: null,
+    supplierFileName: null,
+    minMaxIssues: [],
+    supplierIssues: [],
     overrides: [],
     edits: [],
     settings: { minimumOrderAmount: 0, thresholdMode: 'SUPPLIER_TOTAL' },
+    exportedOrderIds: [],
     page: 'all',
     toast: null,
-    loading: false,
+    minMaxLoading: false,
+    supplierLoading: false,
     ...overrides,
-  } as AppState;
+  };
 }
