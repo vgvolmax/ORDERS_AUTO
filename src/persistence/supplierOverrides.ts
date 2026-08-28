@@ -10,3 +10,18 @@ export async function saveSupplierOverride(
 ): Promise<string> {
   return (await db()).put('supplierOverrides', value);
 }
+
+export async function saveSupplierOverrides(
+  values: SupplierOverride[],
+): Promise<void> {
+  if (values.length === 0) {
+    return;
+  }
+
+  const database = await db();
+  const transaction = database.transaction('supplierOverrides', 'readwrite');
+  for (const value of values) {
+    await transaction.store.put(value);
+  }
+  await transaction.done;
+}
