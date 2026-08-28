@@ -20,11 +20,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
 
-      # The Codex branch was created without a lockfile. Generate it once and
-      # commit it back so every later clean checkout can use deterministic npm ci.
+      # The original Codex commit did not contain a lockfile. Generate it once
+      # and persist it to this feature branch so later clean clones can use npm ci.
       - name: Bootstrap package-lock.json when missing
         shell: bash
         run: |
