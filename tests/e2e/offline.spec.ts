@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 test('standalone HTML boots through file:// without page errors', async ({ page }) => {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('pageerror', (error) => pageErrors.push(error.stack ?? error.message));
   page.on('console', (message) => {
     if (message.type() === 'error') {
       consoleErrors.push(message.text());
