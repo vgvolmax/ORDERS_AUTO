@@ -14,8 +14,10 @@ if (/<script[^>]+type=["']module["']/i.test(html)) {
   throw new Error('Build still contains an ES module script and will not start reliably via file://');
 }
 
-if (!/<script(?:\s[^>]*)?>[\s\S]+<\/script>/i.test(html)) {
-  throw new Error('Build does not contain an inlined executable script');
+const rootIndex = html.indexOf('<div id="root"></div>');
+const scriptIndex = html.lastIndexOf('<script>');
+if (rootIndex === -1 || scriptIndex === -1 || scriptIndex < rootIndex) {
+  throw new Error('Offline script must be inlined after #root so classic execution can start safely');
 }
 
 console.log('Single-file offline artifact verified');
