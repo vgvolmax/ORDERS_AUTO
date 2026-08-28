@@ -21,7 +21,8 @@ export interface AppState {
   exportedOrderIds: string[];
   page: string;
   toast: string | null;
-  loading: boolean;
+  minMaxLoading: boolean;
+  supplierLoading: boolean;
 }
 
 export interface Store {
