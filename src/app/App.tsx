@@ -21,6 +21,7 @@ function createInitialState(
     overrides,
     edits: [],
     settings,
+    reviewedOrderIds: [],
     exportedOrderIds: [],
     page: 'import',
     toast: null,
