@@ -42,7 +42,11 @@ export function resolveSuppliers(
         candidates,
         recommendedSupplier,
         selectedSupplier: stillExists ? saved.supplier : null,
-        status: stillExists ? 'MANUAL_SELECTED' : 'STALE_OVERRIDE',
+        status: stillExists
+          ? saved.source === 'AUTO'
+            ? 'AUTO_SELECTED'
+            : 'MANUAL_SELECTED'
+          : 'STALE_OVERRIDE',
       };
     }
 
