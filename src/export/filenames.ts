@@ -1,0 +1,1 @@
+export const safeFilename=(s:string)=>s.replace(/[<>:"/\\|?*]/g,'_').replace(/[. ]+$/,'')||'Заказ';export function uniqueSheetName(raw:string,used:Set<string>){const base=(raw.replace(/[\[\]:*?/\\]/g,'').trim()||'Лист').slice(0,31);let n=base,i=2;while(used.has(n)){const suf=` (${i++})`;n=base.slice(0,31-suf.length)+suf}used.add(n);return n}

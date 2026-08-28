@@ -1,0 +1,1 @@
+import type{OrderSettings}from'../domain/types';import{db}from'./db';export const defaults:OrderSettings={minimumOrderAmount:0,thresholdMode:'SUPPLIER_TOTAL'};export async function getSettings(){return(await db()).get('settings','main')??defaults}export async function saveSettings(v:OrderSettings){return(await db()).put('settings',v,'main')}

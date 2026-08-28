@@ -1,0 +1,1 @@
+import*as XLSX from'xlsx';export function readFirstSheetRows(input:ArrayBuffer):unknown[][]{const wb=XLSX.read(input,{type:'array',cellDates:false});const n=wb.SheetNames[0];return n?XLSX.utils.sheet_to_json(wb.Sheets[n]!,{header:1,raw:true,defval:null}):[]}

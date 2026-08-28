@@ -1,0 +1,1 @@
+import type{SupplierOverride}from'../domain/types';import{db}from'./db';export async function getSupplierOverrides(){return(await db()).getAll('supplierOverrides')}export async function saveSupplierOverride(v:SupplierOverride){return(await db()).put('supplierOverrides',v)}

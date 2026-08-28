@@ -1,0 +1,1 @@
+import type{StockStatus}from'../domain/types';const labels:Record<StockStatus,string>={NO_NORM:'Нет норматива',OK:'На MAX',YELLOW:'Небольшой дефицит',ORANGE:'Средний дефицит',LIGHT_RED:'Высокий дефицит',BELOW_MIN:'Ниже MIN',INVALID_NORM:'Ошибка норматива'};export const StatusBadge=({status}:{status:StockStatus})=><span className={`badge ${status}`}>{labels[status]}</span>;
