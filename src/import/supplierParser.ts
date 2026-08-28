@@ -29,6 +29,13 @@ interface SupplierColumns {
   unit: number;
 }
 
+interface SupplierHeader {
+  rowIndex: number;
+  columns: SupplierColumns;
+  sharedHierarchyColumn: boolean;
+  combinedNameAndUnit: boolean;
+}
+
 interface AggregatedHistory extends SupplierHistory {
   normalizedUnits: Set<string>;
 }
@@ -51,6 +58,51 @@ export function parseSupplierWorkbook(
 
     for (let index = header.rowIndex + 1; index < rows.length; index += 1) {
       const row = rows[index]!;
+
+      if (header.sharedHierarchyColumn) {
+        const sharedText = normalizeText(row[header.columns.name]);
+        const skuCode = normalizeText(row[header.columns.code]);
+        const marker = normalizeKey(sharedText);
+
+        if (!skuCode) {
+          if (
+            sharedText &&
+            marker !== 'поставщики' &&
+            !marker.startsWith('итого') &&
+            !marker.startsWith('всего')
+          ) {
+            currentSupplier = sharedText;
+          }
+          continue;
+        }
+
+        if (!currentSupplier || !sharedText) {
+          continue;
+        }
+
+        const parsedName = header.combinedNameAndUnit
+          ? splitCombinedNameAndUnit(sharedText)
+          : { name: sharedText, unit: '' };
+
+        // In the 1C hierarchical report folders have their own codes and
+        // aggregate amounts, but no base unit after the final comma. Only
+        // leaf nomenclature rows represent purchasable SKU history.
+        if (header.combinedNameAndUnit && !parsedName.unit) {
+          continue;
+        }
+
+        addHistoryRow({
+          row,
+          header,
+          supplier: currentSupplier,
+          skuCode,
+          skuName: parsedName.name,
+          unit: parsedName.unit,
+          aggregated,
+        });
+        continue;
+      }
+
       const supplierCell = normalizeText(row[header.columns.supplier]);
       const skuCode = normalizeText(row[header.columns.code]);
       const skuName =
@@ -69,42 +121,22 @@ export function parseSupplierWorkbook(
       }
 
       const supplier = supplierCell || currentSupplier;
-      const quantity =
-        header.columns.qty >= 0
-          ? parseOptionalNumber(row[header.columns.qty])
-          : null;
-      const amount =
-        header.columns.amount >= 0
-          ? parseOptionalNumber(row[header.columns.amount])
-          : null;
-
-      if (!supplier || !skuCode || (quantity == null && amount == null)) {
+      if (!supplier || !skuCode) {
         continue;
       }
 
       const unit =
         header.columns.unit >= 0 ? normalizeText(row[header.columns.unit]) : '';
-      const key = `${supplier}\0${skuCode}`;
-      const item = aggregated.get(key) ?? {
+
+      addHistoryRow({
+        row,
+        header,
         supplier,
         skuCode,
-        skuName: skuName || null,
-        unit: unit || null,
-        purchaseQty: 0,
-        purchaseAmount: 0,
-        weightedUnitCost: null,
-        normalizedUnits: new Set<string>(),
-      };
-
-      item.purchaseQty += quantity ?? 0;
-      item.purchaseAmount += amount ?? 0;
-      if (unit) {
-        item.normalizedUnits.add(normalizeKey(unit));
-        if (!item.unit) {
-          item.unit = unit;
-        }
-      }
-      aggregated.set(key, item);
+        skuName,
+        unit,
+        aggregated,
+      });
     }
 
     const history = [...aggregated.values()].map((item): SupplierHistory => {
@@ -180,33 +212,144 @@ export function parseSupplierWorkbook(
   }
 }
 
-function findHeader(
-  rows: unknown[][],
-): { rowIndex: number; columns: SupplierColumns } | null {
+function addHistoryRow({
+  row,
+  header,
+  supplier,
+  skuCode,
+  skuName,
+  unit,
+  aggregated,
+}: {
+  row: unknown[];
+  header: SupplierHeader;
+  supplier: string;
+  skuCode: string;
+  skuName: string;
+  unit: string;
+  aggregated: Map<string, AggregatedHistory>;
+}): void {
+  const quantity =
+    header.columns.qty >= 0
+      ? parseOptionalNumber(row[header.columns.qty])
+      : null;
+  const amount =
+    header.columns.amount >= 0
+      ? parseOptionalNumber(row[header.columns.amount])
+      : null;
+
+  if (quantity == null && amount == null) {
+    return;
+  }
+
+  const key = `${supplier}\0${skuCode}`;
+  const item = aggregated.get(key) ?? {
+    supplier,
+    skuCode,
+    skuName: skuName || null,
+    unit: unit || null,
+    purchaseQty: 0,
+    purchaseAmount: 0,
+    weightedUnitCost: null,
+    normalizedUnits: new Set<string>(),
+  };
+
+  item.purchaseQty += quantity ?? 0;
+  item.purchaseAmount += amount ?? 0;
+  if (unit) {
+    item.normalizedUnits.add(normalizeKey(unit));
+    if (!item.unit) {
+      item.unit = unit;
+    }
+  }
+  aggregated.set(key, item);
+}
+
+function findHeader(rows: unknown[][]): SupplierHeader | null {
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const normalized = rows[rowIndex]!.map(normalizeKey);
-    const findAlias = (names: string[]) =>
-      normalized.findIndex((cell) => names.includes(cell));
-
-    const columns: SupplierColumns = {
-      supplier: findAlias(aliases.supplier),
-      code: findAlias(aliases.code),
-      name: findAlias(aliases.name),
-      qty: findAlias(aliases.qty),
-      amount: findAlias(aliases.amount),
-      unit: findAlias(aliases.unit),
-    };
+    const columns = columnsFromRow(normalized);
 
     if (
       columns.supplier >= 0 &&
       columns.code >= 0 &&
       (columns.qty >= 0 || columns.amount >= 0)
     ) {
-      return { rowIndex, columns };
+      return {
+        rowIndex,
+        columns,
+        sharedHierarchyColumn: false,
+        combinedNameAndUnit: false,
+      };
+    }
+
+    // Standard 1C hierarchical purchase report renders a two-level header:
+    //   Контрагент | Количество | Стоимость
+    //   Код        | Номенклатура, Базовая единица измерения
+    // Контрагент and Номенклатура intentionally share one body column.
+    if (
+      columns.supplier >= 0 &&
+      columns.code < 0 &&
+      (columns.qty >= 0 || columns.amount >= 0)
+    ) {
+      for (
+        let detailRowIndex = rowIndex + 1;
+        detailRowIndex <= Math.min(rowIndex + 3, rows.length - 1);
+        detailRowIndex += 1
+      ) {
+        const detailNormalized = rows[detailRowIndex]!.map(normalizeKey);
+        const detailColumns = columnsFromRow(detailNormalized);
+
+        if (detailColumns.code < 0 || detailColumns.name < 0) {
+          continue;
+        }
+
+        return {
+          rowIndex: detailRowIndex,
+          columns: {
+            supplier: columns.supplier,
+            code: detailColumns.code,
+            name: detailColumns.name,
+            qty: columns.qty,
+            amount: columns.amount,
+            unit: detailColumns.unit,
+          },
+          sharedHierarchyColumn: columns.supplier === detailColumns.name,
+          combinedNameAndUnit: detailNormalized[detailColumns.name]!.includes(
+            'базовая единица измерения',
+          ),
+        };
+      }
     }
   }
 
   return null;
+}
+
+function columnsFromRow(normalized: string[]): SupplierColumns {
+  const findAlias = (names: string[]) =>
+    normalized.findIndex((cell) => names.some((name) => cell === name || cell.startsWith(name)));
+
+  return {
+    supplier: findAlias(aliases.supplier),
+    code: findAlias(aliases.code),
+    name: findAlias(aliases.name),
+    qty: findAlias(aliases.qty),
+    amount: findAlias(aliases.amount),
+    unit: findAlias(aliases.unit),
+  };
+}
+
+function splitCombinedNameAndUnit(value: string): { name: string; unit: string } {
+  const separator = value.lastIndexOf(',');
+  if (separator < 0) {
+    return { name: value.trim(), unit: '' };
+  }
+
+  return {
+    name: value.slice(0, separator).trim(),
+    unit: value.slice(separator + 1).trim(),
+  };
 }
 
 function fatal(message: string): ParseResult<SupplierDataset> {
