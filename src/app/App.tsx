@@ -24,7 +24,8 @@ function createInitialState(
     exportedOrderIds: [],
     page: 'import',
     toast: null,
-    loading: false,
+    minMaxLoading: false,
+    supplierLoading: false,
   };
 }
 
