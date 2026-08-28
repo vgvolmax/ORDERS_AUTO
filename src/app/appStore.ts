@@ -18,6 +18,7 @@ export interface AppState {
   overrides: SupplierOverride[];
   edits: OrderQtyEdit[];
   settings: OrderSettings;
+  reviewedOrderIds: string[];
   exportedOrderIds: string[];
   page: string;
   toast: string | null;
