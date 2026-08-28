@@ -11,13 +11,20 @@ if (/<script[^>]+src=|<link[^>]+rel=["']stylesheet/i.test(html)) {
 }
 
 if (/<script[^>]+type=["']module["']/i.test(html)) {
-  throw new Error('Build still contains an ES module script and will not start reliably via file://');
+  throw new Error(
+    'Build still contains an ES module script and will not start reliably via file://',
+  );
 }
 
-const rootIndex = html.indexOf('<div id="root"></div>');
+// The root may intentionally contain a static startup fallback. Verify the
+// actual opening root element rather than requiring an empty <div>.
+const rootMatch = html.match(/<div\s+id=["']root["'][^>]*>/i);
+const rootIndex = rootMatch?.index ?? -1;
 const scriptIndex = html.lastIndexOf('<script>');
 if (rootIndex === -1 || scriptIndex === -1 || scriptIndex < rootIndex) {
-  throw new Error('Offline script must be inlined after #root so classic execution can start safely');
+  throw new Error(
+    'Offline script must be inlined after #root so classic execution can start safely',
+  );
 }
 
 console.log('Single-file offline artifact verified');
