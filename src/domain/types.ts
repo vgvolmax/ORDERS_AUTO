@@ -39,14 +39,19 @@ export interface SupplierHistory {
   weightedUnitCost: number | null;
 }
 
+export type SupplierOverrideSource = 'MANUAL' | 'AUTO';
+
 export interface SupplierOverride {
   skuCode: string;
   supplier: string;
   updatedAt: string;
+  /** Legacy persisted overrides without a source are treated as MANUAL. */
+  source?: SupplierOverrideSource;
 }
 
 export type SupplierResolutionStatus =
   | 'AUTO_SINGLE'
+  | 'AUTO_SELECTED'
   | 'MANUAL_SELECTED'
   | 'MANUAL_REQUIRED'
   | 'STALE_OVERRIDE'
