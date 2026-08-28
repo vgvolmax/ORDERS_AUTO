@@ -68,7 +68,10 @@ export function VirtualTable<T>({
       ) : (
         // Small result sets are cheaper and more accessible as ordinary DOM
         // rows. Large operational datasets still use virtualization.
-        <div className="virtual-scroll virtual-scroll-static">
+        <div
+          className="virtual-scroll"
+          style={{ height: 'auto', maxHeight: 'min(68vh, 720px)' }}
+        >
           {rows.map((row, index) => (
             <TableRow
               key={getRowKey(row)}
@@ -77,7 +80,7 @@ export function VirtualTable<T>({
               template={template}
               details={renderDetails?.(row)}
               dataIndex={index}
-              staticRow
+              style={{ position: 'relative', top: 'auto', left: 'auto' }}
             />
           ))}
         </div>
@@ -120,7 +123,6 @@ function TableRow<T>({
   measureRef,
   dataIndex,
   style,
-  staticRow = false,
 }: {
   row: T;
   columns: VirtualColumn<T>[];
@@ -129,13 +131,12 @@ function TableRow<T>({
   measureRef?: ((node: Element | null) => void) | undefined;
   dataIndex: number;
   style?: CSSProperties | undefined;
-  staticRow?: boolean | undefined;
 }) {
   return (
     <div
       ref={measureRef}
       data-index={dataIndex}
-      className={`virtual-row-shell${staticRow ? ' virtual-row-shell-static' : ''}`}
+      className="virtual-row-shell"
       role="row"
       style={style}
     >
