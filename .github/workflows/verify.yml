@@ -30,3 +30,11 @@ jobs:
 
       - name: Build and single-file check
         run: npm run build
+
+      - name: Publish preview HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORDERS_AUTO-preview
+          path: dist/index.html
+          if-no-files-found: error
+          retention-days: 7
