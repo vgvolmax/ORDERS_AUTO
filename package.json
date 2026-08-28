@@ -4,11 +4,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --open /src/app.html",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:e2e": "playwright test tests/e2e/offline.spec.ts --project=chrome",
-    "build": "vite build && node scripts/make-file-protocol-safe.mjs && node scripts/assert-single-file.mjs",
+    "build": "vite build && node scripts/make-file-protocol-safe.mjs && node scripts/publish-root-html.mjs && node scripts/assert-single-file.mjs",
     "verify": "npm run typecheck && npm test -- --run && npm run build"
   },
   "dependencies": {
