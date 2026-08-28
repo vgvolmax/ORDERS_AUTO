@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-test('standalone HTML boots through file:// without page errors', async ({ page }) => {
+test('root ORDERS_AUTO.html boots through file:// without page errors', async ({ page }) => {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.stack ?? error.message));
@@ -12,7 +12,7 @@ test('standalone HTML boots through file:// without page errors', async ({ page 
     }
   });
 
-  const appUrl = pathToFileURL(resolve('dist/index.html')).href;
+  const appUrl = pathToFileURL(resolve('ORDERS_AUTO.html')).href;
   await page.goto(appUrl, { waitUntil: 'load' });
 
   const importHeading = page.getByRole('heading', { name: 'Импорт отчётов 1С' });
@@ -22,7 +22,7 @@ test('standalone HTML boots through file:// without page errors', async ({ page 
     const bodyText = (await page.locator('body').innerText()).slice(0, 2_000);
     throw new Error(
       [
-        'Offline app did not reach the import screen.',
+        'Root ORDERS_AUTO.html did not reach the import screen.',
         `URL: ${page.url()}`,
         `pageerror: ${JSON.stringify(pageErrors)}`,
         `console.error: ${JSON.stringify(consoleErrors)}`,

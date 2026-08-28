@@ -11,6 +11,8 @@ production build
 single-file artifact check
 ```
 
+Дополнительно CI обязан открыть корневой `ORDERS_AUTO.html` через `file://` в Chrome и подтвердить отсутствие page/console errors.
+
 ## 2. Parser tests — Min-Max
 
 Обязательные кейсы:
@@ -126,7 +128,16 @@ Fixtures генерировать программно в `tests/fixtures/workbo
 8. скачать CSV;
 9. скачать supplier XLSX.
 
-## 12. Manual smoke on real local reports
+## 12. Packaging acceptance
+
+- в корне репозитория нет `index.html`;
+- технический шаблон находится в `src/app.html`;
+- единственный пользовательский HTML в корне — `ORDERS_AUTO.html`;
+- `npm run build` обновляет `ORDERS_AUTO.html`;
+- CI проверяет, что закоммиченный `ORDERS_AUTO.html` идентичен свежей сборке;
+- artifact и GitHub Release публикуют тот же корневой файл без копирования из `dist`.
+
+## 13. Manual smoke on real local reports
 
 Перед релизом разработчик локально использует реальные файлы из `samples/private/` и проверяет:
 
@@ -135,6 +146,6 @@ Fixtures генерировать программно в `tests/fixtures/workbo
 - join выполняется по коду;
 - unresolved/multiple suppliers видимы, а не потеряны;
 - суммы в нескольких случайных SKU вручную совпадают с `MAX-stock`;
-- production `dist/index.html` работает при двойном клике без dev server.
+- корневой `ORDERS_AUTO.html` работает при двойном клике без dev server.
 
 Результаты real-data smoke не должны коммитить содержимое или строки реальных отчётов.
