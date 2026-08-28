@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 import { viteSingleFile } from 'vite-plugin-singlefile';
@@ -9,8 +10,9 @@ export default defineConfig({
     sourcemap: false,
     modulePreload: false,
     rollupOptions: {
+      input: resolve(process.cwd(), 'src/app.html'),
       // `file://` cannot reliably execute native ES modules. Build the single
-      // entry as an IIFE so the final inlined script can run as a classic script.
+      // entry as an IIFE; the postprocessor only changes its opening tag.
       output: {
         format: 'iife',
       },
