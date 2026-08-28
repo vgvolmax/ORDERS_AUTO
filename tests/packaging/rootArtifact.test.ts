@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { describe, expect, it } from 'vitest';
 
 describe('repository packaging', () => {
   it('exposes exactly one user-launchable HTML file in the repository root', () => {
