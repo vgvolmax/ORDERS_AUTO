@@ -1,14 +1,30 @@
 import { useMemo, useState } from 'react';
-import { derive } from '../../app/selectors';
 import { useStore } from '../../app/appStore';
+import { derive } from '../../app/selectors';
 import { ThresholdControls } from '../../components/ThresholdControls';
-import { Alert, EmptyState, Input, MetricCard, Select } from '../../components/ui';
+import {
+  Alert,
+  Button,
+  EmptyState,
+  Input,
+  MetricCard,
+  Select,
+} from '../../components/ui';
+import {
+  buildAutoSupplierOverrides,
+  type SupplierAutoScope,
+  type SupplierAutoStrategy,
+} from '../../domain/supplierAutomation';
 import type {
   Order,
   PricedDemandLine,
+  SupplierOverride,
   SupplierResolution,
 } from '../../domain/types';
-import { saveSupplierOverride } from '../../persistence/supplierOverrides';
+import {
+  saveSupplierOverride,
+  saveSupplierOverrides,
+} from '../../persistence/supplierOverrides';
 import { fmtQty, money } from '../demand/DemandPage';
 
 interface SupplierSummary {
@@ -30,6 +46,14 @@ export function SuppliersPage() {
   const [query, setQuery] = useState('');
   const [amountFrom, setAmountFrom] = useState('');
   const [showBelowThreshold, setShowBelowThreshold] = useState(false);
+  const [decisionsOpen, setDecisionsOpen] = useState(true);
+  const [selectedSkuCodes, setSelectedSkuCodes] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [autoStrategy, setAutoStrategy] =
+    useState<SupplierAutoStrategy>('MIN_PRICE');
+  const [autoScope, setAutoScope] = useState<SupplierAutoScope>('ALL');
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const neededSkuCodes = useMemo(
     () =>
@@ -47,6 +71,19 @@ export function SuppliersPage() {
       ['MANUAL_REQUIRED', 'STALE_OVERRIDE', 'UNRESOLVED'].includes(
         resolution.status,
       ),
+  );
+
+  const autoOverrides = useMemo(
+    () =>
+      buildAutoSupplierOverrides({
+        resolutions: problems,
+        currentOverrides: state.overrides,
+        selectedSkuCodes,
+        scope: autoScope,
+        strategy: autoStrategy,
+        overwriteManual: false,
+      }),
+    [problems, state.overrides, selectedSkuCodes, autoScope, autoStrategy],
   );
 
   const summaries = buildSupplierSummaries(
@@ -85,30 +122,51 @@ export function SuppliersPage() {
     resolution: SupplierResolution,
     supplier: string,
   ): Promise<void> {
-    const override = {
+    const override: SupplierOverride = {
       skuCode: resolution.skuCode,
       supplier,
+      source: 'MANUAL',
       updatedAt: new Date().toISOString(),
     };
     const previous = state.overrides;
 
     set({
-      overrides: [
-        ...previous.filter((item) => item.skuCode !== resolution.skuCode),
-        override,
-      ],
+      overrides: mergeOverrides(previous, [override]),
       toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.`,
     });
 
     try {
       await saveSupplierOverride(override);
     } catch {
-      // Optimistic UI is rolled back if IndexedDB cannot persist the decision.
-      // Otherwise a later reload would silently lose a supplier selection.
       set({
         overrides: previous,
         toast: 'Не удалось сохранить выбор поставщика.',
       });
+    }
+  }
+
+  async function applyAutomation(): Promise<void> {
+    if (autoOverrides.length === 0 || bulkBusy) {
+      return;
+    }
+
+    const previous = state.overrides;
+    setBulkBusy(true);
+    set({
+      overrides: mergeOverrides(previous, autoOverrides),
+      toast: `Автоматически назначено: ${autoOverrides.length}.`,
+    });
+
+    try {
+      await saveSupplierOverrides(autoOverrides);
+      setSelectedSkuCodes(new Set());
+    } catch {
+      set({
+        overrides: previous,
+        toast: 'Не удалось сохранить массовый выбор поставщиков.',
+      });
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -144,7 +202,21 @@ export function SuppliersPage() {
       </div>
 
       {problems.length > 0 && (
-        <SupplierDecisions problems={problems} onChoose={choose} />
+        <SupplierDecisions
+          problems={problems}
+          open={decisionsOpen}
+          onOpenChange={setDecisionsOpen}
+          selectedSkuCodes={selectedSkuCodes}
+          onSelectedSkuCodesChange={setSelectedSkuCodes}
+          strategy={autoStrategy}
+          onStrategyChange={setAutoStrategy}
+          scope={autoScope}
+          onScopeChange={setAutoScope}
+          previewCount={autoOverrides.length}
+          bulkBusy={bulkBusy}
+          onApplyAutomation={applyAutomation}
+          onChoose={choose}
+        />
       )}
 
       <section
@@ -228,75 +300,185 @@ export function SuppliersPage() {
 
 function SupplierDecisions({
   problems,
+  open,
+  onOpenChange,
+  selectedSkuCodes,
+  onSelectedSkuCodesChange,
+  strategy,
+  onStrategyChange,
+  scope,
+  onScopeChange,
+  previewCount,
+  bulkBusy,
+  onApplyAutomation,
   onChoose,
 }: {
   problems: SupplierResolution[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  selectedSkuCodes: Set<string>;
+  onSelectedSkuCodesChange: (selected: Set<string>) => void;
+  strategy: SupplierAutoStrategy;
+  onStrategyChange: (strategy: SupplierAutoStrategy) => void;
+  scope: SupplierAutoScope;
+  onScopeChange: (scope: SupplierAutoScope) => void;
+  previewCount: number;
+  bulkBusy: boolean;
+  onApplyAutomation: () => void;
   onChoose: (resolution: SupplierResolution, supplier: string) => void;
 }) {
-  const withCandidates = problems.filter(
-    (problem) => problem.candidates.length > 0,
-  );
-  const withoutCandidates = problems.filter(
-    (problem) => problem.candidates.length === 0,
-  );
+  const allSelected =
+    problems.length > 0 &&
+    problems.every((problem) => selectedSkuCodes.has(problem.skuCode));
+
+  function toggleOne(skuCode: string, checked: boolean): void {
+    const next = new Set(selectedSkuCodes);
+    if (checked) {
+      next.add(skuCode);
+    } else {
+      next.delete(skuCode);
+    }
+    onSelectedSkuCodesChange(next);
+  }
+
+  function toggleAll(checked: boolean): void {
+    onSelectedSkuCodesChange(
+      checked ? new Set(problems.map((problem) => problem.skuCode)) : new Set(),
+    );
+  }
 
   return (
-    <section className="panel">
-      <h2>Требуют решения</h2>
-      <Alert tone="warning">
-        Эти позиции не попадут ни в один заказ, пока поставщик не будет
-        разрешён.
-      </Alert>
+    <section className="panel supplier-decisions-panel">
+      <div className="decision-panel-head">
+        <div>
+          <h2>Требуют решения · {problems.length}</h2>
+          <p>
+            Эти позиции не попадут ни в один заказ, пока поставщик не будет
+            разрешён.
+          </p>
+        </div>
+        <button
+          className="link decision-collapse"
+          aria-expanded={open}
+          onClick={() => onOpenChange(!open)}
+        >
+          {open ? 'Свернуть «Требуют решения»' : 'Развернуть «Требуют решения»'}
+        </button>
+      </div>
 
-      {withCandidates.map((resolution) => (
-        <div className="decision" key={resolution.skuCode}>
-          <div>
-            <strong>Код {resolution.skuCode}</strong>
-            <p>
-              {resolution.status === 'STALE_OVERRIDE'
-                ? 'Сохранённый поставщик отсутствует в свежем отчёте.'
-                : 'Несколько исторических поставщиков — нужен ваш выбор.'}
-            </p>
+      {open && (
+        <>
+          <Alert tone="warning">
+            Автовыбор использует только валидные исторические цены. Позиции без
+            подходящей цены останутся на ручное решение.
+          </Alert>
+
+          <div className="supplier-auto-toolbar">
+            <label>
+              Стратегия автовыбора
+              <Select
+                aria-label="Стратегия автовыбора"
+                value={strategy}
+                onChange={(event) =>
+                  onStrategyChange(event.target.value as SupplierAutoStrategy)
+                }
+              >
+                <option value="MIN_PRICE">Минимальная цена</option>
+              </Select>
+            </label>
+            <label>
+              Область применения
+              <Select
+                aria-label="Область применения"
+                value={scope}
+                onChange={(event) =>
+                  onScopeChange(event.target.value as SupplierAutoScope)
+                }
+              >
+                <option value="ALL">Все позиции</option>
+                <option value="SELECTED">Только отмеченные</option>
+                <option value="EXCEPT_SELECTED">Все кроме отмеченных</option>
+              </Select>
+            </label>
+            <div className="auto-preview" role="status">
+              Будет назначено: <strong>{previewCount}</strong>
+            </div>
+            <Button
+              disabled={previewCount === 0 || bulkBusy}
+              onClick={onApplyAutomation}
+            >
+              {bulkBusy ? 'Сохраняем…' : 'Применить автовыбор'}
+            </Button>
           </div>
 
-          <Select
-            aria-label={`Поставщик ${resolution.skuCode}`}
-            value=""
-            onChange={(event) => onChoose(resolution, event.target.value)}
-          >
-            <option value="">Выберите поставщика…</option>
-            {resolution.candidates.map((candidate) => (
-              <option key={candidate.supplier} value={candidate.supplier}>
-                {candidate.supplier}
-                {candidate.supplier === resolution.recommendedSupplier
-                  ? ' — рекомендуемый'
-                  : ''}
-                {' · '}
-                {fmtQty(candidate.purchaseQty)} ед. ·{' '}
-                {money(candidate.purchaseAmount)} ·{' '}
-                {candidate.weightedUnitCost == null
-                  ? 'нет цены'
-                  : money(candidate.weightedUnitCost)}
-              </option>
-            ))}
-          </Select>
-        </div>
-      ))}
+          <div className="decision-select-all">
+            <label className="checkbox-control">
+              <input
+                type="checkbox"
+                aria-label="Выбрать все позиции"
+                checked={allSelected}
+                onChange={(event) => toggleAll(event.target.checked)}
+              />
+              Отметить все
+            </label>
+            <small>Отмечено: {selectedSkuCodes.size}</small>
+          </div>
 
-      {withoutCandidates.length > 0 && (
-        <div className="no-supplier-block">
-          <strong>
-            Нет истории поставщиков: {withoutCandidates.length} SKU
-          </strong>
-          <div className="code-list">
-            {withoutCandidates.slice(0, 20).map((item) => (
-              <span key={item.skuCode}>{item.skuCode}</span>
+          <div className="decision-list">
+            {problems.map((resolution) => (
+              <div className="decision" key={resolution.skuCode}>
+                <label className="decision-check">
+                  <input
+                    type="checkbox"
+                    aria-label={`Выбрать ${resolution.skuCode}`}
+                    checked={selectedSkuCodes.has(resolution.skuCode)}
+                    onChange={(event) =>
+                      toggleOne(resolution.skuCode, event.target.checked)
+                    }
+                  />
+                </label>
+                <div>
+                  <strong>Код {resolution.skuCode}</strong>
+                  <p>
+                    {resolution.status === 'STALE_OVERRIDE'
+                      ? 'Сохранённый поставщик отсутствует в свежем отчёте.'
+                      : resolution.candidates.length === 0
+                        ? 'Нет истории поставщиков для автоматического выбора.'
+                        : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
+                  </p>
+                </div>
+
+                {resolution.candidates.length > 0 ? (
+                  <Select
+                    aria-label={`Поставщик ${resolution.skuCode}`}
+                    value=""
+                    onChange={(event) =>
+                      onChoose(resolution, event.target.value)
+                    }
+                  >
+                    <option value="">Выберите поставщика…</option>
+                    {resolution.candidates.map((candidate) => (
+                      <option key={candidate.supplier} value={candidate.supplier}>
+                        {candidate.supplier}
+                        {candidate.supplier === resolution.recommendedSupplier
+                          ? ' — рекомендуемый'
+                          : ''}
+                        {' · '}
+                        {fmtQty(candidate.purchaseQty)} ед. ·{' '}
+                        {money(candidate.purchaseAmount)} ·{' '}
+                        {candidate.weightedUnitCost == null
+                          ? 'нет цены'
+                          : money(candidate.weightedUnitCost)}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <span className="danger-text">Только ручное уточнение</span>
+                )}
+              </div>
             ))}
           </div>
-          {withoutCandidates.length > 20 && (
-            <small>И ещё {withoutCandidates.length - 20}</small>
-          )}
-        </div>
+        </>
       )}
     </section>
   );
@@ -387,7 +569,6 @@ function buildSupplierSummaries(
           (sum, line) => sum + line.orderQty,
           0,
         ),
-        // Never present a partial supplier amount as if it were complete.
         totalAmount:
           missingPriceLineCount > 0
             ? null
@@ -414,4 +595,15 @@ function hasHardBlocker(order: Order) {
   return order.blockers.some(
     (blocker) => blocker !== 'Ниже минимальной суммы',
   );
+}
+
+function mergeOverrides(
+  current: SupplierOverride[],
+  replacements: SupplierOverride[],
+): SupplierOverride[] {
+  const replacementCodes = new Set(replacements.map((item) => item.skuCode));
+  return [
+    ...current.filter((item) => !replacementCodes.has(item.skuCode)),
+    ...replacements,
+  ];
 }
