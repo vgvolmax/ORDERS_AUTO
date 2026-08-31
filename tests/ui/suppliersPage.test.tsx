@@ -83,6 +83,13 @@ function ambiguousState(): AppState {
   });
 }
 
+function expectAutoPreview(count: number): void {
+  const hasExpectedPreview = screen.getAllByRole('status').some((element) =>
+    new RegExp(`будет назначено:\\s*${count}`, 'i').test(element.textContent ?? ''),
+  );
+  expect(hasExpectedPreview).toBe(true);
+}
+
 describe('SuppliersPage', () => {
   beforeEach(() => {
     mocks.saveSupplierOverride.mockReset();
@@ -154,7 +161,7 @@ describe('SuppliersPage', () => {
       target: { value: 'SELECTED' },
     });
 
-    expect(screen.getByText(/будет назначено:\s*1/i)).toBeInTheDocument();
+    expectAutoPreview(1);
     fireEvent.click(screen.getByRole('button', { name: /применить автовыбор/i }));
 
     await waitFor(() => expect(mocks.saveSupplierOverrides).toHaveBeenCalledTimes(1));
@@ -186,6 +193,6 @@ describe('SuppliersPage', () => {
       target: { value: 'EXCEPT_SELECTED' },
     });
 
-    expect(screen.getByText(/будет назначено:\s*1/i)).toBeInTheDocument();
+    expectAutoPreview(1);
   });
 });
