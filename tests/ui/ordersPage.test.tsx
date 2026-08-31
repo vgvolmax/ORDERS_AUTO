@@ -38,7 +38,7 @@ describe('OrdersPage', () => {
     mocks.downloadReadyOrdersZip.mockRejectedValueOnce(new Error('zip failed'));
     renderWithStore(<OrdersPage />, baseState(), set);
 
-    fireEvent.click(screen.getByRole('button', { name: /скачать все CSV/i }));
+    fireEvent.click(screen.getByRole('button', { name: /скачать все \(2\)/i }));
 
     await waitFor(() =>
       expect(set).toHaveBeenCalledWith({
@@ -52,7 +52,7 @@ describe('OrdersPage', () => {
     mocks.buildSupplierWorkbook.mockRejectedValueOnce(new Error('xlsx failed'));
     renderWithStore(<OrdersPage />, baseState(), set);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Excel' }));
+    fireEvent.click(screen.getByRole('button', { name: /excel все/i }));
 
     await waitFor(() =>
       expect(set).toHaveBeenCalledWith({
