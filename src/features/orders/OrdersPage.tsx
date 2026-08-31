@@ -47,7 +47,9 @@ export function OrdersPage() {
     });
   }, [orders, supplierQuery, showBelowThreshold]);
 
-  const exportable = visibleOrders.filter(isExportable);
+  // Global export actions always operate on the application projection. Search
+  // and row-visibility controls are presentation filters only.
+  const exportable = orders.filter(isExportable);
   const reviewedExportable = exportable.filter((order) => order.reviewed);
   const suppliers = [...new Set(visibleOrders.map((order) => order.supplier))];
   const branches = state.minMax!.branches;
@@ -295,7 +297,7 @@ export function OrdersPage() {
                 );
                 const supplierTotal = summarizeOrders(allSupplierOrders);
                 const reviewedCount = allSupplierOrders.filter(
-                  (order) => order.reviewed,
+                  (order) => order.reviewed && !hasHardBlocker(order),
                 ).length;
                 const manualEditCount = allSupplierOrders.reduce(
                   (sum, order) => sum + order.manualEditCount,
@@ -311,6 +313,18 @@ export function OrdersPage() {
                 const supplierReviewedExportable = supplierExportable.filter(
                   (order) => order.reviewed,
                 );
+                const supplierSkuCount = new Set(
+                  allSupplierOrders.flatMap((order) =>
+                    order.lines
+                      .filter((line) => line.orderQty > 0)
+                      .map((line) => line.skuCode),
+                  ),
+                ).size;
+                const supplierHasBlocker = allSupplierOrders.some(hasHardBlocker);
+                const supplierReviewed =
+                  allSupplierOrders.length > 0 &&
+                  reviewedCount === allSupplierOrders.length &&
+                  !supplierHasBlocker;
 
                 return (
                   <tr key={supplier}>
@@ -327,7 +341,7 @@ export function OrdersPage() {
                       return (
                         <td key={branch}>
                           <button
-                            className={`order-cell ${order.status} ${order.belowThreshold ? 'below-threshold' : ''} ${order.reviewed && !hardBlocked ? 'reviewed' : ''} ${order.manualEditCount > 0 ? 'manual-edited' : ''}`}
+                            className={`order-cell ${order.status} ${order.belowThreshold ? 'below-threshold' : ''} ${order.reviewed && !hardBlocked ? 'reviewed is-reviewed' : ''} ${hardBlocked ? 'has-blocker' : ''} ${order.manualEditCount > 0 ? 'manual-edited' : ''}`}
                             onClick={() => setSelectedId(order.id)}
                           >
                             <span className="order-status-icons">
@@ -371,21 +385,24 @@ export function OrdersPage() {
                     })}
                     <td className="supplier-total-cell">
                       <button
-                        className="supplier-total-button"
+                        className={`supplier-total-button ${supplierReviewed ? 'is-reviewed' : ''} ${supplierHasBlocker ? 'has-blocker' : ''}`}
                         aria-label={`Все заказы ${supplier}`}
                         onClick={() => setSelectedSupplier(supplier)}
                       >
+                        <span className="supplier-name">{supplier}</span>
                         <strong>
                           {supplierTotal.amount == null
                             ? 'Сумма неизвестна'
                             : money(supplierTotal.amount)}
                         </strong>
                         <small>
-                          {fmtQty(supplierTotal.qty)} ед. ·{' '}
-                          {allSupplierOrders.length} заказов
+                          {allSupplierOrders.length} подразделений ·{' '}
+                          {supplierSkuCount} SKU
                         </small>
                         <small>
-                          ✓ {reviewedCount} из {allSupplierOrders.length} проверено
+                          {supplierReviewed
+                            ? `✓ Все ${allSupplierOrders.length} заказов проверены`
+                            : `✓ ${reviewedCount} из ${allSupplierOrders.length} проверено`}
                         </small>
                         {manualEditCount > 0 && (
                           <small className="manual-indicator">

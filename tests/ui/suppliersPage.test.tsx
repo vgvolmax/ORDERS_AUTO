@@ -195,4 +195,40 @@ describe('SuppliersPage', () => {
 
     expectAutoPreview(1);
   });
+
+  it('explicitly previews and overwrites a manual selection as AUTO', async () => {
+    const state = ambiguousState();
+    state.overrides = [{
+      skuCode: 'SKU1', supplier: 'Дорогой', source: 'MANUAL', updatedAt: '2026-01-01',
+    }];
+    const set = vi.fn();
+    renderWithStore(<SuppliersPage />, state, set);
+
+    expectAutoPreview(1);
+    fireEvent.click(screen.getByRole('checkbox', { name: /перезаписать ручные назначения/i }));
+    expectAutoPreview(2);
+    expect(screen.getByRole('checkbox', { name: /выбрать SKU1/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /применить автовыбор/i }));
+
+    await waitFor(() => expect(mocks.saveSupplierOverrides).toHaveBeenCalled());
+    expect(mocks.saveSupplierOverrides).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ skuCode: 'SKU1', supplier: 'Дешёвый', source: 'AUTO' }),
+      ]),
+    );
+  });
+
+  it('keeps overwrite choice and compact summary visible across collapse', () => {
+    const state = ambiguousState();
+    state.overrides = [{
+      skuCode: 'SKU1', supplier: 'Дорогой', source: 'MANUAL', updatedAt: '2026-01-01',
+    }];
+    renderWithStore(<SuppliersPage />, state);
+    const overwrite = screen.getByRole('checkbox', { name: /перезаписать ручные назначения/i });
+    fireEvent.click(overwrite);
+    fireEvent.click(screen.getByRole('button', { name: /свернуть.*требуют решения/i }));
+    expect(screen.getByRole('heading', { name: /требуют решения · 1 позиций/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /развернуть.*требуют решения/i }));
+    expect(screen.getByRole('checkbox', { name: /перезаписать ручные назначения/i })).toBeChecked();
+  });
 });

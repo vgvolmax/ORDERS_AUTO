@@ -40,7 +40,9 @@ export function SupplierOrdersDrawer({
     () => buildMatrixModel(orders, branchOrder),
     [orders, branchOrder],
   );
-  const reviewedCount = orders.filter((order) => order.reviewed).length;
+  const reviewedCount = orders.filter(
+    (order) => order.reviewed && !hasHardBlocker(order),
+  ).length;
   const supplierTotal = completeOrderTotal(orders);
 
   return (
@@ -62,7 +64,9 @@ export function SupplierOrdersDrawer({
               <span>{orders.length} подразделений</span>
               <span>{model.rows.length} SKU</span>
               <span>
-                ✓ {reviewedCount} из {orders.length} проверено
+                {reviewedCount === orders.length
+                  ? `✓ Все ${orders.length} заказов проверены`
+                  : `✓ ${reviewedCount} из ${orders.length} проверено`}
               </span>
             </div>
           </div>
@@ -107,7 +111,10 @@ export function SupplierOrdersDrawer({
                 {model.branches.map((branch) => {
                   const order = model.orderByBranch.get(branch)!;
                   return (
-                    <th key={branch} className="supplier-branch-column">
+                    <th
+                      key={branch}
+                      className={`supplier-branch-column ${order.reviewed && !hasHardBlocker(order) ? 'is-reviewed' : ''} ${hasHardBlocker(order) ? 'has-blocker' : ''}`}
+                    >
                       <div className="supplier-branch-head">
                         <strong>{branch}</strong>
                         <span>
