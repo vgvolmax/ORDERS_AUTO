@@ -8,9 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 jobs:
   verify:
@@ -32,87 +30,10 @@ jobs:
         run: npm run typecheck
 
       - name: Tests
-        shell: bash
-        run: |
-          set -o pipefail
-          npm test -- --run 2>&1 | tee test-output.txt
-
-      - name: Publish test diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ORDERS_AUTO-test-output
-          path: test-output.txt
-          if-no-files-found: warn
-          retention-days: 1
-
-      - name: Comment failing test diagnostics
-        if: failure() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          {
-            echo '### Temporary CI test diagnostics'
-            echo
-            echo '```text'
-            tail -n 220 test-output.txt
-            echo '```'
-          } > test-comment.md
-          gh pr comment "$PR_NUMBER" --body-file test-comment.md
+        run: npm test -- --run
 
       - name: Build root ORDERS_AUTO.html
         run: npm run build
-
-      - name: Refresh stale root artifact on PR branch
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_REF: ${{ github.head_ref }}
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        shell: bash
-        run: |
-          if git diff --quiet -- ORDERS_AUTO.html; then
-            echo 'Committed root artifact is already current.'
-            exit 0
-          fi
-
-          REMOTE_HEAD_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$HEAD_REF" --jq '.object.sha')
-          if [ "$REMOTE_HEAD_SHA" != "$EXPECTED_HEAD_SHA" ]; then
-            echo "Branch advanced during build: expected $EXPECTED_HEAD_SHA, got $REMOTE_HEAD_SHA" >&2
-            exit 1
-          fi
-
-          REMOTE_FILE_SHA=$(gh api "repos/$GITHUB_REPOSITORY/contents/ORDERS_AUTO.html?ref=$HEAD_REF" --jq '.sha')
-          export REMOTE_FILE_SHA
-          python - <<'PY'
-          import base64
-          import json
-          import os
-
-          with open('ORDERS_AUTO.html', 'rb') as source:
-              encoded = base64.b64encode(source.read()).decode('ascii')
-
-          payload = {
-              'message': 'build: refresh ORDERS_AUTO artifact',
-              'content': encoded,
-              'sha': os.environ['REMOTE_FILE_SHA'],
-              'branch': os.environ['HEAD_REF'],
-          }
-          with open('artifact-update.json', 'w', encoding='utf-8') as target:
-              json.dump(payload, target)
-          PY
-
-          LOCAL_BLOB_SHA=$(git hash-object ORDERS_AUTO.html)
-          UPDATED_FILE_SHA=$(gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/ORDERS_AUTO.html" --input artifact-update.json --jq '.content.sha')
-          if [ "$UPDATED_FILE_SHA" != "$LOCAL_BLOB_SHA" ]; then
-            echo "Uploaded artifact hash mismatch: local $LOCAL_BLOB_SHA, remote $UPDATED_FILE_SHA" >&2
-            exit 1
-          fi
-
-          git add ORDERS_AUTO.html
-          echo "Published refreshed ORDERS_AUTO.html ($UPDATED_FILE_SHA)."
 
       - name: Verify committed root artifact is current
         run: git diff --exit-code -- ORDERS_AUTO.html
