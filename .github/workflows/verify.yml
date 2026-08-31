@@ -30,7 +30,19 @@ jobs:
         run: npm run typecheck
 
       - name: Tests
-        run: npm test -- --run
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test -- --run 2>&1 | tee test-output.txt
+
+      - name: Publish test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORDERS_AUTO-test-output
+          path: test-output.txt
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Build root ORDERS_AUTO.html
         run: npm run build
