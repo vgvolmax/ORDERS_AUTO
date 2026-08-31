@@ -44,6 +44,8 @@ export function ImportPage() {
           minMax: result.fatal ? null : result.data,
           minMaxFileName: file.name,
           minMaxIssues: result.issues,
+          reviewedOrderIds: [],
+          exportedOrderIds: [],
           toast: result.fatal
             ? 'Отчёт MIN/MAX не принят — исправьте ошибку файла.'
             : 'Отчёт MIN/MAX успешно распознан.',
@@ -54,6 +56,8 @@ export function ImportPage() {
           suppliers: result.fatal ? null : result.data,
           supplierFileName: file.name,
           supplierIssues: result.issues,
+          reviewedOrderIds: [],
+          exportedOrderIds: [],
           toast: result.fatal
             ? 'Отчёт поставщиков не принят — исправьте ошибку файла.'
             : 'Отчёт поставщиков успешно распознан.',
@@ -71,6 +75,8 @@ export function ImportPage() {
               message: 'Не удалось прочитать файл MIN/MAX.',
             },
           ],
+          reviewedOrderIds: [],
+          exportedOrderIds: [],
         });
       } else {
         set({
@@ -83,6 +89,8 @@ export function ImportPage() {
               message: 'Не удалось прочитать файл поставщиков.',
             },
           ],
+          reviewedOrderIds: [],
+          exportedOrderIds: [],
         });
       }
     } finally {

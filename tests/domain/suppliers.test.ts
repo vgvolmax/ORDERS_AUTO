@@ -39,13 +39,33 @@ describe('resolveSuppliers', () => {
     expect(single.find((item) => item.skuCode === 'SKU2')?.status).toBe('UNRESOLVED');
   });
 
-  it('applies a valid override and marks a stale override', () => {
-    const valid = resolveSuppliers(
+  it('distinguishes manual, automatic and stale persisted overrides', () => {
+    const manual = resolveSuppliers(
       history,
       [{ skuCode: 'SKU1', supplier: 'Б', updatedAt: '2026-08-28T00:00:00Z' }],
       ['SKU1'],
     )[0];
-    expect(valid).toMatchObject({ status: 'MANUAL_SELECTED', selectedSupplier: 'Б' });
+    expect(manual).toMatchObject({
+      status: 'MANUAL_SELECTED',
+      selectedSupplier: 'Б',
+    });
+
+    const automatic = resolveSuppliers(
+      history,
+      [
+        {
+          skuCode: 'SKU1',
+          supplier: 'Б',
+          source: 'AUTO',
+          updatedAt: '2026-08-28T00:00:00Z',
+        },
+      ],
+      ['SKU1'],
+    )[0];
+    expect(automatic).toMatchObject({
+      status: 'AUTO_SELECTED',
+      selectedSupplier: 'Б',
+    });
 
     const stale = resolveSuppliers(
       history,

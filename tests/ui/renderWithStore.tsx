@@ -51,6 +51,7 @@ export function baseState(overrides: Partial<AppState> = {}): AppState {
     overrides: [],
     edits: [],
     settings: { minimumOrderAmount: 0, thresholdMode: 'SUPPLIER_TOTAL' },
+    reviewedOrderIds: [],
     exportedOrderIds: [],
     page: 'all',
     toast: null,
