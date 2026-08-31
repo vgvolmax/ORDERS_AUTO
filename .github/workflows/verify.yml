@@ -35,11 +35,18 @@ jobs:
       - name: Build root ORDERS_AUTO.html
         run: npm run build
 
-      - name: Verify committed root artifact is current
-        run: git diff --exit-code -- ORDERS_AUTO.html
+      - name: Verify byte-reproducible production build
+        run: |
+          cp ORDERS_AUTO.html "$RUNNER_TEMP/ORDERS_AUTO.first.html"
+          npm run build
+          cmp "$RUNNER_TEMP/ORDERS_AUTO.first.html" ORDERS_AUTO.html
+          sha256sum "$RUNNER_TEMP/ORDERS_AUTO.first.html" ORDERS_AUTO.html
 
       - name: Chrome file protocol smoke
         run: npm run test:e2e
+
+      - name: Verify committed root artifact is current
+        run: git diff --exit-code -- ORDERS_AUTO.html
 
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
