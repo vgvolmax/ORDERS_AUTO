@@ -53,6 +53,7 @@ export function SuppliersPage() {
   const [autoStrategy, setAutoStrategy] =
     useState<SupplierAutoStrategy>('MIN_PRICE');
   const [autoScope, setAutoScope] = useState<SupplierAutoScope>('ALL');
+  const [overwriteManual, setOverwriteManual] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const neededSkuCodes = useMemo(
@@ -73,17 +74,30 @@ export function SuppliersPage() {
       ),
   );
 
+  const operationPool = derived.resolutions.filter(
+    (resolution) =>
+      neededSkuCodes.has(resolution.skuCode) &&
+      (problems.includes(resolution) || resolution.status === 'MANUAL_SELECTED'),
+  );
+  const problemSkuCodes = new Set(problems.map((problem) => problem.skuCode));
+  const problemDemand = derived.demand.filter(
+    (line) => problemSkuCodes.has(line.skuCode) && line.deficitQty > 0,
+  );
+  const problemAmount = problemDemand.some((line) => line.demandAmount == null)
+    ? null
+    : problemDemand.reduce((sum, line) => sum + (line.demandAmount ?? 0), 0);
+
   const autoOverrides = useMemo(
     () =>
       buildAutoSupplierOverrides({
-        resolutions: problems,
+        resolutions: operationPool,
         currentOverrides: state.overrides,
         selectedSkuCodes,
         scope: autoScope,
         strategy: autoStrategy,
-        overwriteManual: false,
+        overwriteManual,
       }),
-    [problems, state.overrides, selectedSkuCodes, autoScope, autoStrategy],
+    [operationPool, state.overrides, selectedSkuCodes, autoScope, autoStrategy, overwriteManual],
   );
 
   const summaries = buildSupplierSummaries(
@@ -204,6 +218,8 @@ export function SuppliersPage() {
       {problems.length > 0 && (
         <SupplierDecisions
           problems={problems}
+          operationPool={operationPool}
+          problemAmount={problemAmount}
           open={decisionsOpen}
           onOpenChange={setDecisionsOpen}
           selectedSkuCodes={selectedSkuCodes}
@@ -212,6 +228,8 @@ export function SuppliersPage() {
           onStrategyChange={setAutoStrategy}
           scope={autoScope}
           onScopeChange={setAutoScope}
+          overwriteManual={overwriteManual}
+          onOverwriteManualChange={setOverwriteManual}
           previewCount={autoOverrides.length}
           bulkBusy={bulkBusy}
           onApplyAutomation={applyAutomation}
@@ -300,6 +318,8 @@ export function SuppliersPage() {
 
 function SupplierDecisions({
   problems,
+  operationPool,
+  problemAmount,
   open,
   onOpenChange,
   selectedSkuCodes,
@@ -308,12 +328,16 @@ function SupplierDecisions({
   onStrategyChange,
   scope,
   onScopeChange,
+  overwriteManual,
+  onOverwriteManualChange,
   previewCount,
   bulkBusy,
   onApplyAutomation,
   onChoose,
 }: {
   problems: SupplierResolution[];
+  operationPool: SupplierResolution[];
+  problemAmount: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   selectedSkuCodes: Set<string>;
@@ -322,14 +346,17 @@ function SupplierDecisions({
   onStrategyChange: (strategy: SupplierAutoStrategy) => void;
   scope: SupplierAutoScope;
   onScopeChange: (scope: SupplierAutoScope) => void;
+  overwriteManual: boolean;
+  onOverwriteManualChange: (overwrite: boolean) => void;
   previewCount: number;
   bulkBusy: boolean;
   onApplyAutomation: () => void;
   onChoose: (resolution: SupplierResolution, supplier: string) => void;
 }) {
+  const displayedProblems = overwriteManual ? operationPool : problems;
   const allSelected =
-    problems.length > 0 &&
-    problems.every((problem) => selectedSkuCodes.has(problem.skuCode));
+    displayedProblems.length > 0 &&
+    displayedProblems.every((problem) => selectedSkuCodes.has(problem.skuCode));
 
   function toggleOne(skuCode: string, checked: boolean): void {
     const next = new Set(selectedSkuCodes);
@@ -343,7 +370,9 @@ function SupplierDecisions({
 
   function toggleAll(checked: boolean): void {
     onSelectedSkuCodesChange(
-      checked ? new Set(problems.map((problem) => problem.skuCode)) : new Set(),
+      checked
+        ? new Set(displayedProblems.map((problem) => problem.skuCode))
+        : new Set(),
     );
   }
 
@@ -351,7 +380,10 @@ function SupplierDecisions({
     <section className="panel supplier-decisions-panel">
       <div className="decision-panel-head">
         <div>
-          <h2>Требуют решения · {problems.length}</h2>
+          <h2>
+            Требуют решения · {problems.length} позиций ·{' '}
+            {problemAmount == null ? 'сумма неизвестна' : money(problemAmount)}
+          </h2>
           <p>
             Эти позиции не попадут ни в один заказ, пока поставщик не будет
             разрешён.
@@ -385,6 +417,16 @@ function SupplierDecisions({
               >
                 <option value="MIN_PRICE">Минимальная цена</option>
               </Select>
+            </label>
+            <label className="checkbox-control overwrite-manual-control">
+              <input
+                type="checkbox"
+                checked={overwriteManual}
+                onChange={(event) =>
+                  onOverwriteManualChange(event.target.checked)
+                }
+              />
+              Перезаписать ручные назначения
             </label>
             <label>
               Область применения
@@ -425,7 +467,7 @@ function SupplierDecisions({
           </div>
 
           <div className="decision-list">
-            {problems.map((resolution) => (
+            {displayedProblems.map((resolution) => (
               <div className="decision" key={resolution.skuCode}>
                 <label className="decision-check">
                   <input

@@ -32,6 +32,10 @@ export function applyOrderQtyChange({
     throw new Error(`Позиция ${skuCode} отсутствует в заказе ${order.id}`);
   }
 
+  if (qty === line.orderQty) {
+    return { edits, reviewedOrderIds, exportedOrderIds };
+  }
+
   const withoutCurrentEdit = edits.filter(
     (edit) => edit.skuCode !== skuCode || edit.branch !== order.branch,
   );

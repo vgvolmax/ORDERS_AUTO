@@ -2,9 +2,38 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ImportPage } from '../../src/features/import/ImportPage';
 import { buildSupplierFixture } from '../fixtures/workbookBuilders';
+import { buildMinMaxFixture } from '../fixtures/workbookBuilders';
 import { baseState, renderWithStore } from './renderWithStore';
 
 describe('report import review invalidation', () => {
+  it('clears checked and exported order markers when a MIN/MAX report is replaced', async () => {
+    const set = vi.fn();
+    renderWithStore(
+      <ImportPage />,
+      baseState({
+        reviewedOrderIds: ['Ленина\0Поставщик А'],
+        exportedOrderIds: ['Ленина\0Поставщик А'],
+      }),
+      set,
+    );
+
+    fireEvent.change(screen.getByLabelText('Выбрать файл Отчёт MIN/MAX'), {
+      target: {
+        files: [
+          new File([buildMinMaxFixture()], 'Min-Max.xlsx', {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        ],
+      },
+    });
+
+    await waitFor(() =>
+      expect(set).toHaveBeenCalledWith(
+        expect.objectContaining({ reviewedOrderIds: [], exportedOrderIds: [] }),
+      ),
+    );
+  });
+
   it('clears checked and exported order markers when a supplier report is replaced', async () => {
     const set = vi.fn();
     renderWithStore(

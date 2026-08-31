@@ -62,11 +62,21 @@ const orders: Order[] = [
       },
     ],
   },
+  {
+    id: 'Щурово\0Поставщик', branch: 'Щурово', supplier: 'Поставщик',
+    totalQty: 5, totalAmount: 500, belowThreshold: false, status: 'READY', blockers: [],
+    lines: [{
+      skuCode: 'SKU1', article: 'A-1', name: 'Товар', branch: 'Щурово', supplier: 'Поставщик',
+      calculatedQty: 5, orderQty: 5, unit: 'шт', unitPrice: 100,
+      priceSource: 'SUPPLIER_HISTORY', amount: 500, warnings: [], stock: 0, min: 2, max: 5,
+    }],
+  },
 ];
 
 describe('buildSupplierWorkbook', () => {
   it('creates dashboard KPIs, aggregated SKU row and branch sheets', async () => {
-    const buffer = await buildSupplierWorkbook('Поставщик', orders);
+    const reviewedSubset = orders.slice(0, 2);
+    const buffer = await buildSupplierWorkbook('Поставщик', reviewedSubset);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
 
@@ -75,6 +85,7 @@ describe('buildSupplierWorkbook', () => {
       'Ленина',
       'Ступино',
     ]);
+    expect(workbook.getWorksheet('Щурово')).toBeUndefined();
 
     const dashboard = workbook.getWorksheet('Общий заказ')!;
     expect(dashboard.getCell('A1').value).toBe('Поставщик');

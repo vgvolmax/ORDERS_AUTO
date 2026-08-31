@@ -81,6 +81,26 @@ describe('order review lifecycle', () => {
     expect(result.exportedOrderIds).toEqual([]);
   });
 
+  it('preserves edits, review and export markers when quantity is unchanged', () => {
+    const edits = [{ skuCode: 'SKU1', branch: 'Ленина', qty: 12 }];
+    const reviewedOrderIds = ['Ленина\0Поставщик', 'Другой'];
+    const exportedOrderIds = ['Ленина\0Поставщик', 'Другой'];
+    const result = applyOrderQtyChange({
+      edits,
+      reviewedOrderIds,
+      exportedOrderIds,
+      order: order({
+        lines: [{ ...order().lines[0]!, orderQty: 12, amount: 1200 }],
+      }),
+      skuCode: 'SKU1',
+      qty: 12,
+    });
+
+    expect(result.edits).toBe(edits);
+    expect(result.reviewedOrderIds).toBe(reviewedOrderIds);
+    expect(result.exportedOrderIds).toBe(exportedOrderIds);
+  });
+
   it('counts only current effective line differences as manual edits', () => {
     const changed = order({
       lines: [
