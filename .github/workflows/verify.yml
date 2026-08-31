@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   verify:
@@ -43,6 +45,22 @@ jobs:
           path: test-output.txt
           if-no-files-found: warn
           retention-days: 1
+
+      - name: Comment failing test diagnostics
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '### Temporary CI test diagnostics'
+            echo
+            echo '```text'
+            tail -n 220 test-output.txt
+            echo '```'
+          } > test-comment.md
+          gh pr comment "$PR_NUMBER" --body-file test-comment.md
 
       - name: Build root ORDERS_AUTO.html
         run: npm run build
