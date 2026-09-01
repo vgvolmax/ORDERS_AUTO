@@ -54,9 +54,10 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Publish production package
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: ORDERS_AUTO-production
+          name: ORDERS_AUTO
           path: dist/ORDERS_AUTO
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
