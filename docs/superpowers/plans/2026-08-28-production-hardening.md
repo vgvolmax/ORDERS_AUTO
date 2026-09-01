@@ -1,5 +1,7 @@
 # Production Hardening Implementation Plan
 
+> **SUPERSEDED for production packaging by the 2026-09-01 deployment contract.** Требования ниже о standalone/single self-contained HTML и проверке единственного файла сохранены как история выполненного плана и больше не нормативны. Актуальный deployment contract: `docs/product/SPEC.md` и `docs/architecture/ARCHITECTURE.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make ORDERS_AUTO safe and predictable for pilot/production handoff when launched as a standalone HTML file.

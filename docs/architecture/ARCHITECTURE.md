@@ -2,12 +2,13 @@
 
 ## 1. Deployment model
 
-Runtime полностью локальный. Production artifact: один `dist/index.html`.
+**ORDERS_AUTO — автономное локальное статическое приложение, поставляемое как папка/архив. Пользовательская точка входа — `index.html`, который должен запускаться напрямую через `file://` в актуальном Chrome/Edge без web server и доступа в интернет. Количество файлов внутри production-пакета не ограничено. Все runtime-ресурсы должны находиться внутри пакета и подключаться переносимыми относительными путями.**
+
+Production artifact — автономная статическая папка приложения. Точная структура `assets/` и количество JS/CSS/прочих файлов не являются архитектурным контрактом.
 
 Рекомендуемый stack:
 
 - React + TypeScript + Vite;
-- `vite-plugin-singlefile` — inline JS/CSS в один HTML;
 - `xlsx` (SheetJS CE) — чтение `.xls` и `.xlsx` в браузере;
 - `exceljs` — формирование оформленного `.xlsx` поставщику;
 - `jszip` — пакетная выгрузка CSV;
@@ -15,7 +16,7 @@ Runtime полностью локальный. Production artifact: один `di
 - `@tanstack/react-table` + `@tanstack/react-virtual` — большие таблицы;
 - Vitest + React Testing Library + jsdom — тесты.
 
-Не использовать backend, server-side rendering, Electron и локальную БД.
+Не использовать backend, server-side rendering, Electron, локальный web server и локальную БД. Runtime HTTP/HTTPS requests, CDN, внешние API, telemetry и analytics запрещены. Пользовательский компьютер не требует Node.js/npm/Python или установки зависимостей.
 
 ## 2. Source layout
 
@@ -136,15 +137,19 @@ buildOrders(demand: DemandLine[], resolutions: SupplierResolution[], edits: Orde
 - избегать вложенного `Array.find` в циклах по всем строкам;
 - Web Worker в MVP не нужен.
 
-## 7. Single-file build
+## 7. Offline static build
 
-`vite.config.ts` должен использовать относительную base и single-file plugin. Build acceptance:
+Build acceptance:
 
-- в `dist/` один `index.html`;
-- HTML не ссылается на внешние JS/CSS assets;
-- нет runtime `fetch` к сети;
-- файл открывается через `file://` в Chrome/Edge;
-- file inputs, IndexedDB и downloads работают из локального файла.
+- build создаёт автономную production-папку с `index.html`;
+- `index.html` запускается напрямую через `file://` в актуальном Chrome/Edge;
+- все runtime JS/CSS/assets находятся внутри production-папки и подключаются относительными путями;
+- нет runtime HTTP/HTTPS requests, внешних API, CDN, remote fonts/scripts, telemetry или analytics;
+- приложение не требует web server или установленного runtime;
+- копирование или перемещение всей папки не ломает приложение;
+- количество production-файлов не ограничено.
+
+Точная Vite/Rollup packaging-конфигурация будет определена отдельным архитектурным этапом. Не следует inline'ить JS/CSS только ради сокращения количества файлов.
 
 ## 8. Error boundaries
 

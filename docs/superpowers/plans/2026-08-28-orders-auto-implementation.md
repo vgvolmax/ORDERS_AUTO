@@ -1,5 +1,7 @@
 # ORDERS_AUTO Implementation Plan
 
+> **SUPERSEDED for production packaging by the 2026-09-01 deployment contract.** Все шаги и Definition of Done ниже, требующие single-file, `vite-plugin-singlefile`, единственный `dist/index.html`, inline bundle или `assert-single-file`, сохранены как историческая последовательность и больше не являются действующими требованиями. Актуальный контракт: `docs/product/SPEC.md` и `docs/architecture/ARCHITECTURE.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a serverless Russian-language HTML application that converts Min-Max and supplier 1C reports into validated purchase orders grouped by branch and supplier, with CSV/XLSX export.

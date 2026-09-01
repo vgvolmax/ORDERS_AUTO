@@ -1,5 +1,7 @@
 # Supplier Automation and Order Review Workflow Design
 
+> **Architecture amendment — 2026-09-01:** Упоминания ниже о корневом `ORDERS_AUTO.html` и прежнем packaging acceptance имеют статус **SUPERSEDED**. Актуальный deployment contract определён в `docs/product/SPEC.md` и `docs/architecture/ARCHITECTURE.md`; функциональные требования order-review остаются действующими.
+
 ## Status
 
 Approved for implementation on 2026-08-28.

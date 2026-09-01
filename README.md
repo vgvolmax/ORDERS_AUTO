@@ -1,32 +1,41 @@
 # ORDERS_AUTO
 
-## Воспроизводимая production-сборка
-
-Production-сборка поддерживается на Node.js 22 (версия зафиксирована в
-`.nvmrc` и совпадает с GitHub Actions). Устанавливайте зависимости только из
-lockfile и не публикуйте результат из ранее заполненного `node_modules`:
-
-```bash
-nvm use
-npm ci
-npm run build
-```
-
-Команда `build` всегда заново генерирует корневой `ORDERS_AUTO.html`; файл не
-редактируется вручную.
-
-Локальное HTML-приложение для подготовки заказов поставщикам на основании двух отчётов 1С:
+Локальное приложение для подготовки заказов поставщикам на основании двух отчётов 1С:
 
 1. `Min-Max.xlsx` — остатки и нормативы MIN/MAX по подразделениям.
 2. отчёт по поставщикам (`.xls` / `.xlsx`) — исторические поставщики, количество и стоимость закупок по коду номенклатуры.
 
 ## Как запускать приложение
 
-В корне репозитория есть один пользовательский запускаемый файл — **`ORDERS_AUTO.html`**.
+```text
+Скачать ORDERS_AUTO.zip
+↓
+распаковать
+↓
+открыть папку ORDERS_AUTO
+↓
+двойной клик по index.html
+```
 
-Скачайте/распакуйте папку и откройте `ORDERS_AUTO.html` двойным кликом в актуальном Chrome или Edge. Node.js, npm, сервер и GitHub Actions для работы приложения не нужны.
+Пользовательская точка входа — **`ORDERS_AUTO/index.html`**. Она должна открываться напрямую через `file://` в актуальном Chrome или Edge. Для работы приложения не нужны web server, Node.js/npm, Python, установка зависимостей или интернет.
 
-Технический HTML-шаблон Vite находится внутри `src/app.html` и не является пользовательской точкой входа. Корневого `index.html` в репозитории нет.
+Не запускайте отдельные файлы из `assets/` и не вынимайте `index.html` из папки. Всю папку можно целиком копировать или переносить в другое место.
+
+## Воспроизводимая production-сборка
+
+Инструменты разработки используют зафиксированную для проекта версию Node.js и lockfile. Текущие команды сборки будут приведены к новому deployment-контракту на отдельном архитектурном этапе; этот документ не объявляет существующий pipeline уже мигрированным.
+
+Production-пакет имеет следующий общий вид, но точная структура `assets/` не является контрактом:
+
+```text
+ORDERS_AUTO/
+├── index.html
+├── assets/
+│   ├── *.js
+│   ├── *.css
+│   └── другие локальные runtime-файлы
+└── ...
+```
 
 ## JTBD
 
@@ -35,9 +44,8 @@ npm run build
 ## Архитектура
 
 - React + TypeScript + Vite.
-- Полностью client-side: backend, сервер, БД и сетевые запросы в runtime не нужны.
-- `npm run build` собирает один self-contained production HTML и обновляет корневой `ORDERS_AUTO.html`.
-- CI проверяет, что закоммиченный `ORDERS_AUTO.html` совпадает со свежей сборкой, и реально открывает этот корневой файл через `file://` в Chrome.
+- **ORDERS_AUTO — автономное локальное статическое приложение, поставляемое как папка/архив. Пользовательская точка входа — `index.html`, который должен запускаться напрямую через `file://` в актуальном Chrome/Edge без web server и доступа в интернет. Количество файлов внутри production-пакета не ограничено. Все runtime-ресурсы должны находиться внутри пакета и подключаться переносимыми относительными путями.**
+- Runtime HTTP/HTTPS requests, внешние API, CDN, remote fonts/scripts, telemetry и analytics запрещены.
 - Реальные отчёты обрабатываются только локально в браузере.
 - IndexedDB хранит только пользовательские настройки и ручные соответствия `Код 1С → поставщик`; исходные отчёты в репозиторий не коммитятся.
 
@@ -51,9 +59,9 @@ npm run build
 - [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) — техническая архитектура и границы модулей.
 - [`docs/ux/UX_AND_EXPORT.md`](docs/ux/UX_AND_EXPORT.md) — экраны, фильтры, состояния и экспорт.
 - [`docs/testing/ACCEPTANCE_CRITERIA.md`](docs/testing/ACCEPTANCE_CRITERIA.md) — критерии приёмки и контрольные кейсы.
-- [`docs/superpowers/specs/2026-08-28-orders-auto-design.md`](docs/superpowers/specs/2026-08-28-orders-auto-design.md) — утверждённый design spec.
-- [`docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`](docs/superpowers/plans/2026-08-28-orders-auto-implementation.md) — пошаговый implementation plan.
-- [`docs/superpowers/plans/2026-08-28-production-hardening.md`](docs/superpowers/plans/2026-08-28-production-hardening.md) — hardening-план offline/release контура.
+- [`docs/superpowers/specs/2026-08-28-orders-auto-design.md`](docs/superpowers/specs/2026-08-28-orders-auto-design.md) — исторический design spec; прежняя packaging-часть superseded.
+- [`docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`](docs/superpowers/plans/2026-08-28-orders-auto-implementation.md) — исторический implementation plan; прежняя packaging-часть superseded.
+- [`docs/superpowers/plans/2026-08-28-production-hardening.md`](docs/superpowers/plans/2026-08-28-production-hardening.md) — исторический hardening-план; прежняя packaging-часть superseded.
 
 ## Важное о тестовых данных
 
@@ -61,4 +69,4 @@ npm run build
 
 ## Definition of Done
 
-Приложение считается готовым, когда `npm run verify` проходит полностью, `npm run build` обновляет корневой `ORDERS_AUTO.html`, CI подтверждает, что в корне ровно один HTML-файл — `ORDERS_AUTO.html` — и успешно открывает его через `file://` в Chrome, а сценарий `импорт → потребность → поставщики → заказы → CSV/XLSX` проходит на синтетических fixtures и на реальных локальных отчётах без ручного изменения исходных файлов.
+Приложение считается готовым, когда `npm run verify` проходит полностью, production build создаёт переносимую папку `ORDERS_AUTO/`, CI публикует её как ZIP/artifact и offline production package check подтверждает прямой запуск `index.html` через `file://` без сетевых запросов. Сценарий `импорт → потребность → поставщики → заказы → CSV/XLSX` должен проходить на синтетических fixtures и на реальных локальных отчётах без ручного изменения исходных файлов.

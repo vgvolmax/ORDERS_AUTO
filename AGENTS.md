@@ -19,8 +19,11 @@
 ## 2. Неподвижные архитектурные ограничения
 
 - Никакого backend/FastAPI/Express/SQLite.
-- Никаких runtime API-запросов, telemetry или внешних CDN.
-- Production artifact — один локально открываемый HTML-файл.
+- Production artifact — автономная локальная папка `ORDERS_AUTO/`; пользовательская точка входа — `ORDERS_AUTO/index.html`.
+- `index.html` должен запускаться напрямую через `file://` в актуальном Chrome/Edge без локального web server и доступа в интернет.
+- Количество локальных production-файлов не ограничено. Все runtime assets должны находиться внутри production-папки и подключаться переносимыми относительными путями.
+- Никаких runtime API/HTTP/HTTPS-запросов, telemetry, analytics или внешних CDN.
+- На пользовательском ПК не должны требоваться Node.js/npm/Python или установка runtime-зависимостей.
 - Source code остаётся модульным; запрещено превращать исходники в один гигантский `index.html`.
 - TypeScript `strict: true`.
 - Бизнес-расчёты — чистые функции, не React-компоненты.

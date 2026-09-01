@@ -20,12 +20,16 @@
 8. `docs/superpowers/specs/2026-08-28-orders-auto-design.md`
 9. `docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`
 
-После этого исполняй implementation plan последовательно, task-by-task, с TDD и небольшими commits.
+Исторические design specs и plans могут содержать явно помеченные superseded packaging-шаги. Для deployment всегда следуй актуальным `SPEC.md` и `ARCHITECTURE.md`, а не этим старым шагам.
 
 Критические ограничения:
 
-- приложение полностью client-side, backend запрещён;
-- production build должен быть одним самодостаточным `dist/index.html`, открывающимся локально через `file://` в Chrome/Edge;
+- приложение полностью client-side, backend и локальный web server запрещены;
+- production — автономная локальная static-папка/ZIP с `index.html` как пользовательской точкой входа;
+- `index.html` запускается напрямую через `file://` в актуальном Chrome/Edge без интернета;
+- количество production-файлов не ограничено, все runtime dependencies локальны и подключены переносимыми относительными путями;
+- runtime HTTP/HTTPS requests, внешние API, CDN, remote fonts/scripts, telemetry и analytics запрещены;
+- не оптимизировать production под single-file и не inline'ить JS/CSS только ради уменьшения количества файлов;
 - импортировать `.xlsx` Min-Max и `.xls/.xlsx` отчёт поставщиков в браузере;
 - связывать отчёты только по коду 1С;
 - расчёт статусов, MIN/MAX, поставщиков, цен, порогов и заказов реализовать строго по спецификации;
@@ -34,10 +38,10 @@
 - unit/integration tests должны создавать синтетические workbook fixtures программно;
 - интерфейс на русском языке;
 - итоговый workflow: `Импорт → Потребность → Поставщики → Заказы → CSV/XLSX`;
-- перед завершением выполнить `npm run verify` и проверить single-file build.
+- перед завершением выполнить `npm run verify` и offline production package check.
 
 Не останавливайся после scaffolding или отдельных экранов. Цель — законченный MVP по Definition of Done. Если реализация раскрывает неоднозначность, сначала проверь документацию: решение почти наверняка уже зафиксировано. Если требования действительно нет, не придумывай новое продуктовое поведение — зафиксируй конкретный blocker.
 
-В конце дай краткий отчёт: реализованные задачи, результаты `npm run verify`, путь к production HTML и оставшиеся blockers (если есть).
+В конце дай краткий отчёт: реализованные задачи, результаты `npm run verify`, путь к production folder, entry `index.html`, production ZIP и оставшиеся blockers (если есть).
 
 ---

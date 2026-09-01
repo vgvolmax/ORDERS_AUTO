@@ -1,5 +1,7 @@
 # ORDERS_AUTO Design Specification
 
+> **Architecture amendment — 2026-09-01:** Ограничение single-file production отменено. Актуальный deployment contract определён в `docs/product/SPEC.md` и `docs/architecture/ARCHITECTURE.md`: production является автономной static-папкой с `index.html` как `file://` entry point, а количество локальных файлов не ограничено. Все относящиеся к прежней packaging-модели пункты ниже имеют статус **SUPERSEDED** и сохранены только как история решения.
+
 **Date:** 2026-08-28  
 **Status:** Approved basis for implementation  
 **Primary JTBD:** Из двух отчётов 1С получить готовые заказы `подразделение → поставщик` с контролем MIN/MAX, минимальной суммы закупки и экспортом CSV/XLSX.
@@ -12,7 +14,7 @@
 
 ## 2. Approaches considered
 
-### A. Client-only modular SPA + single-file production build — выбран
+### A. Client-only modular SPA + single-file production build — выбран исторически; SUPERSEDED в части packaging
 
 Исходники React/TypeScript, runtime полностью в браузере, итоговый artifact — один HTML.
 
@@ -26,7 +28,7 @@
 
 Плюсы: multi-user и централизованная история. Минусы: авторизация, hosting, безопасность данных, эксплуатация. Не соответствует текущим требованиям.
 
-## 3. Architectural decision
+## 3. Architectural decision — SUPERSEDED в части packaging
 
 Использовать вариант A. Development идёт как нормальный Vite-проект, но production собирается `vite-plugin-singlefile` в один `dist/index.html`. Сервер не является частью продукта.
 

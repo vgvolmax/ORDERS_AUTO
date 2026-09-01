@@ -1,5 +1,7 @@
 # Supplier Automation and Order Review Workflow Implementation Plan
 
+> **SUPERSEDED for production packaging by the 2026-09-01 deployment contract.** Упоминания ниже о Vite single-file build, корневом `ORDERS_AUTO.html`, freshness equality и соответствующих smoke/CI шагах сохранены только как история плана. Актуальный контракт: `docs/product/SPEC.md` и `docs/architecture/ARCHITECTURE.md`; остальные workflow-требования этим уточнением не отменяются.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add bulk supplier auto-selection, checked-order workflow, supplier-wide SKU × branch review matrix, manual-edit status, and checked-only exports without changing existing purchasing calculations.

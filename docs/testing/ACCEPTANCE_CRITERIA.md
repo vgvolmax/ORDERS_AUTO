@@ -8,10 +8,10 @@
 typecheck
 unit/integration tests
 production build
-single-file artifact check
+offline production package check
 ```
 
-Дополнительно CI обязан открыть корневой `ORDERS_AUTO.html` через `file://` в Chrome и подтвердить отсутствие page/console errors.
+Дополнительно CI обязан открыть production `ORDERS_AUTO/index.html` через `file://` в Chrome и подтвердить отсутствие page/console errors и runtime HTTP/HTTPS requests.
 
 ## 2. Parser tests — Min-Max
 
@@ -130,12 +130,18 @@ Fixtures генерировать программно в `tests/fixtures/workbo
 
 ## 12. Packaging acceptance
 
-- в корне репозитория нет `index.html`;
-- технический шаблон находится в `src/app.html`;
-- единственный пользовательский HTML в корне — `ORDERS_AUTO.html`;
-- `npm run build` обновляет `ORDERS_AUTO.html`;
-- CI проверяет, что закоммиченный `ORDERS_AUTO.html` идентичен свежей сборке;
-- artifact и GitHub Release публикуют тот же корневой файл без копирования из `dist`.
+**ORDERS_AUTO — автономное локальное статическое приложение, поставляемое как папка/архив. Пользовательская точка входа — `index.html`, который должен запускаться напрямую через `file://` в актуальном Chrome/Edge без web server и доступа в интернет. Количество файлов внутри production-пакета не ограничено. Все runtime-ресурсы должны находиться внутри пакета и подключаться переносимыми относительными путями.**
+
+- production build создаёт автономную папку `ORDERS_AUTO/`;
+- пользовательская точка входа — `ORDERS_AUTO/index.html`;
+- количество файлов внутри папки не ограничено;
+- все runtime assets находятся внутри этой папки, а runtime paths относительные;
+- прямое открытие `index.html` через `file://` работает в актуальном Chrome/Edge;
+- приложение работает в offline browser context без HTTP/HTTPS runtime requests;
+- CDN, remote fonts/scripts, внешние API, telemetry и analytics отсутствуют;
+- для запуска не требуется Node.js/npm/Python, установка зависимостей или web server;
+- копирование production-папки в другой filesystem path не ломает приложение;
+- CI публикует production-папку как ZIP/artifact.
 
 ## 13. Manual smoke on real local reports
 
@@ -146,7 +152,7 @@ Fixtures генерировать программно в `tests/fixtures/workbo
 - join выполняется по коду;
 - unresolved/multiple suppliers видимы, а не потеряны;
 - суммы в нескольких случайных SKU вручную совпадают с `MAX-stock`;
-- корневой `ORDERS_AUTO.html` работает при двойном клике без dev server.
+- production `ORDERS_AUTO/index.html` работает при двойном клике через `file://` без web server и интернета.
 
 Результаты real-data smoke не должны коммитить содержимое или строки реальных отчётов.
 
