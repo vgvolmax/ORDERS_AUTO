@@ -61,3 +61,97 @@ jobs:
           path: dist/ORDERS_AUTO
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download verified production package
+        uses: actions/download-artifact@v4
+        with:
+          name: ORDERS_AUTO
+          path: release-package
+
+      - name: Create release archive
+        run: |
+          cd release-package
+          zip -r ../ORDERS_AUTO.zip .
+
+      - name: Validate release archive
+        run: |
+          set -euo pipefail
+          unzip -Z1 ORDERS_AUTO.zip | tee "$RUNNER_TEMP/release-archive-contents.txt"
+
+          archive_has() {
+            grep -Fxq "$1" "$RUNNER_TEMP/release-archive-contents.txt"
+          }
+
+          for required_path in index.html assets/app.js assets/app.css; do
+            if ! archive_has "$required_path"; then
+              echo "Missing required release file: $required_path" >&2
+              exit 1
+            fi
+          done
+
+          if grep -Eq '(^|/)(dist|src|tests|node_modules|ORDERS_AUTO)/|(^|/)package\.json$|\.zip$' \
+            "$RUNNER_TEMP/release-archive-contents.txt"; then
+            echo "Release archive contains a forbidden path" >&2
+            exit 1
+          fi
+
+      - name: Update latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          current_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$current_main_sha" != "$GITHUB_SHA" ]; then
+            echo "Skip release: newer main commit already exists."
+            exit 0
+          fi
+
+          short_sha="${GITHUB_SHA::7}"
+          updated_at="$(date -u +'%Y-%m-%d %H:%M UTC')"
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          **СКАЧИВАТЬ: ORDERS_AUTO.zip**
+
+          Готовая офлайн-версия ORDERS_AUTO.
+
+          1. Скачайте ORDERS_AUTO.zip.
+          2. Распакуйте архив.
+          3. Откройте index.html двойным кликом.
+
+          Node.js, npm и локальный сервер не нужны.
+
+          Не используйте автоматически созданные GitHub **Source code (zip)** / **Source code (tar.gz)** — это исходники проекта.
+
+          Сборка: \`${short_sha}\`
+          Обновлено: ${updated_at}
+          EOF
+
+          if gh api --silent "repos/${GITHUB_REPOSITORY}/git/ref/tags/latest"; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" \
+              -f sha="$GITHUB_SHA" \
+              -F force=true
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref='refs/tags/latest' \
+              -f sha="$GITHUB_SHA"
+          fi
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest ORDERS_AUTO.zip --clobber
+            gh release edit latest \
+              --title 'ORDERS_AUTO — последняя версия' \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release create latest ORDERS_AUTO.zip \
+              --title 'ORDERS_AUTO — последняя версия' \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
