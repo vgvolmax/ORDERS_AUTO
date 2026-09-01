@@ -39,9 +39,46 @@ describe('OrdersPage', () => {
     mocks.buildSupplierWorkbook.mockResolvedValue(new ArrayBuffer(8));
   });
 
-  it('shows a supplier-total column in the order matrix', () => {
+  it('moves supplier totals into the sticky supplier card', () => {
     renderWithStore(<OrdersPage />, baseState());
-    expect(screen.getByText('Итого поставщику')).toBeInTheDocument();
+    expect(screen.queryByText('Итого поставщику')).not.toBeInTheDocument();
+    const card = screen.getByRole('button', { name: /все заказы поставщик а/i });
+    expect(card).toHaveTextContent('1 100,00 ₽');
+    expect(card).toHaveTextContent('2 подразделения · 1 SKU · 11 ед.');
+  });
+
+  it('opens the complete supplier-wide order set from the accessible supplier card', () => {
+    render(<StatefulOrders initial={baseState({ settings: { minimumOrderAmount: 500, thresholdMode: 'BRANCH_SUPPLIER' } })} />);
+
+    expect(screen.getByText('Скрыто порогом: 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /все заказы поставщик а/i }));
+    const dialog = screen.getByRole('dialog', { name: /все заказы поставщик а/i });
+    expect(within(dialog).getByText('Ленина')).toBeInTheDocument();
+    expect(within(dialog).getByText('Ступино')).toBeInTheDocument();
+  });
+
+  it('keeps review and export state on a no-op quantity edit', () => {
+    const set = vi.fn();
+    renderWithStore(
+      <OrdersPage />,
+      baseState({
+        reviewedOrderIds: ['Ленина\0Поставщик А'],
+        exportedOrderIds: ['Ленина\0Поставщик А'],
+      }),
+      set,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /проверен.*700,00/i }));
+    const input = screen.getByLabelText('Количество SKU1');
+    fireEvent.change(input, { target: { value: '7.0' } });
+
+    expect(set).toHaveBeenCalledWith({ toast: 'Количество не изменилось.' });
+    expect(set).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reviewedOrderIds: expect.anything() }),
+    );
+    expect(set).not.toHaveBeenCalledWith(
+      expect.objectContaining({ exportedOrderIds: expect.anything() }),
+    );
   });
 
   it('reports ZIP generation failures instead of leaving an unhandled rejection', async () => {
@@ -168,5 +205,22 @@ describe('OrdersPage', () => {
     expect(blockerCard).not.toHaveClass('is-reviewed');
     expect(screen.getByRole('button', { name: /скачать проверенные \(0\)/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /все заказы поставщик а/i })).toHaveClass('has-blocker');
+  });
+
+  it('uses a horizontal status line for reviewed manually edited orders', () => {
+    renderWithStore(
+      <OrdersPage />,
+      baseState({
+        edits: [{ skuCode: 'SKU1', branch: 'Ленина', qty: 8 }],
+        reviewedOrderIds: ['Ленина\0Поставщик А'],
+        exportedOrderIds: ['Ленина\0Поставщик А'],
+      }),
+    );
+
+    const card = screen.getByRole('button', { name: /проверен.*изменено вручную 1/i });
+    expect(card).toHaveClass('reviewed', 'is-reviewed', 'EXPORTED');
+    const statuses = card.querySelector('.order-status-line');
+    expect(statuses).toHaveTextContent('✓');
+    expect(statuses).toHaveTextContent('✋ 1');
   });
 });

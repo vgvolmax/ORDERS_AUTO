@@ -47,6 +47,30 @@ export function OrdersPage() {
     });
   }, [orders, supplierQuery, showBelowThreshold]);
 
+  const ordersBySupplier = useMemo(() => {
+    const index = new Map<string, WorkflowOrder[]>();
+    for (const order of orders) {
+      const supplierOrders = index.get(order.supplier) ?? [];
+      supplierOrders.push(order);
+      index.set(order.supplier, supplierOrders);
+    }
+    return index;
+  }, [orders]);
+  const visibleOrderBySupplierBranch = useMemo(
+    () =>
+      new Map(
+        visibleOrders.map((order) => [
+          `${order.supplier}\0${order.branch}`,
+          order,
+        ]),
+      ),
+    [visibleOrders],
+  );
+  const visibleOrderIds = useMemo(
+    () => new Set(visibleOrders.map((order) => order.id)),
+    [visibleOrders],
+  );
+
   // Global export actions always operate on the application projection. Search
   // and row-visibility controls are presentation filters only.
   const exportable = orders.filter(isExportable);
@@ -57,7 +81,7 @@ export function OrdersPage() {
     ? orders.find((order) => order.id === selectedId) ?? null
     : null;
   const selectedSupplierOrders = selectedSupplier
-    ? orders.filter((order) => order.supplier === selectedSupplier)
+    ? ordersBySupplier.get(selectedSupplier) ?? []
     : [];
 
   const markExported = (ids: string[]) => {
@@ -92,7 +116,7 @@ export function OrdersPage() {
   }
 
   async function excel(supplier: string, mode: ExportMode) {
-    const supplierOrders = visibleOrders.filter(
+    const supplierOrders = orders.filter(
       (order) =>
         order.supplier === supplier &&
         isExportable(order) &&
@@ -131,6 +155,11 @@ export function OrdersPage() {
     qty: number,
   ): void {
     try {
+      const currentLine = order.lines.find((line) => line.skuCode === skuCode);
+      if (currentLine?.orderQty === qty) {
+        set({ toast: 'Количество не изменилось.' });
+        return;
+      }
       const next = applyOrderQtyChange({
         edits: state.edits,
         reviewedOrderIds: state.reviewedOrderIds,
@@ -286,15 +315,12 @@ export function OrdersPage() {
                 {branches.map((branch) => (
                   <th key={branch}>{branch}</th>
                 ))}
-                <th>Итого поставщику</th>
                 <th>Excel</th>
               </tr>
             </thead>
             <tbody>
               {suppliers.map((supplier) => {
-                const allSupplierOrders = orders.filter(
-                  (order) => order.supplier === supplier,
-                );
+                const allSupplierOrders = ordersBySupplier.get(supplier) ?? [];
                 const supplierTotal = summarizeOrders(allSupplierOrders);
                 const reviewedCount = allSupplierOrders.filter(
                   (order) => order.reviewed && !hasHardBlocker(order),
@@ -305,9 +331,9 @@ export function OrdersPage() {
                 );
                 const hidden = allSupplierOrders.filter(
                   (order) =>
-                    !visibleOrders.some((visible) => visible.id === order.id),
+                    !visibleOrderIds.has(order.id),
                 ).length;
-                const supplierExportable = visibleOrders.filter(
+                const supplierExportable = allSupplierOrders.filter(
                   (order) => order.supplier === supplier && isExportable(order),
                 );
                 const supplierReviewedExportable = supplierExportable.filter(
@@ -328,11 +354,39 @@ export function OrdersPage() {
 
                 return (
                   <tr key={supplier}>
-                    <th>{supplier}</th>
+                    <th className="supplier-card-cell">
+                      <button
+                        className={`supplier-card ${supplierReviewed ? 'is-reviewed' : ''} ${supplierHasBlocker ? 'has-blocker' : ''}`}
+                        aria-label={`Все заказы ${supplier}`}
+                        onClick={() => setSelectedSupplier(supplier)}
+                      >
+                        <span className="supplier-name">{supplier}</span>
+                        <strong>
+                          {supplierTotal.amount == null
+                            ? 'Сумма неизвестна'
+                            : money(supplierTotal.amount)}
+                        </strong>
+                        <small>
+                          {allSupplierOrders.length}{' '}
+                          {pluralize(allSupplierOrders.length, ['подразделение', 'подразделения', 'подразделений'])} ·{' '}
+                          {supplierSkuCount} SKU · {fmtQty(supplierTotal.qty)} ед.
+                        </small>
+                        <span className="order-status-line">
+                          <small>
+                            {supplierReviewed
+                              ? `✓ Все ${allSupplierOrders.length} ${pluralize(allSupplierOrders.length, ['заказ проверен', 'заказа проверены', 'заказов проверены'])}`
+                              : `✓ ${reviewedCount} из ${allSupplierOrders.length} проверено`}
+                          </small>
+                          {manualEditCount > 0 && (
+                            <small className="manual-indicator">✋ {manualEditCount}</small>
+                          )}
+                        </span>
+                        {hidden > 0 && <small>Скрыто порогом: {hidden}</small>}
+                      </button>
+                    </th>
                     {branches.map((branch) => {
-                      const order = visibleOrders.find(
-                        (item) =>
-                          item.supplier === supplier && item.branch === branch,
+                      const order = visibleOrderBySupplierBranch.get(
+                        `${supplier}\0${branch}`,
                       );
                       if (!order) {
                         return <td key={branch} />;
@@ -344,7 +398,7 @@ export function OrdersPage() {
                             className={`order-cell ${order.status} ${order.belowThreshold ? 'below-threshold' : ''} ${order.reviewed && !hardBlocked ? 'reviewed is-reviewed' : ''} ${hardBlocked ? 'has-blocker' : ''} ${order.manualEditCount > 0 ? 'manual-edited' : ''}`}
                             onClick={() => setSelectedId(order.id)}
                           >
-                            <span className="order-status-icons">
+                            <span className="order-status-line">
                               {order.reviewed && (
                                 <span aria-label="Проверен" title="Проверен">
                                   ✓
@@ -383,35 +437,6 @@ export function OrdersPage() {
                         </td>
                       );
                     })}
-                    <td className="supplier-total-cell">
-                      <button
-                        className={`supplier-total-button ${supplierReviewed ? 'is-reviewed' : ''} ${supplierHasBlocker ? 'has-blocker' : ''}`}
-                        aria-label={`Все заказы ${supplier}`}
-                        onClick={() => setSelectedSupplier(supplier)}
-                      >
-                        <span className="supplier-name">{supplier}</span>
-                        <strong>
-                          {supplierTotal.amount == null
-                            ? 'Сумма неизвестна'
-                            : money(supplierTotal.amount)}
-                        </strong>
-                        <small>
-                          {allSupplierOrders.length} подразделений ·{' '}
-                          {supplierSkuCount} SKU
-                        </small>
-                        <small>
-                          {supplierReviewed
-                            ? `✓ Все ${allSupplierOrders.length} заказов проверены`
-                            : `✓ ${reviewedCount} из ${allSupplierOrders.length} проверено`}
-                        </small>
-                        {manualEditCount > 0 && (
-                          <small className="manual-indicator">
-                            ✋ {manualEditCount} изменений
-                          </small>
-                        )}
-                        {hidden > 0 && <small>Скрыто порогом: {hidden}</small>}
-                      </button>
-                    </td>
                     <td>
                       <div className="supplier-export-actions">
                         <Button
@@ -496,4 +521,13 @@ function summarizeOrders(orders: WorkflowOrder[]) {
       ? null
       : positiveLines.reduce((sum, line) => sum + (line.amount ?? 0), 0),
   };
+}
+
+function pluralize(count: number, forms: [string, string, string]): string {
+  const modulo100 = count % 100;
+  const modulo10 = count % 10;
+  if (modulo100 >= 11 && modulo100 <= 14) return forms[2];
+  if (modulo10 === 1) return forms[0];
+  if (modulo10 >= 2 && modulo10 <= 4) return forms[1];
+  return forms[2];
 }
