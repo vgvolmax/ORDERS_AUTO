@@ -106,8 +106,15 @@ jobs:
       - name: Update latest release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+
+          current_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$current_main_sha" != "$GITHUB_SHA" ]; then
+            echo "Skip release: newer main commit already exists."
+            exit 0
+          fi
 
           short_sha="${GITHUB_SHA::7}"
           updated_at="$(date -u +'%Y-%m-%d %H:%M UTC')"
