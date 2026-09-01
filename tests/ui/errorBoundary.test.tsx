@@ -16,8 +16,13 @@ describe('AppErrorBoundary', () => {
       </AppErrorBoundary>,
     );
 
-    expect(screen.getByRole('alert')).toHaveTextContent('ORDERS_AUTO не смог продолжить работу');
-    expect(screen.getByText(/перезагрузите файл приложения/i)).toBeInTheDocument();
+    const alert = screen.getByRole('alert');
+
+    expect(alert).toHaveTextContent('ORDERS_AUTO не смог продолжить работу');
+    expect(alert).toHaveTextContent(
+      /скачайте и распакуйте свежую версию ORDERS_AUTO целиком/i,
+    );
+    expect(alert).toHaveTextContent(/index\.html/i);
     errorSpy.mockRestore();
   });
 });
