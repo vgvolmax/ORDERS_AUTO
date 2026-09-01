@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:e2e": "playwright test tests/e2e/offline.spec.ts --project=chrome",
-    "build": "vite build && node scripts/make-file-protocol-safe.mjs && node scripts/publish-root-html.mjs && node scripts/assert-single-file.mjs",
+    "build": "vite build && node scripts/assemble-offline-package.mjs && node scripts/assert-offline-package.mjs",
+    "validate:package": "node scripts/assert-offline-package.mjs",
     "verify": "npm run typecheck && npm test -- --run && npm run build"
   },
   "dependencies": {
@@ -33,7 +34,6 @@
     "jsdom": "^26.1.0",
     "typescript": "^5.9.2",
     "vite": "^7.1.3",
-    "vite-plugin-singlefile": "^2.3.0",
     "vitest": "^3.2.4"
   }
 }

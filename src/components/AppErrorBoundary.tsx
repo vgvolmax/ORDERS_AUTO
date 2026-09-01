@@ -25,8 +25,9 @@ export class AppErrorBoundary extends Component<Props, State> {
         <div className="startup-fallback app-failure" role="alert">
           <strong>ORDERS_AUTO не смог продолжить работу</strong>
           <p>
-            Перезагрузите файл приложения. Если ошибка повторяется, скачайте свежий
-            ORDERS_AUTO.html и сообщите, на каком действии возник сбой.
+            Перезагрузите приложение. Если ошибка повторяется, скачайте и распакуйте
+            свежую версию ORDERS_AUTO целиком, снова откройте index.html и сообщите,
+            на каком действии возник сбой.
           </p>
         </div>
       );

@@ -24,35 +24,40 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Install Chrome for Playwright
+        run: npx playwright install --with-deps chrome
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Tests
         run: npm test -- --run
 
-      - name: Build root ORDERS_AUTO.html
+      - name: Build offline production package
         run: npm run build
+
+      - name: Validate offline production package
+        run: npm run validate:package
 
       - name: Verify byte-reproducible production build
         run: |
-          cp ORDERS_AUTO.html "$RUNNER_TEMP/ORDERS_AUTO.first.html"
+          cp -a dist/ORDERS_AUTO "$RUNNER_TEMP/build1"
           npm run build
-          cmp "$RUNNER_TEMP/ORDERS_AUTO.first.html" ORDERS_AUTO.html
-          sha256sum "$RUNNER_TEMP/ORDERS_AUTO.first.html" ORDERS_AUTO.html
+          diff -qr "$RUNNER_TEMP/build1" dist/ORDERS_AUTO
 
       - name: Chrome file protocol smoke
         run: npm run test:e2e
 
-      - name: Verify committed root artifact is current
-        run: git diff --exit-code -- ORDERS_AUTO.html
-
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Create production archive
+        run: cd dist && zip -r ORDERS_AUTO.zip ORDERS_AUTO
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" ORDERS_AUTO.html \
+          gh release create "$GITHUB_REF_NAME" dist/ORDERS_AUTO.zip \
             --title "ORDERS_AUTO $GITHUB_REF_NAME" \
             --generate-notes

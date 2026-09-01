@@ -1,20 +1,27 @@
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
-import { viteSingleFile } from 'vite-plugin-singlefile';
 
 export default defineConfig({
   base: './',
-  plugins: [react(), viteSingleFile()],
+  plugins: [react()],
   build: {
+    outDir: 'dist/ORDERS_AUTO',
+    emptyOutDir: true,
     sourcemap: false,
     modulePreload: false,
+    copyPublicDir: false,
+    cssCodeSplit: false,
     rollupOptions: {
-      input: resolve(process.cwd(), 'src/app.html'),
-      // `file://` cannot reliably execute native ES modules. Build the single
-      // entry as an IIFE; the postprocessor only changes its opening tag.
+      input: resolve(process.cwd(), 'src/main.tsx'),
       output: {
         format: 'iife',
+        inlineDynamicImports: true,
+        entryFileNames: 'assets/app.js',
+        assetFileNames: (assetInfo) =>
+          assetInfo.names.some((name) => name.endsWith('.css'))
+            ? 'assets/app.css'
+            : 'assets/[name][extname]',
       },
     },
   },

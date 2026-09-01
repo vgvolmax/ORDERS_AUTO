@@ -38,7 +38,9 @@
 - unit/integration tests должны создавать синтетические workbook fixtures программно;
 - интерфейс на русском языке;
 - итоговый workflow: `Импорт → Потребность → Поставщики → Заказы → CSV/XLSX`;
-- перед завершением выполнить `npm run verify` и offline production package check.
+- не создавать корневой `ORDERS_AUTO.html`, не возвращать `vite-plugin-singlefile` и не inline'ить application bundle;
+- production генерировать в `dist/ORDERS_AUTO/` командой `npm run build`;
+- перед завершением выполнить `npm run verify` и `npm run test:e2e`.
 
 Не останавливайся после scaffolding или отдельных экранов. Цель — законченный MVP по Definition of Done. Если реализация раскрывает неоднозначность, сначала проверь документацию: решение почти наверняка уже зафиксировано. Если требования действительно нет, не придумывай новое продуктовое поведение — зафиксируй конкретный blocker.
 

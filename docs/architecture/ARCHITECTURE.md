@@ -149,7 +149,7 @@ Build acceptance:
 - копирование или перемещение всей папки не ломает приложение;
 - количество production-файлов не ограничено.
 
-Точная Vite/Rollup packaging-конфигурация будет определена отдельным архитектурным этапом. Не следует inline'ить JS/CSS только ради сокращения количества файлов.
+`npm run build` компилирует React/TypeScript в classic IIFE bundle, сохраняет JS и CSS отдельными локальными файлами и формирует `dist/ORDERS_AUTO/index.html`. Затем `scripts/assert-offline-package.mjs` проверяет entry, переносимые ссылки и полноту package. Generated `dist/` не коммитится; application bundle нельзя встраивать обратно в HTML.
 
 ## 8. Error boundaries
 

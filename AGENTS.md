@@ -29,6 +29,9 @@
 - Бизнес-расчёты — чистые функции, не React-компоненты.
 - Join двух отчётов выполняется только по `Коду 1С`, никогда по артикулу или названию.
 - Реальные отчёты не коммитить.
+- Не создавать и не коммитить корневой `ORDERS_AUTO.html`.
+- Не возвращать `vite-plugin-singlefile` и не встраивать application bundle в `index.html`.
+- Production генерируется только в `dist/ORDERS_AUTO/` и состоит из `index.html` и локальных assets.
 
 ## 3. TDD и качество
 
@@ -43,7 +46,10 @@ npm run build
 Финально:
 
 ```bash
-npm run verify
+npm run typecheck
+npm test -- --run
+npm run build
+npm run test:e2e
 ```
 
 Нельзя исправлять падающий тест ослаблением assertion, если не изменилось требование из спецификации.

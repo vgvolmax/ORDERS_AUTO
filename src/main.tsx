@@ -23,16 +23,14 @@ function mountApp(): void {
     root.innerHTML = `
       <div class="startup-fallback app-failure" role="alert">
         <strong>ORDERS_AUTO не запустился</strong>
-        <p>Скачайте свежий ORDERS_AUTO.html и попробуйте открыть его повторно.</p>
+        <p>Скачайте и распакуйте свежую версию ORDERS_AUTO целиком, затем снова откройте index.html.</p>
       </div>
     `;
   }
 }
 
-// The production single-file build is converted from an inline module to a
-// classic script so it can run directly from file://. Vite may place that
-// script in <head>, where classic scripts execute immediately. Defer mounting
-// until the document is parsed so #root exists in both file:// and dev builds.
+// Production uses a deferred classic IIFE bundle for reliable file:// startup.
+// Keep this guard so the same entry also remains safe in the Vite dev workflow.
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', mountApp, { once: true });
 } else {
