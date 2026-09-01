@@ -39,9 +39,12 @@ describe('OrdersPage', () => {
     mocks.buildSupplierWorkbook.mockResolvedValue(new ArrayBuffer(8));
   });
 
-  it('shows a supplier-total column in the order matrix', () => {
+  it('shows the aggregate in a clickable supplier card without a duplicate total column', () => {
     renderWithStore(<OrdersPage />, baseState());
-    expect(screen.getByText('Итого поставщику')).toBeInTheDocument();
+    expect(screen.queryByText('Итого поставщику')).not.toBeInTheDocument();
+    const card = screen.getByRole('button', { name: /все заказы поставщик а/i });
+    expect(card).toHaveTextContent('1 100,00 ₽');
+    expect(card).toHaveTextContent('2 подразделений · 1 SKU · 11 ед.');
   });
 
   it('reports ZIP generation failures instead of leaving an unhandled rejection', async () => {

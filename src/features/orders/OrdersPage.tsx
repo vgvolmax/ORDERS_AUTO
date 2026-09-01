@@ -131,6 +131,12 @@ export function OrdersPage() {
     qty: number,
   ): void {
     try {
+      const currentQty =
+        order.lines.find((line) => line.skuCode === skuCode)?.orderQty ?? 0;
+      if (currentQty === qty) {
+        set({ toast: 'Количество не изменилось.' });
+        return;
+      }
       const next = applyOrderQtyChange({
         edits: state.edits,
         reviewedOrderIds: state.reviewedOrderIds,
@@ -286,7 +292,6 @@ export function OrdersPage() {
                 {branches.map((branch) => (
                   <th key={branch}>{branch}</th>
                 ))}
-                <th>Итого поставщику</th>
                 <th>Excel</th>
               </tr>
             </thead>
@@ -328,7 +333,22 @@ export function OrdersPage() {
 
                 return (
                   <tr key={supplier}>
-                    <th>{supplier}</th>
+                    <th className="supplier-card-cell">
+                      <button
+                        className={`supplier-card ${supplierReviewed ? 'is-reviewed' : ''} ${supplierHasBlocker ? 'has-blocker' : ''}`}
+                        aria-label={`Все заказы ${supplier}`}
+                        onClick={() => setSelectedSupplier(supplier)}
+                      >
+                        <span className="supplier-name">{supplier}</span>
+                        <strong>{supplierTotal.amount == null ? 'Сумма неизвестна' : money(supplierTotal.amount)}</strong>
+                        <small>{allSupplierOrders.length} подразделений · {supplierSkuCount} SKU · {fmtQty(supplierTotal.qty)} ед.</small>
+                        <span className="order-status-line">
+                          <span>{supplierReviewed ? `✓ Все ${allSupplierOrders.length} заказов проверены` : `✓ ${reviewedCount} из ${allSupplierOrders.length} проверено`}</span>
+                          {manualEditCount > 0 && <span className="manual-indicator">✋ {manualEditCount}</span>}
+                        </span>
+                        {hidden > 0 && <small>Скрыто порогом: {hidden}</small>}
+                      </button>
+                    </th>
                     {branches.map((branch) => {
                       const order = visibleOrders.find(
                         (item) =>
@@ -344,7 +364,7 @@ export function OrdersPage() {
                             className={`order-cell ${order.status} ${order.belowThreshold ? 'below-threshold' : ''} ${order.reviewed && !hardBlocked ? 'reviewed is-reviewed' : ''} ${hardBlocked ? 'has-blocker' : ''} ${order.manualEditCount > 0 ? 'manual-edited' : ''}`}
                             onClick={() => setSelectedId(order.id)}
                           >
-                            <span className="order-status-icons">
+                            <span className="order-status-line">
                               {order.reviewed && (
                                 <span aria-label="Проверен" title="Проверен">
                                   ✓
@@ -383,35 +403,6 @@ export function OrdersPage() {
                         </td>
                       );
                     })}
-                    <td className="supplier-total-cell">
-                      <button
-                        className={`supplier-total-button ${supplierReviewed ? 'is-reviewed' : ''} ${supplierHasBlocker ? 'has-blocker' : ''}`}
-                        aria-label={`Все заказы ${supplier}`}
-                        onClick={() => setSelectedSupplier(supplier)}
-                      >
-                        <span className="supplier-name">{supplier}</span>
-                        <strong>
-                          {supplierTotal.amount == null
-                            ? 'Сумма неизвестна'
-                            : money(supplierTotal.amount)}
-                        </strong>
-                        <small>
-                          {allSupplierOrders.length} подразделений ·{' '}
-                          {supplierSkuCount} SKU
-                        </small>
-                        <small>
-                          {supplierReviewed
-                            ? `✓ Все ${allSupplierOrders.length} заказов проверены`
-                            : `✓ ${reviewedCount} из ${allSupplierOrders.length} проверено`}
-                        </small>
-                        {manualEditCount > 0 && (
-                          <small className="manual-indicator">
-                            ✋ {manualEditCount} изменений
-                          </small>
-                        )}
-                        {hidden > 0 && <small>Скрыто порогом: {hidden}</small>}
-                      </button>
-                    </td>
                     <td>
                       <div className="supplier-export-actions">
                         <Button

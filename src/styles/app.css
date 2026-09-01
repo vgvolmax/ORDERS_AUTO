@@ -135,18 +135,24 @@ details summary { cursor: pointer; }
 
 .matrix-wrap { max-height: 68vh; }
 .matrix th:not(:first-child), .matrix td:not(:first-child) { min-width: 170px; }
-.matrix > tbody > tr > th { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 190px; }
+.matrix > tbody > tr > th { position: sticky; left: 0; background: #fff; z-index: 2; min-width: 260px; }
 .order-cell { width: 100%; border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 10px; text-align: left; cursor: pointer; }
 .order-cell.reviewed, .order-cell.is-reviewed { background: #eef9f2; border-color: #78b88b; }
 .order-cell.BLOCKED, .order-cell.has-blocker, .order-cell.reviewed.has-blocker, .order-cell.is-reviewed.has-blocker { background: #fff2f0; border-color: #cf6558; box-shadow: none; }
-.order-cell.EXPORTED { background: #edf3ff; border-color: #aec3ef; }
+.order-cell.EXPORTED:not(.is-reviewed):not(.reviewed) { background: #edf3ff; border-color: #aec3ef; }
 .order-cell.below-threshold { box-shadow: inset 0 0 0 1px #e0bd70; }
 .order-cell span, .order-cell small { display: block; margin-top: 5px; }
+.order-cell .order-status-line, .supplier-card .order-status-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.order-cell .order-status-line > span, .supplier-card .order-status-line > span { display: inline-flex; align-items: center; margin-top: 0; }
 .order-cell small { color: #9a2935; }
 .supplier-total-cell strong, .supplier-total-cell small, .supplier-total-cell .supplier-name { display: block; }
 .supplier-total-button { width: 100%; padding: 10px; text-align: left; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
 .supplier-total-button.is-reviewed { background: #eef9f2; border-color: #78b88b; }
 .supplier-total-button.has-blocker, .supplier-total-button.is-reviewed.has-blocker { background: #fff2f0; border-color: #cf6558; }
+.supplier-card { width: 100%; padding: 10px; text-align: left; border: 1px solid var(--line); border-radius: 7px; background: #fff; cursor: pointer; }
+.supplier-card strong, .supplier-card small, .supplier-card .supplier-name { display: block; margin-top: 5px; }
+.supplier-card.is-reviewed { background: #eef9f2; border-color: #78b88b; }
+.supplier-card.has-blocker, .supplier-card.is-reviewed.has-blocker { background: #fff2f0; border-color: #cf6558; }
 
 .supplier-matrix-wrap { max-height: calc(100vh - 220px); overflow: auto; }
 .supplier-order-matrix { min-width: max-content; border-collapse: separate; border-spacing: 0; }
