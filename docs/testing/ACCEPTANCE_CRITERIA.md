@@ -11,7 +11,7 @@ production build
 offline production package check
 ```
 
-Дополнительно CI обязан открыть production `ORDERS_AUTO/index.html` через `file://` в Chrome и подтвердить отсутствие page/console errors и runtime HTTP/HTTPS requests.
+Дополнительно CI обязан открыть production `dist/ORDERS_AUTO/index.html` через `file://` в Chrome, повторить запуск после копирования папки в путь с пробелами и кириллицей и подтвердить отсутствие page/console errors и runtime HTTP/HTTPS requests.
 
 ## 2. Parser tests — Min-Max
 
@@ -132,7 +132,7 @@ Fixtures генерировать программно в `tests/fixtures/workbo
 
 **ORDERS_AUTO — автономное локальное статическое приложение, поставляемое как папка/архив. Пользовательская точка входа — `index.html`, который должен запускаться напрямую через `file://` в актуальном Chrome/Edge без web server и доступа в интернет. Количество файлов внутри production-пакета не ограничено. Все runtime-ресурсы должны находиться внутри пакета и подключаться переносимыми относительными путями.**
 
-- production build создаёт автономную папку `ORDERS_AUTO/`;
+- production build создаёт автономную папку `dist/ORDERS_AUTO/`;
 - пользовательская точка входа — `ORDERS_AUTO/index.html`;
 - количество файлов внутри папки не ограничено;
 - все runtime assets находятся внутри этой папки, а runtime paths относительные;
