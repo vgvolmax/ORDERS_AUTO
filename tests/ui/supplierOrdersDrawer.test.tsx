@@ -1,7 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkflowOrder } from '../../src/app/selectors';
 import { SupplierOrdersDrawer } from '../../src/features/orders/SupplierOrdersDrawer';
+
+const COLUMN_WIDTHS_STORAGE_KEY = 'orders-auto:supplier-matrix-column-widths:v1';
 
 function line(
   skuCode: string,
@@ -58,6 +60,10 @@ function makeOrders(): WorkflowOrder[] {
     },
   ];
 }
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 describe('SupplierOrdersDrawer', () => {
   it('renders SKU rows with branch columns and cross-branch SKU totals', () => {
@@ -142,5 +148,95 @@ describe('SupplierOrdersDrawer', () => {
       orders.map((order) => order.id),
       false,
     );
+  });
+
+  it('exposes resizable headers and compact two-line nomenclature cells', () => {
+    render(
+      <SupplierOrdersDrawer
+        supplier="Поставщик А"
+        orders={makeOrders()}
+        branchOrder={['Ленина', 'Ступино']}
+        onClose={() => undefined}
+        onEdit={() => undefined}
+        onSetReviewed={() => undefined}
+        onSetAllReviewed={() => undefined}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Изменить ширину столбца Код' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Изменить ширину столбца Артикул' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Изменить ширину столбца Номенклатура' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Изменить ширину столбца Ленина' }),
+    ).toBeInTheDocument();
+
+    const nomenclatureCell = screen.getByText('Товар SKU1');
+    expect(nomenclatureCell).toHaveClass('supplier-name-cell');
+    expect(nomenclatureCell).toHaveAttribute('title', 'Товар SKU1');
+  });
+
+  it('resizes a column from the keyboard and persists the preference', () => {
+    render(
+      <SupplierOrdersDrawer
+        supplier="Поставщик А"
+        orders={makeOrders()}
+        branchOrder={['Ленина', 'Ступино']}
+        onClose={() => undefined}
+        onEdit={() => undefined}
+        onSetReviewed={() => undefined}
+        onSetAllReviewed={() => undefined}
+      />,
+    );
+
+    const codeHeader = screen.getByRole('columnheader', { name: /Код/i });
+    const resizer = screen.getByRole('button', {
+      name: 'Изменить ширину столбца Код',
+    });
+    const initialWidth = Number.parseFloat(codeHeader.style.width);
+
+    fireEvent.keyDown(resizer, { key: 'ArrowRight' });
+
+    const resizedWidth = Number.parseFloat(codeHeader.style.width);
+    expect(resizedWidth).toBeGreaterThan(initialWidth);
+    const saved = JSON.parse(
+      window.localStorage.getItem(COLUMN_WIDTHS_STORAGE_KEY) ?? '{}',
+    ) as Record<string, number>;
+    expect(saved.code).toBe(resizedWidth);
+  });
+
+  it('resets user column widths to the content-based defaults', () => {
+    render(
+      <SupplierOrdersDrawer
+        supplier="Поставщик А"
+        orders={makeOrders()}
+        branchOrder={['Ленина', 'Ступино']}
+        onClose={() => undefined}
+        onEdit={() => undefined}
+        onSetReviewed={() => undefined}
+        onSetAllReviewed={() => undefined}
+      />,
+    );
+
+    const codeHeader = screen.getByRole('columnheader', { name: /Код/i });
+    const resizer = screen.getByRole('button', {
+      name: 'Изменить ширину столбца Код',
+    });
+    const initialWidth = Number.parseFloat(codeHeader.style.width);
+
+    fireEvent.keyDown(resizer, { key: 'ArrowRight' });
+    expect(Number.parseFloat(codeHeader.style.width)).toBeGreaterThan(initialWidth);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Сбросить ширину столбцов' }),
+    );
+
+    expect(Number.parseFloat(codeHeader.style.width)).toBe(initialWidth);
+    expect(window.localStorage.getItem(COLUMN_WIDTHS_STORAGE_KEY)).toBeNull();
   });
 });
