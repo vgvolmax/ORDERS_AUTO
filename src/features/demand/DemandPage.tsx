@@ -11,6 +11,8 @@ import { Alert, MetricCard } from '../../components/ui';
 import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
 import type { PricedDemandLine, StockStatus } from '../../domain/types';
 
+type DiagnosticNormStatus = 'NO_NORM' | 'INVALID_NORM';
+
 interface NetworkGroup {
   skuCode: string;
   article: string | null;
@@ -62,8 +64,9 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
   const noNormCount = scopedLines.filter((line) => line.status === 'NO_NORM').length;
 
   if (!branch) {
+    const diagnosticStatus = getDiagnosticNormStatus(filters.status);
     const groups = filterNetworkGroups(
-      buildNetworkGroups(derived.demand),
+      buildNetworkGroups(derived.demand, diagnosticStatus),
       filters,
       orderLineKeys,
     );
@@ -165,30 +168,40 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
   );
 }
 
-function buildNetworkGroups(lines: PricedDemandLine[]): NetworkGroup[] {
+function buildNetworkGroups(
+  lines: PricedDemandLine[],
+  diagnosticStatus: DiagnosticNormStatus | null = null,
+): NetworkGroup[] {
   const grouped = new Map<string, PricedDemandLine[]>();
-  for (const line of lines.filter((item) => item.deficitQty > 0)) {
+  const groupableLines = diagnosticStatus
+    ? lines.filter((item) => item.status === diagnosticStatus)
+    : lines.filter((item) => item.deficitQty > 0);
+
+  for (const line of groupableLines) {
     const bucket = grouped.get(line.skuCode) ?? [];
     bucket.push(line);
     grouped.set(line.skuCode, bucket);
   }
 
-  return [...grouped.entries()].map(([skuCode, groupLines]) => ({
-    skuCode,
-    article: groupLines[0]!.article,
-    name: groupLines[0]!.name,
-    lines: groupLines,
-    worstStatus: groupLines.reduce(
-      (worst, line) => (severity[line.status] > severity[worst] ? line.status : worst),
-      groupLines[0]!.status,
-    ),
-    deficitBranchCount: groupLines.length,
-    belowMinBranchCount: groupLines.filter((line) => line.status === 'BELOW_MIN').length,
-    totalDeficitQty: groupLines.reduce((sum, line) => sum + line.deficitQty, 0),
-    totalDemandAmount: groupLines[0]!.networkDemandAmount,
-    missingPriceCount: groupLines[0]!.networkMissingPriceCount,
-    selectedSupplier: groupLines[0]!.selectedSupplier,
-  }));
+  return [...grouped.entries()].map(([skuCode, groupLines]) => {
+    const positiveLines = groupLines.filter((line) => line.deficitQty > 0);
+    return {
+      skuCode,
+      article: groupLines[0]!.article,
+      name: groupLines[0]!.name,
+      lines: groupLines,
+      worstStatus: groupLines.reduce(
+        (worst, line) => (severity[line.status] > severity[worst] ? line.status : worst),
+        groupLines[0]!.status,
+      ),
+      deficitBranchCount: groupLines.length,
+      belowMinBranchCount: groupLines.filter((line) => line.status === 'BELOW_MIN').length,
+      totalDeficitQty: groupLines.reduce((sum, line) => sum + line.deficitQty, 0),
+      totalDemandAmount: positiveLines.reduce((sum, line) => sum + (line.demandAmount ?? 0), 0),
+      missingPriceCount: positiveLines.filter((line) => line.demandAmount == null).length,
+      selectedSupplier: groupLines[0]!.selectedSupplier,
+    };
+  });
 }
 
 function filterNetworkGroups(
@@ -215,9 +228,9 @@ function filterBranchLines(
   orderLineKeys: Set<string>,
 ): PricedDemandLine[] {
   const query = filters.query.trim().toLocaleLowerCase('ru-RU');
+  const diagnosticStatus = getDiagnosticNormStatus(filters.status);
   return lines.filter((line) => {
-    const explicitlyLookingForInvalid = filters.status === 'INVALID_NORM';
-    if (!(line.deficitQty > 0 || (explicitlyLookingForInvalid && line.status === 'INVALID_NORM'))) return false;
+    if (!(line.deficitQty > 0 || (diagnosticStatus !== null && line.status === diagnosticStatus))) return false;
     if (query && !`${line.skuCode} ${line.article ?? ''} ${line.name}`.toLocaleLowerCase('ru-RU').includes(query)) return false;
     if (filters.status !== 'ALL' && line.status !== filters.status) return false;
     if (filters.supplier === '__UNASSIGNED__' && line.selectedSupplier) return false;
@@ -227,6 +240,12 @@ function filterBranchLines(
     if (filters.problemsOnly && !hasProblem(line)) return false;
     return true;
   });
+}
+
+function getDiagnosticNormStatus(
+  status: DemandFilters['status'],
+): DiagnosticNormStatus | null {
+  return status === 'NO_NORM' || status === 'INVALID_NORM' ? status : null;
 }
 
 function passesMoney(amount: number, filters: DemandFilters): boolean {
