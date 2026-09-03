@@ -12,9 +12,14 @@
 4. `docs/architecture/ARCHITECTURE.md`
 5. `docs/ux/UX_AND_EXPORT.md`
 6. `docs/testing/ACCEPTANCE_CRITERIA.md`
-7. `docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`
+7. `DESIGN.md`
+8. `docs/superpowers/specs/2026-09-03-rebalancing-module-design.md`
+9. `docs/superpowers/specs/2026-09-03-rebalancing-integration-clarifications.md`
+10. `docs/superpowers/plans/2026-09-03-rebalancing-module-implementation.md`
+11. `docs/superpowers/plans/2026-09-03-rebalancing-integration-amendment.md`
+12. `docs/superpowers/plans/2026-08-28-orders-auto-implementation.md`
 
-Если документы противоречат друг другу, приоритет: `SPEC.md` → `DATA_CONTRACTS.md` + `DERIVED_PROJECTIONS.md` → `UX_AND_EXPORT.md` → `ARCHITECTURE.md` → implementation plan.
+Если документы противоречат друг другу, приоритет: `SPEC.md` → `DATA_CONTRACTS.md` + `DERIVED_PROJECTIONS.md` → `UX_AND_EXPORT.md` → `ARCHITECTURE.md` → design/spec → implementation plan. Для Rebalancing уточнение `2026-09-03-rebalancing-integration-clarifications.md` имеет приоритет над конфликтующей формулировкой базового Rebalancing design spec только в явно перечисленных в нём интеграционных вопросах; `2026-09-03-rebalancing-integration-amendment.md` аналогично переопределяет конфликтующие шаги базового Rebalancing implementation plan.
 
 ## 2. Неподвижные архитектурные ограничения
 
