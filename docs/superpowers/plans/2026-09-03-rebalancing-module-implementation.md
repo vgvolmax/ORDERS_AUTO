@@ -4,7 +4,7 @@
 
 **Goal:** Добавить в ORDERS_AUTO отдельный модуль «Ребалансировка», который предлагает и редактирует внутренние перемещения только из остатка сверх MAX, показывает финансовый эффект и трудозатраты, позволяет настроить симметричную географию связок, а после явного утверждения уменьшает закупочную потребность и downstream-заказы.
 
-**Architecture:** Исходная `PricedDemandLine[]` остаётся неизменяемой физической потребностью. Новый pure-domain слой строит auto proposal → draft scenario → approved plan; отдельная residual purchase projection уменьшает закупку только на approved incoming transfers и уже она передаётся в `buildOrderProjection()`. Geography settings сохраняются в IndexedDB, proposal/draft/approved plan живут только в текущем import snapshot/session. UI получает отдельный top-level workspace с flow-map, доступным route-list fallback, inspector, manual transfer builder и geography matrix.
+**Architecture:** Исходная `PricedDemandLine[]` остаётся неизменяемой физической потребностью. Новый pure-domain слой строит `auto proposal → draft scenario → approved plan`; отдельная residual purchase projection уменьшает закупку только на approved incoming transfers и уже она передаётся в `buildOrderProjection()`. Geography settings сохраняются в IndexedDB, proposal/draft/approved plan живут только в текущем import snapshot/session. UI получает отдельный top-level workspace с flow-map, доступным route-list fallback, inspector, manual transfer builder и geography matrix.
 
 **Tech Stack:** существующие React 19, TypeScript strict, Vite, IndexedDB через `idb`, Vitest, React Testing Library, Playwright, CSS/SVG без внешнего graph/map engine. Новые runtime dependencies не добавлять.
 
@@ -23,14 +23,14 @@
 - Трудозатраты: `маршруты + SKU-линии + единицы`; искусственный labor score запрещён.
 - Только approved plan влияет на supplier/order projection; proposal и draft не меняют заказы.
 - Исходный `deficitQty` не мутировать. Downstream использует отдельный `residualPurchaseQty`.
-- Новая загрузка входных отчётов сбрасывает proposal/draft/approved session state, но сохраняет geography settings.
+- Новая загрузка входного snapshot сбрасывает proposal/draft/approved session state, но сохраняет geography settings.
 - Runtime остаётся полностью offline/static и запускается через `file://`; никаких runtime HTTP/HTTPS, CDN, telemetry, backend или solver API.
-- UI русский, desktop-first от 1280 px, WCAG 2.2 AA baseline, color is never the only signal.
+- UI русский, desktop-first от 1280 px, WCAG 2.2 AA baseline, цвет никогда не является единственным сигналом.
 - Flow-map обязан иметь keyboard-accessible route-list fallback; drag, если появится, только как progressive enhancement.
 - Следовать `DESIGN.md`; flow-map — единственный выразительный signature-element, остальные control/table surfaces остаются в существующем языке ORDERS_AUTO.
 - Не использовать `window.alert`, `window.confirm`, `window.prompt` в новом workflow. Общий dialog owner — app-owned styled native `<dialog>`.
 - Для каждого доменного правила: RED test → minimal implementation → GREEN → commit.
-- После каждого законченного task минимум: `npm run typecheck`, focused tests. Перед merge: `npm run verify` и `npm run test:e2e`.
+- После каждого законченного task минимум: `npm run typecheck` и focused tests. Перед merge: `npm run verify` и `npm run test:e2e`.
 
 ## Target file map
 
@@ -90,16 +90,16 @@ existing integration owners:
 - Consumes: approved design spec `docs/superpowers/specs/2026-09-03-rebalancing-module-design.md`.
 - Produces: authoritative contracts that runtime implementation in Tasks 2–13 must follow.
 
-- [ ] **Step 1: Update the product flow and invariants in `SPEC.md`**
+- [ ] **Step 1: Update `SPEC.md` with the exact business chain**
 
-Insert a new section after demand calculation with the exact business chain:
+Insert after demand calculation:
 
 ```md
 ## Ребалансировка перед закупкой
 
 Потребность до MAX сначала проходит через модуль внутренних перемещений.
-Донор может отдавать только `max(0, stock - MAX)` и после перемещения
-обязан оставаться не ниже MAX. Получатель может получить не больше gap до MAX.
+Донор может отдавать только `max(0, stock - MAX)` и после перемещения обязан
+оставаться не ниже MAX. Получатель может получить не больше gap до MAX.
 
 Связи подразделений симметричны:
 `Приоритетно / Допустимо / Только вручную`.
@@ -107,42 +107,59 @@ Insert a new section after demand calculation with the exact business chain:
 
 Только утверждённый plan уменьшает внешнюю закупку:
 
-residualPurchaseQty = max(0, deficitQty - approvedIncomingQty)
+`residualPurchaseQty = max(0, deficitQty - approvedIncomingQty)`
+
+`NO_NORM` и `INVALID_NORM` не участвуют в ребалансировке. Proposal и draft не
+влияют на заказы. Geography settings сохраняются локально; plan привязан к
+текущему import snapshot.
 ```
 
-Also state that `NO_NORM/INVALID_NORM` cannot participate, proposal/draft do not affect orders, and geography settings are persistent while plans are import-snapshot state.
+- [ ] **Step 2: Add exact contracts to `DATA_CONTRACTS.md`**
 
-- [ ] **Step 2: Add exact domain contracts to `DATA_CONTRACTS.md`**
+Document verbatim the types introduced in Task 2: `RebalanceRelation`, `RebalancePriorityMode`, `RebalanceTransferSource`, `RebalanceParetoTarget`, `GeographyPairSetting`, `RebalanceTransfer`, `RebalanceSummary`, `RebalancePlan`, `RebalanceQtyEdit`, `ManualRebalanceTransferInput`, `RebalanceDraftState`, `RebalanceScenarioIssue`, `RebalanceScenarioResult`, `PurchaseDemandLine`. State that geography pair identity is an unordered normalized branch pair.
 
-Document the types from Task 2 verbatim, including `RebalanceRelation`, `GeographyPairSetting`, `RebalancePriorityMode`, `RebalanceTransfer`, `RebalancePlan`, `RebalanceDraftState`, `ResidualPurchaseLine` and the unordered geography-pair key rule.
-
-- [ ] **Step 3: Document derived graph order in `DERIVED_PROJECTIONS.md`**
-
-Add this projection graph:
+- [ ] **Step 3: Add the derived projection graph to `DERIVED_PROJECTIONS.md`**
 
 ```text
 PricedDemandLine[]
   ├─> RebalanceProposal
-  │     └─> RebalanceScenario
+  │     └─> RebalanceScenarioResult.plan
   │           └─(approve)─> ApprovedRebalancePlan
   └─> buildResidualPurchaseDemand(approvedPlan)
           └─> PurchaseDemandLine[]
                   └─> buildOrderProjection()
 ```
 
-Explicitly state that `deficitQty` remains the original physical gap and `residualPurchaseQty` is the purchase quantity.
+Add the invariant: `deficitQty` remains original physical gap; `residualPurchaseQty` is the downstream purchase quantity.
 
 - [ ] **Step 4: Update architecture ownership**
 
-Add `geography.ts`, `rebalance.ts`, `rebalanceScenario.ts`, `residualDemand.ts`, `rebalanceWorkflow.ts`, persistence ownership and the `features/rebalance/` boundary to `ARCHITECTURE.md`. Keep the offline/static deployment contract unchanged.
+Add the five new domain files, `geographyPairs` persistence and `features/rebalance/` boundary to `ARCHITECTURE.md`. Keep the current offline/static `file://` deployment contract unchanged.
 
-- [ ] **Step 5: Update UX and acceptance docs**
+- [ ] **Step 5: Update `UX_AND_EXPORT.md` with observable behavior**
 
-Copy only approved observable behavior from the design spec: navigation position, KPI wording, modes, Pareto targets, flow-map + route list, inspector, manual-only warning, geography matrix, approval lifecycle, downstream transparency, empty/error states and test invariants.
+Add one section with this exact vocabulary and hierarchy:
 
-- [ ] **Step 6: Update `AGENTS.md` reading order**
+```md
+Ребалансировка располагается после demand context и до `Поставщики`/`Заказы`.
+Основной экран: режим `Критичные / По географии`, Pareto `80/90/95/100`, KPI
+`Закупка до / Сокращение закупки / Остаточная закупка`, flow-map, доступный
+`Список маршрутов`, route inspector, manual transfer builder и действие
+`Утвердить перемещения`.
 
-Add `DESIGN.md` and the approved rebalancing spec before the implementation plan, and replace the old single implementation-plan pointer with both current plans:
+Geography matrix симметрична и использует `Приоритетно / Допустимо /
+Только вручную`. `Только вручную` не попадает в автоматический proposal.
+```
+
+Also document approval state labels: `Не утверждено`, `Утверждено`, `Есть новый черновик`.
+
+- [ ] **Step 6: Update `ACCEPTANCE_CRITERIA.md`**
+
+Add the 20 domain invariants and the UI/E2E cases from design spec §26 as explicit numbered acceptance criteria. Keep existing parser/order/export/package acceptance intact.
+
+- [ ] **Step 7: Update `AGENTS.md` reading order**
+
+Append after existing product/testing docs:
 
 ```md
 7. `DESIGN.md`
@@ -150,25 +167,18 @@ Add `DESIGN.md` and the approved rebalancing spec before the implementation plan
 9. `docs/superpowers/plans/2026-09-03-rebalancing-module-implementation.md`
 ```
 
-Do not remove the existing base product documents.
+Do not remove the base product documents.
 
-- [ ] **Step 7: Verify documentation consistency**
-
-Run:
+- [ ] **Step 8: Verify docs and commit**
 
 ```bash
 git diff --check
-rg -n "донор|MAX|MANUAL_ONLY|residualPurchaseQty|Сокращение закупки" docs AGENTS.md
-```
-
-Expected: no contradictory rule that allows a donor below MAX or automatic `MANUAL_ONLY`.
-
-- [ ] **Step 8: Commit**
-
-```bash
+rg -n "донор|MANUAL_ONLY|residualPurchaseQty|Сокращение закупки" docs AGENTS.md
 git add docs AGENTS.md
 git commit -m "docs: promote rebalancing contracts"
 ```
+
+Expected: no rule allows donor below MAX or automatic `MANUAL_ONLY`.
 
 ---
 
@@ -189,7 +199,7 @@ git commit -m "docs: promote rebalancing contracts"
 - [ ] **Step 1: Write failing geography tests**
 
 ```ts
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import {
   geographyPairKey,
   getRebalanceRelation,
@@ -213,13 +223,7 @@ it('reads a saved relation in both directions', () => {
 });
 ```
 
-Run:
-
-```bash
-npm test -- --run tests/domain/geography.test.ts
-```
-
-Expected: FAIL because module/types do not exist.
+Run `npm test -- --run tests/domain/geography.test.ts`; expected RED because the module does not exist.
 
 - [ ] **Step 2: Add exact shared types to `src/domain/types.ts`**
 
@@ -286,6 +290,17 @@ export interface RebalanceDraftState {
   manualTransfers: ManualRebalanceTransferInput[];
 }
 
+export interface RebalanceScenarioIssue {
+  code: 'INVALID_QTY' | 'INVALID_MANUAL_TRANSFER';
+  transferKey: string | null;
+  message: string;
+}
+
+export interface RebalanceScenarioResult {
+  plan: RebalancePlan;
+  issues: RebalanceScenarioIssue[];
+}
+
 export interface PurchaseDemandLine extends PricedDemandLine {
   approvedIncomingQty: number;
   residualPurchaseQty: number;
@@ -320,16 +335,22 @@ export function getRebalanceRelation(
 }
 ```
 
-Also reject same-branch pair writes in persistence/UI; `A ↔ A` is never a valid geography setting.
+Same-branch pairs are never persisted or rendered as editable settings.
 
-- [ ] **Step 4: Upgrade IndexedDB from v1 to v2 without dropping old stores**
-
-Change `db.ts` to:
+- [ ] **Step 4: Upgrade IndexedDB to v2 without dropping old stores**
 
 ```ts
 interface OrdersAutoSchema extends DBSchema {
-  supplierOverrides: { key: string; value: SupplierOverride; indexes: Record<string, never> };
-  settings: { key: string; value: OrderSettings; indexes: Record<string, never> };
+  supplierOverrides: {
+    key: string;
+    value: SupplierOverride;
+    indexes: Record<string, never>;
+  };
+  settings: {
+    key: string;
+    value: OrderSettings;
+    indexes: Record<string, never>;
+  };
   geographyPairs: {
     key: string;
     value: GeographyPairSetting;
@@ -357,8 +378,8 @@ export function db() {
 - [ ] **Step 5: Implement replace-all geography persistence**
 
 ```ts
-import type { GeographyPairSetting } from '../domain/types';
 import { geographyPairKey } from '../domain/geography';
+import type { GeographyPairSetting } from '../domain/types';
 import { db } from './db';
 
 export async function getGeographySettings(): Promise<GeographyPairSetting[]> {
@@ -373,31 +394,19 @@ export async function saveGeographySettings(
   await tx.store.clear();
   for (const setting of settings) {
     if (setting.branchA === setting.branchB) continue;
-    await tx.store.put(
-      setting,
-      geographyPairKey(setting.branchA, setting.branchB),
-    );
+    await tx.store.put(setting, geographyPairKey(setting.branchA, setting.branchB));
   }
   await tx.done;
 }
 ```
 
-- [ ] **Step 6: Add persistence regression coverage**
+- [ ] **Step 6: Add persistence regression and run GREEN**
 
-In `tests/persistence/persistence.test.ts`, delete/open `orders-auto`, save two relations, reload them, and verify existing supplier/settings stores still work after DB version 2 upgrade.
-
-- [ ] **Step 7: Run focused tests + typecheck**
+Extend `tests/persistence/persistence.test.ts` to save two geography pairs, reopen the DB, assert both relations, and assert existing `supplierOverrides`/`settings` still survive v2.
 
 ```bash
 npm test -- --run tests/domain/geography.test.ts tests/persistence/persistence.test.ts
 npm run typecheck
-```
-
-Expected: PASS.
-
-- [ ] **Step 8: Commit**
-
-```bash
 git add src/domain/types.ts src/domain/geography.ts src/persistence tests/domain/geography.test.ts tests/persistence/persistence.test.ts
 git commit -m "feat: add rebalance geography contracts"
 ```
@@ -411,43 +420,23 @@ git commit -m "feat: add rebalance geography contracts"
 - Create: `tests/domain/rebalance.test.ts`
 
 **Interfaces:**
-- Consumes: `PricedDemandLine[]`, `GeographyPairSetting[]`, `RebalancePriorityMode`.
-- Produces:
-  - `transferKey(transfer): string`
-  - `routeKey(fromBranch, toBranch): string`
-  - `buildRebalanceProposal(demand, geography, mode): RebalancePlan`
-  - `summarizeRebalancePlan(demand, transfers): RebalanceSummary`
+- `transferKey(transfer): string`
+- `routeKey(fromBranch, toBranch): string`
+- `buildRebalanceProposal(demand, geography, mode): RebalancePlan`
+- `summarizeRebalancePlan(demand, transfers): RebalanceSummary`
 
 - [ ] **Step 1: Write RED invariant tests**
 
-Build a synthetic SKU with donor `stock=35, MAX=20`, recipient A `stock=6, MAX=16`, recipient B `stock=8, MAX=13`; assert proposal transfers exactly 15 total and leaves donor at 20.
-
-Add explicit tests:
+Create a synthetic SKU with donor `stock=35, MAX=20`, recipient A `stock=6, MAX=16`, recipient B `stock=8, MAX=13`. Assert total outgoing = 15, incoming A ≤ 10, incoming B ≤ 5, donor after = 20.
 
 ```ts
-expect(totalOutgoing('DONOR')).toBeLessThanOrEqual(15);
-expect(totalIncoming('A')).toBeLessThanOrEqual(10);
-expect(totalIncoming('B')).toBeLessThanOrEqual(5);
-expect(plan.transfers.every((x) => x.relation !== 'MANUAL_ONLY')).toBe(true);
+expect(plan.transfers.reduce((sum, line) => sum + line.qty, 0)).toBe(15);
+expect(plan.transfers.every((line) => line.relation !== 'MANUAL_ONLY')).toBe(true);
 ```
 
-Add separate fixtures for:
-- `NO_NORM` donor/recipient ignored;
-- `INVALID_NORM` ignored;
-- missing price transfer remains with `purchaseReductionAmount=null`;
-- deterministic repeated calls deep-equal;
-- network quantity conservation;
-- same branch never produces transfer.
+Add separate tests for `NO_NORM`, `INVALID_NORM`, missing price, deterministic repeated calls, same-branch exclusion and network quantity conservation.
 
-Run:
-
-```bash
-npm test -- --run tests/domain/rebalance.test.ts
-```
-
-Expected: FAIL because `rebalance.ts` does not exist.
-
-- [ ] **Step 2: Implement stable keys and severity/relation ranks**
+- [ ] **Step 2: Implement stable identities and ranks**
 
 ```ts
 export function transferKey(
@@ -477,9 +466,7 @@ const relationRank: Record<RebalanceRelation, number> = {
 };
 ```
 
-- [ ] **Step 3: Build donors/recipients by SKU in one indexed pass**
-
-Use maps, not nested full-dataset `find()` calls:
+- [ ] **Step 3: Index demand by SKU and initialize remaining capacity**
 
 ```ts
 const bySku = new Map<string, PricedDemandLine[]>();
@@ -488,13 +475,14 @@ for (const line of demand) {
   bucket.push(line);
   bySku.set(line.skuCode, bucket);
 }
+
+const validNorm = (line: PricedDemandLine) =>
+  line.max != null && line.max > 0 && (line.min == null || line.min <= line.max);
 ```
 
-For each SKU, donor eligibility is `max != null && max > 0 && min <= max when min exists && stock > max`; recipient eligibility is the same valid-norm predicate plus `deficitQty > 0`.
+For each SKU, donor surplus is `stock - max` only when `validNorm && stock > max`; recipient gap is `deficitQty` only when `validNorm && deficitQty > 0`.
 
-- [ ] **Step 4: Implement lexicographic candidate comparison**
-
-Candidate shape inside the module:
+- [ ] **Step 4: Implement lexicographic candidate comparator**
 
 ```ts
 interface Candidate {
@@ -505,22 +493,17 @@ interface Candidate {
   amount: number | null;
   routeAlreadyUsed: boolean;
 }
-```
 
-Comparator rules:
-
-```ts
 function compareCandidates(a: Candidate, b: Candidate, mode: RebalancePriorityMode) {
   const money = (value: number | null) => value ?? Number.NEGATIVE_INFINITY;
   const criticalCmp = statusRank[b.recipient.status] - statusRank[a.recipient.status];
   const geographyCmp = relationRank[b.relation] - relationRank[a.relation];
   const moneyCmp = money(b.amount) - money(a.amount);
-
-  const primary = mode === 'CRITICALITY_FIRST'
+  const ordered = mode === 'CRITICALITY_FIRST'
     ? [criticalCmp, moneyCmp, geographyCmp]
     : [geographyCmp, criticalCmp, moneyCmp];
 
-  for (const cmp of primary) if (cmp !== 0) return cmp;
+  for (const cmp of ordered) if (cmp !== 0) return cmp;
   if (a.routeAlreadyUsed !== b.routeAlreadyUsed) return a.routeAlreadyUsed ? -1 : 1;
   if (a.transferableQty !== b.transferableQty) return b.transferableQty - a.transferableQty;
   return transferKey({
@@ -538,43 +521,60 @@ function compareCandidates(a: Candidate, b: Candidate, mode: RebalancePriorityMo
 }
 ```
 
-Unknown money must sort after known money only within the same higher-priority class.
+Unknown money sorts after known money only within equal higher-priority criteria.
 
-- [ ] **Step 5: Implement greedy allocation with remaining surplus/gap maps**
+- [ ] **Step 5: Implement the greedy allocation loop**
 
-The loop must recompute feasible quantities after each transfer and stop when no candidate remains. Each chosen transfer uses full current `min(remainingSurplus, remainingGap)` and updates both maps.
+```ts
+while (true) {
+  const candidates = buildCandidatesForCurrentRemainingState();
+  if (candidates.length === 0) break;
+  candidates.sort((a, b) => compareCandidates(a, b, mode));
+  const chosen = candidates[0]!;
+  const qty = chosen.transferableQty;
 
-Do not create `MANUAL_ONLY` candidates.
+  transfers.push({
+    skuCode: chosen.recipient.skuCode,
+    article: chosen.recipient.article,
+    name: chosen.recipient.name,
+    fromBranch: chosen.donor.branch,
+    toBranch: chosen.recipient.branch,
+    qty,
+    relation: chosen.relation,
+    source: 'AUTO',
+    recipientStatus: chosen.recipient.status,
+    unitPrice: chosen.recipient.unitPrice,
+    purchaseReductionAmount:
+      chosen.recipient.unitPrice == null ? null : qty * chosen.recipient.unitPrice,
+  });
 
-- [ ] **Step 6: Implement exact summary semantics**
+  decreaseRemainingSurplus(chosen.donor, qty);
+  decreaseRemainingGap(chosen.recipient, qty);
+  usedRoutes.add(routeKey(chosen.donor.branch, chosen.recipient.branch));
+}
+```
 
-`summarizeRebalancePlan()` computes:
-- `transferCount = transfers.length`;
-- directed route count from `routeKey(from,to)`;
-- unique SKU count;
-- unique `skuCode + toBranch` recipient-line count;
-- total quantity;
-- known reduction sum;
-- missing-price transfer count;
-- residual known purchase amount from original demand minus approved/scenario incoming;
-- residual missing-price positive line count.
+`buildCandidatesForCurrentRemainingState()` must omit `MANUAL_ONLY` and same-branch pairs and calculate `min(remainingSurplus, remainingGap)`.
 
-- [ ] **Step 7: Prove both priority modes**
+- [ ] **Step 6: Implement plan summary**
 
-Add test where `BELOW_MIN` route is `ALLOWED` and a less critical `LIGHT_RED` route is `PRIORITY`:
-- `CRITICALITY_FIRST` must allocate scarce donor to `BELOW_MIN` first;
-- `GEOGRAPHY_FIRST` must allocate to `PRIORITY` relation first.
+```ts
+const routeCount = new Set(transfers.map((line) => routeKey(line.fromBranch, line.toBranch))).size;
+const skuCount = new Set(transfers.map((line) => line.skuCode)).size;
+const recipientLineCount = new Set(
+  transfers.map((line) => `${line.skuCode}\0${line.toBranch}`),
+).size;
+```
 
-- [ ] **Step 8: Run focused suite + typecheck**
+Compute total qty, known reduction, missing-price transfer count and residual known/missing purchase from the original demand minus incoming quantities.
+
+- [ ] **Step 7: Prove both modes and commit**
+
+Add a scarce-donor fixture where `BELOW_MIN` is `ALLOWED` and `LIGHT_RED` is `PRIORITY`. Assert `CRITICALITY_FIRST` selects `BELOW_MIN`, while `GEOGRAPHY_FIRST` selects `PRIORITY`.
 
 ```bash
 npm test -- --run tests/domain/rebalance.test.ts
 npm run typecheck
-```
-
-- [ ] **Step 9: Commit**
-
-```bash
 git add src/domain/rebalance.ts tests/domain/rebalance.test.ts
 git commit -m "feat: calculate automatic rebalance proposal"
 ```
@@ -588,35 +588,36 @@ git commit -m "feat: calculate automatic rebalance proposal"
 - Create: `tests/domain/rebalanceScenario.test.ts`
 
 **Interfaces:**
+- `createDefaultRebalanceDraft(): RebalanceDraftState`
 - `selectParetoRecipientLines(plan, target): Set<string>`
 - `summarizeParetoBySku(plan, target): ParetoSkuSummary`
-- `buildRebalanceScenario({ demand, proposal, draft, geography }): RebalancePlan`
-- `validateManualTransfer({ demand, currentTransfers, geography, input }): ManualTransferValidation`
+- `buildRebalanceScenario(input): RebalanceScenarioResult`
+- `validateManualTransfer(input): ManualTransferValidation`
 - `plansEquivalent(left, right): boolean`
 
-- [ ] **Step 1: Write RED Pareto tests**
+- [ ] **Step 1: Write RED Pareto and draft tests**
 
-For known effects `70, 20, 9, 1` assert:
+For known effects `70, 20, 9, 1`, assert 90% requires two `SKU × recipient` units. Add a case where one recipient is supplied by two donors; both transfers must be selected together. Add unknown-price transfers and assert they remain in the physical scenario while excluded from the percentage denominator.
 
-```ts
-expect([...selectParetoRecipientLines(plan, 90)]).toHaveLength(2);
-```
-
-The two selected decision-units must be based on `skuCode + toBranch`, not individual donor transfers. Add a case where one recipient is supplied by two donors; both transfers must enter/leave together when that decision-unit is selected.
-
-- [ ] **Step 2: Implement recipient-line Pareto selection**
-
-Aggregate full proposal transfers by:
+- [ ] **Step 2: Implement default draft and recipient-line Pareto selection**
 
 ```ts
-const recipientKey = `${transfer.skuCode}\0${transfer.toBranch}`;
+export function createDefaultRebalanceDraft(): RebalanceDraftState {
+  return {
+    paretoTarget: 90,
+    excludedTransferKeys: [],
+    qtyEdits: [],
+    manualTransfers: [],
+  };
+}
+
+const recipientDecisionKey = (line: RebalanceTransfer) =>
+  `${line.skuCode}\0${line.toBranch}`;
 ```
 
-Ignore `purchaseReductionAmount=null` in percentage denominator but keep unknown-price lines in the plan outside the Pareto money claim. For target 100, include all proposal transfer lines, including unknown-price lines.
+Aggregate known financial effect by `recipientDecisionKey`. For target 80/90/95, select the minimum known-effect units reaching the target **and also keep every unknown-price recipient unit in the scenario**; unknown units do not contribute to the percentage claim. For target 100, keep every transfer.
 
-For targets 80/90/95, select the minimum number of known-effect recipient units whose cumulative effect reaches the threshold; unknown-price lines are not silently claimed as part of the percentage.
-
-- [ ] **Step 3: Implement analytical `SKU` grouping separately**
+- [ ] **Step 3: Implement analytical SKU grouping without changing the scenario**
 
 ```ts
 export interface ParetoSkuSummary {
@@ -631,27 +632,39 @@ export interface ParetoSkuSummary {
 }
 ```
 
-This function must never feed `buildRebalanceScenario()`; it is display analytics only.
+`summarizeParetoBySku()` aggregates proposal transfers by `skuCode`; no call from this function may mutate or feed the allocation/scenario path.
 
-- [ ] **Step 4: Define scenario application order**
+- [ ] **Step 4: Apply scenario transforms in a fixed order**
 
-Apply draft state deterministically in this order:
-
-```text
-full proposal
-→ Pareto recipient-line subset
-→ excluded transfer keys
-→ quantity edits
-→ manual transfers
-→ validate aggregate donor/recipient constraints
-→ summary
+```ts
+export function buildRebalanceScenario(input: BuildScenarioInput): RebalanceScenarioResult {
+  const paretoKeys = selectParetoRecipientLines(input.proposal, input.draft.paretoTarget);
+  let transfers = input.proposal.transfers.filter((line) =>
+    paretoKeys.has(recipientDecisionKey(line)) || line.purchaseReductionAmount == null,
+  );
+  transfers = applyExclusions(transfers, input.draft.excludedTransferKeys);
+  const qtyResult = applyQtyEdits(transfers, input.draft.qtyEdits, input.demand);
+  const manualResult = applyManualTransfers(
+    qtyResult.transfers,
+    input.draft.manualTransfers,
+    input.demand,
+    input.geography,
+  );
+  const issues = [...qtyResult.issues, ...manualResult.issues];
+  return {
+    plan: {
+      mode: input.proposal.mode,
+      transfers: manualResult.transfers,
+      summary: summarizeRebalancePlan(input.demand, manualResult.transfers),
+    },
+    issues,
+  };
+}
 ```
 
-Quantity edit key is `transferKey()`. If an edit is greater than that transfer's current physical max or negative, return a validation error instead of clamping silently.
+Invalid edit quantities produce `RebalanceScenarioIssue`; never silently clamp.
 
-- [ ] **Step 5: Implement manual transfer validation against the current scenario**
-
-Validation result:
+- [ ] **Step 5: Implement manual transfer validation against current scenario**
 
 ```ts
 export interface ManualTransferValidation {
@@ -663,47 +676,28 @@ export interface ManualTransferValidation {
 }
 ```
 
-Compute remaining donor surplus after all current outgoing transfers for the same `skuCode/fromBranch`, and remaining recipient gap after all current incoming transfers for the same `skuCode/toBranch`.
+Compute remaining donor surplus after existing outgoing lines for the same SKU and remaining recipient gap after existing incoming lines. `maxQty = min(remainingSurplus, remainingGap)`. Reject same branch, negative qty, qty above max, missing/invalid MAX, or missing SKU/branch line. `MANUAL_ONLY` is valid only as explicit manual path and sets `requiresManualOnlyConfirmation=true`.
 
-`maxQty = min(remainingDonorSurplus, remainingRecipientGap)`.
+- [ ] **Step 6: Keep one transfer identity per SKU/from/to**
 
-Reject:
-- same branch;
-- qty `< 0` or `> maxQty`;
-- unknown SKU/branch line;
-- invalid/no MAX.
+```ts
+const key = transferKey({ skuCode: input.skuCode, fromBranch: input.fromBranch, toBranch: input.toBranch });
+const withoutExisting = transfers.filter((line) => transferKey(line) !== key);
+const next = [...withoutExisting, buildManualTransfer(input)];
+```
 
-Allow `MANUAL_ONLY` only with `requiresManualOnlyConfirmation=true`; the domain does not mutate geography settings.
+If the key already existed, replace its quantity and mark source `MANUAL`; do not duplicate the physical line.
 
-- [ ] **Step 6: Make transfer identity singular**
-
-If a manual input targets an existing `skuCode/fromBranch/toBranch`, replace that scenario line quantity and mark `source='MANUAL'` rather than creating a duplicate key. This keeps one line per physical transfer identity and makes edit/reset semantics deterministic.
-
-- [ ] **Step 7: Add scenario tests**
-
-Cover:
-- excluded line disappears;
-- `qty=0` is a valid removal-equivalent edit;
-- invalid qty reports error, no silent clamp;
-- manual `MANUAL_ONLY` requires explicit confirmation flag;
-- manual transfer never drops donor below MAX;
-- manual transfer never overfills recipient;
-- analytical `SKU` grouping does not change `buildRebalanceScenario()` output;
-- unknown-price line remains physically available.
-
-- [ ] **Step 8: Run tests + typecheck**
+- [ ] **Step 7: Run GREEN and commit**
 
 ```bash
 npm test -- --run tests/domain/rebalanceScenario.test.ts tests/domain/rebalance.test.ts
 npm run typecheck
-```
-
-- [ ] **Step 9: Commit**
-
-```bash
 git add src/domain/rebalanceScenario.ts tests/domain/rebalanceScenario.test.ts
 git commit -m "feat: add rebalance draft and pareto scenarios"
 ```
+
+Tests must cover exclusions, qty=0, invalid qty issue, manual-only confirmation flag, donor/recipient MAX invariants, analytics-only SKU grouping and unknown-price quantity retention.
 
 ---
 
@@ -712,7 +706,6 @@ git commit -m "feat: add rebalance draft and pareto scenarios"
 **Files:**
 - Create: `src/domain/residualDemand.ts`
 - Modify: `src/domain/orders.ts`
-- Modify: `src/domain/types.ts`
 - Modify: `src/app/selectors.ts`
 - Create: `tests/domain/residualDemand.test.ts`
 - Modify: `tests/domain/orders.test.ts`
@@ -721,21 +714,22 @@ git commit -m "feat: add rebalance draft and pareto scenarios"
 **Interfaces:**
 - `buildResidualPurchaseDemand(demand, approvedPlan): PurchaseDemandLine[]`
 - `buildOrderProjection()` consumes `PurchaseDemandLine[]` and uses `residualPurchaseQty` as `calculatedQty`.
-- `DerivedState` exposes original `demand`, `rebalanceProposal`, `rebalanceScenario`, `purchaseDemand`, `projection`.
+- `DerivedState` exposes original `demand`, proposal, scenario result, purchase demand and order projection.
 
 - [ ] **Step 1: Write RED residual tests**
 
 ```ts
 const residual = buildResidualPurchaseDemand(demand, approvedPlan);
-expect(residualLine.deficitQty).toBe(20);            // original remains intact
+const residualLine = residual.find((line) => line.skuCode === 'SKU1' && line.branch === 'Рязань')!;
+expect(residualLine.deficitQty).toBe(20);
 expect(residualLine.approvedIncomingQty).toBe(12);
 expect(residualLine.residualPurchaseQty).toBe(8);
 expect(residualLine.residualPurchaseAmount).toBe(800);
 ```
 
-Also assert null price → null residual amount, no approved plan → residual qty equals original deficit, and approved incoming never mutates source demand objects.
+Also assert null price → null residual amount, no approved plan → residual qty equals original deficit, and source demand objects remain unchanged.
 
-- [ ] **Step 2: Implement residual projection with an indexed incoming map**
+- [ ] **Step 2: Implement residual projection**
 
 ```ts
 export function buildResidualPurchaseDemand(
@@ -764,40 +758,37 @@ export function buildResidualPurchaseDemand(
 
 - [ ] **Step 3: Change `buildOrderProjection()` to purchase semantics**
 
-Change input type from `PricedDemandLine[]` to `PurchaseDemandLine[]` and replace business quantity checks:
-
 ```ts
 if (
   line.residualPurchaseQty <= 0 ||
   line.status === 'INVALID_NORM' ||
   line.status === 'NO_NORM'
-) continue;
+) {
+  continue;
+}
 
+const editKey = `${line.skuCode}\0${line.branch}`;
 const calculatedQty = line.residualPurchaseQty;
-const orderQty = editBySkuBranch.get(key) ?? calculatedQty;
+const orderQty = editBySkuBranch.get(editKey) ?? calculatedQty;
 ```
 
-Set `OrderLine.calculatedQty = calculatedQty`; warning compares `orderQty > calculatedQty`.
+Set `OrderLine.calculatedQty = calculatedQty`; warning compares `orderQty > calculatedQty`. Never overwrite `line.deficitQty`.
 
-Do not overwrite `line.deficitQty`.
-
-- [ ] **Step 4: Extend `DerivedState` in one central selector**
+- [ ] **Step 4: Extend `DerivedState` and central derivation order**
 
 ```ts
 export interface DerivedState {
   resolutions: SupplierResolution[];
   demand: PricedDemandLine[];
   rebalanceProposal: RebalancePlan;
-  rebalanceScenario: RebalancePlan;
+  rebalanceScenario: RebalanceScenarioResult;
   purchaseDemand: PurchaseDemandLine[];
   projection: WorkflowOrderProjection;
 }
 ```
 
-Derivation order:
-
 ```ts
-const demand = priceDemand(...);
+const demand = priceDemand(calculateDemand(state.minMax), state.minMax.skus, resolutions);
 const rebalanceProposal = buildRebalanceProposal(
   demand,
   state.geographySettings,
@@ -809,10 +800,7 @@ const rebalanceScenario = buildRebalanceScenario({
   draft: state.rebalanceDraft,
   geography: state.geographySettings,
 });
-const purchaseDemand = buildResidualPurchaseDemand(
-  demand,
-  state.approvedRebalancePlan,
-);
+const purchaseDemand = buildResidualPurchaseDemand(demand, state.approvedRebalancePlan);
 const baseProjection = buildOrderProjection(
   purchaseDemand,
   resolutions,
@@ -821,23 +809,16 @@ const baseProjection = buildOrderProjection(
 );
 ```
 
-Before imports, return empty plans with the current mode and empty summaries.
+Before imports, return empty plans/results with current mode and zero summaries.
 
-- [ ] **Step 5: Update order/domain tests**
+- [ ] **Step 5: Run GREEN and commit**
 
-Add one order regression proving a 12-unit approved incoming transfer changes `calculatedQty` from 20 to 8, while the demand line still reports 20.
-
-- [ ] **Step 6: Run focused tests + typecheck**
+Add order regression: approved incoming 12 changes `calculatedQty` 20 → 8 while `demand.deficitQty` stays 20.
 
 ```bash
 npm test -- --run tests/domain/residualDemand.test.ts tests/domain/orders.test.ts tests/ui/useDerivedState.test.tsx
 npm run typecheck
-```
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/domain/residualDemand.ts src/domain/orders.ts src/domain/types.ts src/app/selectors.ts tests/domain/residualDemand.test.ts tests/domain/orders.test.ts tests/ui/useDerivedState.test.tsx
+git add src/domain/residualDemand.ts src/domain/orders.ts src/app/selectors.ts tests/domain/residualDemand.test.ts tests/domain/orders.test.ts tests/ui/useDerivedState.test.tsx
 git commit -m "feat: apply approved rebalance to purchase demand"
 ```
 
@@ -857,13 +838,11 @@ git commit -m "feat: apply approved rebalance to purchase demand"
 - Modify: `tests/ui/importReviewReset.test.tsx`
 
 **Interfaces:**
-- App state owns persisted geography + session mode/draft/approved snapshot.
-- `applyRebalanceApproval()` returns the exact workflow state patch needed to commit a plan and invalidate affected order metadata.
-- `AppDialog` is the canonical modal owner for this feature and replaces the existing `window.confirm()` reset flow while `App.tsx` is touched.
+- AppState owns geography + session mode/draft/approved snapshot.
+- `applyRebalanceApproval()` invalidates only affected purchase workflow metadata.
+- `AppDialog` is the canonical app-owned modal owner for the touched shell/workflow.
 
-- [ ] **Step 1: Extend `AppState` and defaults**
-
-Add:
+- [ ] **Step 1: Extend AppState and defaults**
 
 ```ts
 geographySettings: GeographyPairSetting[];
@@ -872,28 +851,37 @@ rebalanceDraft: RebalanceDraftState;
 approvedRebalancePlan: RebalancePlan | null;
 ```
 
-Default session state:
+Use:
 
 ```ts
+geographySettings: [],
 rebalanceMode: 'CRITICALITY_FIRST',
-rebalanceDraft: {
-  paretoTarget: 90,
-  excludedTransferKeys: [],
-  qtyEdits: [],
-  manualTransfers: [],
-},
+rebalanceDraft: createDefaultRebalanceDraft(),
 approvedRebalancePlan: null,
 ```
 
-`baseState()` test helper must include the same defaults.
+Update `tests/ui/renderWithStore.tsx::baseState()` with the same values.
 
-- [ ] **Step 2: Load geography settings during App initialization**
+- [ ] **Step 2: Load geography settings without breaking existing initialization**
 
-Change App startup `Promise.all` to load supplier overrides, order settings and geography settings. If geography persistence fails, continue with `[]` and show the existing local-storage failure style toast.
+```ts
+Promise.all([
+  getSupplierOverrides(),
+  getSettings(),
+  getGeographySettings().catch(() => []),
+]).then(([overrides, settings, geographySettings]) => {
+  setState((current) => ({
+    ...current,
+    overrides,
+    settings,
+    geographySettings,
+  }));
+});
+```
 
-- [ ] **Step 3: Define approval impact from changed recipient purchase keys**
+A geography-only persistence failure falls back to `[]`; the application remains usable.
 
-In `rebalanceWorkflow.ts`:
+- [ ] **Step 3: Implement affected-key approval invalidation**
 
 ```ts
 export function incomingByRecipient(plan: RebalancePlan | null): Map<string, number> {
@@ -906,43 +894,24 @@ export function incomingByRecipient(plan: RebalancePlan | null): Map<string, num
 }
 ```
 
-Compare previous vs next incoming maps to produce affected `skuCode\0branch` keys.
-
-`applyRebalanceApproval()` must:
-- remove only `OrderQtyEdit` records whose `skuCode+branch` is affected;
-- remove review/export markers only for current orders containing at least one affected line;
-- set `approvedRebalancePlan = nextPlan`;
-- keep unrelated edits/reviews/exports unchanged.
+Compare old/new maps; any changed `skuCode\0branch` is affected. `applyRebalanceApproval()` removes only matching `OrderQtyEdit`, and removes review/export order IDs only when the current order contains an affected line. It sets `approvedRebalancePlan=nextPlan` and preserves unrelated workflow state.
 
 - [ ] **Step 4: Write RED invalidation tests**
 
-Create two orders in different branches; approve a plan affecting only one branch. Assert only that branch's edit/review/export markers are removed.
+Create two branch orders with edits/review/export markers. Approve a plan affecting only one branch and assert only that branch is reset.
 
-- [ ] **Step 5: Build the shared app-owned dialog on native `<dialog>`**
-
-Component contract:
+- [ ] **Step 5: Build shared `AppDialog` on native `<dialog>`**
 
 ```tsx
-<AppDialog
-  open={open}
-  title="Пересчитать заказы?"
-  description="..."
-  onClose={...}
-  actions={...}
->
-  ...
-</AppDialog>
+interface AppDialogProps {
+  open: boolean;
+  title: string;
+  description: string;
+  onClose: () => void;
+  actions: ReactNode;
+  children: ReactNode;
+}
 ```
-
-Implementation requirements:
-- call `dialog.showModal()` when `open` becomes true;
-- call `.close()` when false;
-- intercept native `cancel` and delegate to `onClose`;
-- render real heading/description IDs referenced by `aria-labelledby`/`aria-describedby`;
-- restore focus to the opening trigger by native dialog behavior plus explicit trigger ref test;
-- no `alert/confirm/prompt`.
-
-Minimal effect:
 
 ```tsx
 useEffect(() => {
@@ -953,13 +922,29 @@ useEffect(() => {
 }, [open]);
 ```
 
+Render heading/description IDs and `<dialog aria-labelledby={titleId} aria-describedby={descriptionId}>`. Intercept native `cancel`, call `preventDefault()`, then `onClose()`. Test opening, Escape close and focus restoration.
+
+Concrete usage test fixture:
+
+```tsx
+<AppDialog
+  open={true}
+  title="Пересчитать заказы?"
+  description="У 2 затронутых строк есть ручные количества."
+  onClose={onClose}
+  actions={<button onClick={onClose}>Отмена</button>}
+>
+  <p>После утверждения расчётные количества изменятся.</p>
+</AppDialog>
+```
+
 - [ ] **Step 6: Replace existing `window.confirm()` in `App.tsx`**
 
-When user clicks `Загрузить новые отчёты` and there are manual order edits, open `AppDialog` with actions `Остаться` and `Загрузить новые отчёты`. This prevents the new premium UI audit from retaining a known browser-native confirm in the shell being modified.
+Use component state `resetConfirmOpen`. Clicking `Загрузить новые отчёты` with manual edits opens `AppDialog`; `Остаться` closes it, `Загрузить новые отчёты` runs `setState(createInitialState(...))` and closes it.
 
-- [ ] **Step 7: Reset rebalance session state on input-report replacement**
+- [ ] **Step 7: Reset rebalance session state on new input snapshot**
 
-On successful replacement of either Min-Max or supplier report, clear:
+On successful replacement of either source report set:
 
 ```ts
 approvedRebalancePlan: null,
@@ -968,25 +953,20 @@ reviewedOrderIds: [],
 exportedOrderIds: [],
 ```
 
-Keep `geographySettings` unchanged. This treats the pair of imported reports as one calculation snapshot and prevents stale price/effect metadata after supplier-report replacement.
+Keep `geographySettings` unchanged. This prevents stale physical/financial plan metadata when the input pair changes.
 
-- [ ] **Step 8: Run focused tests**
+- [ ] **Step 8: Run GREEN and commit**
 
 ```bash
 npm test -- --run tests/domain/rebalanceWorkflow.test.ts tests/ui/appDialog.test.tsx tests/ui/importReviewReset.test.tsx
 npm run typecheck
-```
-
-- [ ] **Step 9: Commit**
-
-```bash
 git add src/app src/features/import/ImportPage.tsx src/domain/rebalanceWorkflow.ts src/components/AppDialog.tsx tests/domain/rebalanceWorkflow.test.ts tests/ui/appDialog.test.tsx tests/ui/renderWithStore.tsx tests/ui/importReviewReset.test.tsx
 git commit -m "feat: add rebalance approval lifecycle"
 ```
 
 ---
 
-### Task 7: Add the Rebalancing workspace shell, controls, KPI semantics and presentation filters
+### Task 7: Add the Rebalancing workspace shell, controls, KPIs and presentation filters
 
 **Files:**
 - Modify: `src/app/App.tsx`
@@ -998,24 +978,20 @@ git commit -m "feat: add rebalance approval lifecycle"
 - Create: `tests/ui/rebalancePage.test.tsx`
 
 **Interfaces:**
-- `RebalancePage` reads only derived domain projections + AppState controls.
-- Filters are presentation-only; they never call allocation functions or mutate the plan.
+- `RebalancePage` consumes central derived projections; filters never recalculate allocation.
 - Default mode `Критичные`, default Pareto target `90%`, analytical grouping default `Строки закупки`.
 
 - [ ] **Step 1: Write RED navigation/workspace test**
 
-Render imported `App`, click `Ребалансировка`, assert heading and these labels:
-
 ```ts
+await user.click(screen.getByRole('button', { name: 'Ребалансировка' }));
 expect(screen.getByRole('heading', { name: 'Ребалансировка' })).toBeInTheDocument();
 expect(screen.getByText('Закупка до')).toBeInTheDocument();
 expect(screen.getByText('Сокращение закупки')).toBeInTheDocument();
 expect(screen.getByText('Остаточная закупка')).toBeInTheDocument();
 ```
 
-- [ ] **Step 2: Insert top-level navigation in workflow order**
-
-In `App.tsx`, add a button after branch navigation and before `Поставщики`:
+- [ ] **Step 2: Add top-level navigation and route content**
 
 ```tsx
 <button
@@ -1026,60 +1002,46 @@ In `App.tsx`, add a button after branch navigation and before `Поставщи�
 </button>
 ```
 
-Route content to `<RebalancePage />` before suppliers/orders fallthrough.
+Place it after branch navigation and before `Поставщики`. Route `state.page === 'rebalance'` to `<RebalancePage />`.
 
-- [ ] **Step 3: Implement page state without a second business store**
-
-`RebalancePage` uses:
+- [ ] **Step 3: Keep only presentation state in the page**
 
 ```ts
 const derived = derive(state);
 const proposal = derived.rebalanceProposal;
-const scenario = derived.rebalanceScenario;
-const approved = state.approvedRebalancePlan;
-```
-
-Local presentation state only:
-
-```ts
+const scenario = derived.rebalanceScenario.plan;
+const scenarioIssues = derived.rebalanceScenario.issues;
 const [grouping, setGrouping] = useState<'RECIPIENT_LINE' | 'SKU'>('RECIPIENT_LINE');
 const [filters, setFilters] = useState<RebalanceFilters>(emptyRebalanceFilters);
 const [selectedRouteKey, setSelectedRouteKey] = useState<string | null>(null);
 ```
 
-- [ ] **Step 4: Build exact KPI layer**
+- [ ] **Step 4: Render exact KPI layer**
 
-`RebalanceKpis` shows only:
-
-```text
-Закупка до
-Сокращение закупки
-Остаточная закупка
+```tsx
+<div className="rebalance-kpis">
+  <MetricCard label="Закупка до" value={purchaseBeforeLabel} />
+  <MetricCard label="Сокращение закупки" value={purchaseReductionLabel} />
+  <MetricCard label="Остаточная закупка" value={residualPurchaseLabel} />
+</div>
+<p>{`${scenario.summary.routeCount} маршрутов · ${scenario.summary.transferCount} SKU-линий · ${fmtQty(scenario.summary.totalQty)} шт.`}</p>
 ```
 
-Below it show workload:
+If price data is incomplete, append the exact unknown-line count; never imply a complete money total.
 
-```text
-N маршрутов · M SKU-линий · Q шт.
-```
-
-If any positive demand/transfer has missing price, append explicit `K строк без цены`; never present known amount as complete.
-
-- [ ] **Step 5: Implement mode and Pareto controls**
-
-Mode buttons update `state.rebalanceMode`.
-
-Pareto buttons update only:
+- [ ] **Step 5: Implement mode/Pareto/grouping controls**
 
 ```ts
+set({ rebalanceMode: 'CRITICALITY_FIRST' });
 set({
   rebalanceDraft: { ...state.rebalanceDraft, paretoTarget: 90 },
 });
+setGrouping('SKU');
 ```
 
-Grouping toggle changes only local analytical presentation; no state used by `derive()`.
+Only `rebalanceMode` and `paretoTarget` affect derived scenario. `grouping` is analytics-only.
 
-- [ ] **Step 6: Implement presentation filter contract**
+- [ ] **Step 6: Implement presentation filters**
 
 ```ts
 export interface RebalanceFilters {
@@ -1092,38 +1054,32 @@ export interface RebalanceFilters {
   recipientStatus: 'ALL' | StockStatus;
   fullGapOnly: boolean;
 }
+
+export const emptyRebalanceFilters: RebalanceFilters = {
+  query: '', amountFrom: '', amountTo: '', donor: '', recipient: '',
+  relation: 'ALL', recipientStatus: 'ALL', fullGapOnly: false,
+};
 ```
 
-`filterScenarioTransfers()` receives an already-built scenario and returns visible transfer keys/routes. It must not call `buildRebalanceProposal()` or change quantities.
+`filterScenarioTransfers(scenario.transfers, filters, demand)` returns visible lines only. Search matches code/article/name. Filters must never call `buildRebalanceProposal()` or mutate plan quantities. Non-empty search shows a real `Очистить поиск` button.
 
-Search matches 1C code, article and name. Non-empty search has an explicit `Очистить поиск` button.
+- [ ] **Step 7: Add state labels and base CSS**
 
-- [ ] **Step 7: Add state labels**
-
-Use deterministic status:
-
-```text
-no approved plan                -> Не утверждено
-approved && plansEquivalent     -> Утверждено
-approved && !plansEquivalent    -> Есть новый черновик
+```ts
+const planState = state.approvedRebalancePlan == null
+  ? 'Не утверждено'
+  : plansEquivalent(state.approvedRebalancePlan, scenario)
+    ? 'Утверждено'
+    : 'Есть новый черновик';
 ```
 
-`Автопредложение` labels the full-potential source, not the approval state.
+Use existing CSS tokens only: `--blue`, `--line`, `--surface`, `--muted`, `--warning`, `--danger`. No gradients, glow, glass or new palette.
 
-- [ ] **Step 8: Add core CSS using existing tokens only**
-
-Create `.rebalance-*` classes using `var(--blue)`, `var(--line)`, `var(--surface)`, `var(--muted)`, `var(--warning)`, `var(--danger)`. Do not add gradients, glass, glow or a new palette.
-
-- [ ] **Step 9: Run UI test + typecheck**
+- [ ] **Step 8: Run GREEN and commit**
 
 ```bash
 npm test -- --run tests/ui/rebalancePage.test.tsx
 npm run typecheck
-```
-
-- [ ] **Step 10: Commit**
-
-```bash
 git add src/app/App.tsx src/features/rebalance src/styles/app.css tests/ui/rebalancePage.test.tsx
 git commit -m "feat: add rebalancing workspace shell"
 ```
@@ -1145,9 +1101,9 @@ git commit -m "feat: add rebalancing workspace shell"
 **Interfaces:**
 - `buildRouteSummaries(transfers): RebalanceRouteSummary[]`
 - `buildFlowLayout(routeSummaries): FlowLayout`
-- Map and route list consume the same route summaries and selection callback.
+- Map and route list consume the same summaries and selection callback.
 
-- [ ] **Step 1: Define route aggregation once**
+- [ ] **Step 1: Define route aggregation and RED tests**
 
 ```ts
 export interface RebalanceRouteSummary {
@@ -1163,82 +1119,78 @@ export interface RebalanceRouteSummary {
 }
 ```
 
-Aggregate by directed `routeKey(fromBranch,toBranch)`. Relation is identical for every line on one pair because geography is symmetric; manual-only route remains explicitly `MANUAL_ONLY`.
+Test that several SKU lines on one directed pair produce one route summary, reverse direction is another route, and filtering does not mutate original scenario summary.
 
-- [ ] **Step 2: Write view-model tests**
-
-Assert multiple SKU lines on one route produce one route card; reverse direction is a separate directed route; filters hide view lines without changing the source scenario summary.
-
-- [ ] **Step 3: Implement topological node roles**
-
-For every visible branch:
+- [ ] **Step 2: Implement topological node roles and deterministic coordinates**
 
 ```ts
-role = outgoing > 0 && incoming > 0 ? 'MIXED'
-     : outgoing > 0 ? 'DONOR'
-     : 'RECIPIENT';
+const role = outgoing > 0 && incoming > 0
+  ? 'MIXED'
+  : outgoing > 0
+    ? 'DONOR'
+    : 'RECIPIENT';
+
+const xByRole = { DONOR: 90, MIXED: 500, RECIPIENT: 910 } as const;
+const y = 64 + indexWithinRole * 96;
+const height = Math.max(420, maxRoleCount * 96 + 80);
 ```
 
-Sort within each role by known financial effect descending, then branch name. Coordinates use a fixed logical width 1000:
+Sort nodes within each role by known financial effect descending, then branch name.
+
+- [ ] **Step 3: Render SVG connectors but semantic HTML controls**
+
+```tsx
+<div className="rebalance-flow-map" style={{ height }}>
+  <svg className="rebalance-flow-lines" viewBox={`0 0 1000 ${height}`} aria-hidden="true">
+    {layout.routes.map((route) => (
+      <path key={route.key} d={route.path} className={`flow-line ${route.relation}`} />
+    ))}
+  </svg>
+  {layout.nodes.map((node) => (
+    <button key={node.branch} className="flow-node" style={node.style} onClick={() => onFocusBranch(node.branch)}>
+      <strong>{node.branch}</strong>
+      <span>{node.caption}</span>
+    </button>
+  ))}
+  {layout.routes.map((route) => (
+    <button key={route.key} className="rebalance-route-button" style={route.labelStyle} onClick={() => onSelectRoute(route.key)}>
+      {route.label}
+    </button>
+  ))}
+</div>
+```
+
+`PRIORITY` uses solid line + `Приоритетно`, `ALLOWED` dashed + `Допустимо`, manual route warning marker + `Только вручную`. Text is authoritative; color is secondary.
+
+- [ ] **Step 4: Build always-reachable route-list fallback**
+
+```tsx
+<ul className="rebalance-route-list">
+  {routes.map((route) => (
+    <li key={route.key}>
+      <button onClick={() => onSelectRoute(route.key)}>
+        {route.fromBranch} → {route.toBranch} · {route.skuCount} SKU · {fmtQty(route.totalQty)} шт. · {relationLabel(route.relation)}
+      </button>
+    </li>
+  ))}
+</ul>
+```
+
+Expose via visible `Список маршрутов` disclosure/view switch. Keyboard activation must select the same inspector state as map click.
+
+- [ ] **Step 5: Add branch focus and run GREEN**
 
 ```ts
-DONOR x = 90
-MIXED x = 500
-RECIPIENT x = 910
+const connected = routes.filter(
+  (route) => route.fromBranch === focusedBranch || route.toBranch === focusedBranch,
+);
 ```
 
-Vertical gap 96 px; map height is `max(roleColumnLength) * 96 + 80`, minimum 420 px. This avoids a graph-layout dependency and is deterministic.
-
-- [ ] **Step 4: Render visual connectors in SVG, interactions in semantic HTML**
-
-`RebalanceFlowMap` renders:
-- absolutely positioned `<button>` node cards for branches;
-- an `aria-hidden="true"` SVG layer for curved connector paths;
-- absolutely positioned route-summary `<button>` controls near connector midpoints.
-
-The route button contains text such as:
-
-```text
-2 SKU · 30 шт · −71 400 ₽
-Приоритетно
-```
-
-For missing prices:
-
-```text
-−71 400 ₽ + 1 строка без цены
-```
-
-Do not make SVG paths themselves the only click target.
-
-- [ ] **Step 5: Encode relation with shape + text, not color only**
-
-- `PRIORITY`: solid connector + label `Приоритетно`.
-- `ALLOWED`: dashed connector + label `Допустимо`.
-- `MANUAL_ONLY`: warning marker + label `Только вручную`.
-
-No animated flowing particles.
-
-- [ ] **Step 6: Build route-list fallback from the same data**
-
-`RebalanceRouteList` is always reachable via a visible `Список маршрутов` disclosure/tab and contains real buttons with the same summary, relation and `onSelectRoute(key)` behavior.
-
-Test keyboard activation of a route-list button and assert it opens the same selected-route state as map click.
-
-- [ ] **Step 7: Branch focus interaction**
-
-Node click sets local `focusedBranch`; connected routes remain full opacity, unrelated routes receive `.is-muted`. Provide `Показать всю сеть` control to clear focus. This changes presentation only.
-
-- [ ] **Step 8: Run focused tests**
+Unrelated routes get `.is-muted`; `Показать всю сеть` clears focus. This is presentation-only.
 
 ```bash
 npm test -- --run tests/domain/rebalanceView.test.ts tests/ui/rebalanceFlowMap.test.tsx tests/ui/rebalancePage.test.tsx
 npm run typecheck
-```
-
-- [ ] **Step 9: Commit**
-
-```bash
 git add src/features/rebalance src/styles/app.css tests/domain/rebalanceView.test.ts tests/ui/rebalanceFlowMap.test.tsx
 git commit -m "feat: visualize rebalance flows"
 ```
@@ -1254,86 +1206,74 @@ git commit -m "feat: visualize rebalance flows"
 - Create: `tests/ui/rebalanceInspector.test.tsx`
 
 **Interfaces:**
-- Inspector receives selected `RebalanceRouteSummary`, original demand and current draft state.
-- Quantity edits write `RebalanceQtyEdit[]`; domain scenario builder validates them.
+- Inspector consumes selected route summary, original demand and draft state.
+- Quantity writes `RebalanceQtyEdit[]`; scenario domain validation remains authoritative.
 
 - [ ] **Step 1: Write RED inspector test**
 
-Select a route and assert columns/labels:
+Assert visible columns `Код`, `Артикул`, `Номенклатура`, `До MAX получателю`, `Доступно у донора`, `Переместить`, `Сокращение закупки`. Edit 10 → 6 and assert KPI/workload preview changes while Orders remain unchanged before approval.
 
-```text
-Код
-Артикул
-Номенклатура
-До MAX получателю
-Доступно у донора
-Переместить
-Сокращение закупки
+- [ ] **Step 2: Render route header and line table**
+
+```tsx
+<header className="route-inspector-header">
+  <h2>{route.fromBranch} → {route.toBranch}</h2>
+  <span>{relationLabel(route.relation)}</span>
+  <strong>{route.skuCount} SKU · {fmtQty(route.totalQty)} шт. · {money(route.knownReductionAmount)}</strong>
+</header>
 ```
 
-Edit a quantity from 10 to 6 and assert top KPI reduction and workload update immediately while orders remain unchanged before approval.
+Use a native table for the SKU lines because row/column comparison is the task.
 
-- [ ] **Step 2: Render route header**
-
-Show:
-
-```text
-Егорьевск → Рязань
-Приоритетно
-2 SKU · 30 шт · −71 400 ₽
-```
-
-- [ ] **Step 3: Implement numeric editor without native validation bubbles**
-
-Use `type="number"`, `min=0`, `step="any"`, but validate in React/domain. On invalid entry show an inline error tied with `aria-describedby`; do not call `reportValidity()`.
-
-Update state by replacing/adding the exact `transferKey` edit:
+- [ ] **Step 3: Implement controlled numeric editor and explicit errors**
 
 ```ts
-const nextQtyEdits = state.rebalanceDraft.qtyEdits.filter(
-  (edit) => edit.transferKey !== key,
-);
-nextQtyEdits.push({ transferKey: key, qty });
+function setTransferQty(key: string, qty: number) {
+  const withoutCurrent = state.rebalanceDraft.qtyEdits.filter(
+    (edit) => edit.transferKey !== key,
+  );
+  set({
+    rebalanceDraft: {
+      ...state.rebalanceDraft,
+      qtyEdits: [...withoutCurrent, { transferKey: key, qty }],
+    },
+  });
+}
 ```
 
-If qty equals current recommendation, remove the edit instead of keeping a redundant override.
+Input uses `type="number" min="0" step="any"`; no `reportValidity()`. If domain validation returns an issue for this key, show inline text with `aria-invalid` + `aria-describedby` and disable approval until fixed.
 
-- [ ] **Step 4: Show before/after safety proof per line**
+- [ ] **Step 4: Show before/after safety proof from aggregate scenario**
 
-For a valid edit display:
-
-```text
-Донор после перемещения: 20 / MAX 20 ✓
-Получатель после перемещения: 16 / MAX 16 ✓
+```ts
+const donorAfter = donor.stock - outgoingForSkuAndDonor;
+const recipientAfter = recipient.stock + incomingForSkuAndRecipient;
 ```
 
-Calculate from original stock plus all current scenario transfers for the same SKU/branch, not just the edited line in isolation.
+Display `Донор после перемещения: X / MAX Y ✓` and `Получатель после перемещения: X / MAX Y ✓` when valid.
 
-- [ ] **Step 5: Add line/route actions**
+- [ ] **Step 5: Add exact line/route actions**
 
-- `Убрать из сценария` adds transfer key to `excludedTransferKeys`.
-- `Вернуть рекомендацию` removes qty edit/exclusion for that key.
-- `Убрать маршрут` adds every route transfer key to exclusions.
+```ts
+excludeTransfer(key);
+restoreRecommendedTransfer(key);
+excludeRoute(route.transfers.map(transferKey));
+```
 
-All are buttons with visible focus states.
+Buttons: `Убрать из сценария`, `Вернуть рекомендацию`, `Убрать маршрут`.
 
-- [ ] **Step 6: Run focused tests**
+- [ ] **Step 6: Run GREEN and commit**
 
 ```bash
 npm test -- --run tests/ui/rebalanceInspector.test.tsx tests/domain/rebalanceScenario.test.ts
 npm run typecheck
-```
-
-- [ ] **Step 7: Commit**
-
-```bash
 git add src/features/rebalance/RouteInspector.tsx src/features/rebalance/RebalancePage.tsx src/styles/app.css tests/ui/rebalanceInspector.test.tsx
 git commit -m "feat: edit rebalance route quantities"
 ```
 
 ---
 
-### Task 10: Add explicit manual transfer builder, including MANUAL_ONLY warning path
+### Task 10: Add explicit manual transfer builder and MANUAL_ONLY warning path
 
 **Files:**
 - Create: `src/features/rebalance/ManualTransferBuilder.tsx`
@@ -1343,63 +1283,55 @@ git commit -m "feat: edit rebalance route quantities"
 
 **Interfaces:**
 - Uses `validateManualTransfer()` from Task 4.
-- Native `<select>` is intentionally accepted as canonical here because ORDERS_AUTO targets current Chrome/Edge and does not require authored popup geometry; style the closed control with existing `.input` language.
+- Native `<select>` is explicitly accepted because current Chrome/Edge platform popup geometry is acceptable for this internal desktop tool.
 
-- [ ] **Step 1: Write RED manual-path tests**
+- [ ] **Step 1: Write RED manual path tests**
 
-Cover:
-- SKU selector contains only valid-MAX SKU with donor surplus and recipient gap;
-- donor options have remaining surplus;
-- recipient cannot equal donor;
-- quantity over max shows error;
-- `MANUAL_ONLY` produces explicit warning and requires a second `Добавить вручную` action;
-- adding it does not mutate geography settings.
+Test valid-SKU filtering, donor remaining surplus, recipient gap, same-branch exclusion, qty-over-max error, explicit `MANUAL_ONLY` warning, and no geography mutation after manual add.
 
-- [ ] **Step 2: Build a four-field `noValidate` form**
+- [ ] **Step 2: Build the four-field noValidate form**
 
 ```tsx
 <form noValidate onSubmit={handleSubmit}>
-  <label>SKU<select ... /></label>
-  <label>Донор<select ... /></label>
-  <label>Получатель<select ... /></label>
-  <label>Количество<input type="number" min="0" step="any" ... /></label>
+  <label htmlFor="manual-sku">SKU</label>
+  <select id="manual-sku" className="input" value={skuCode} onChange={handleSkuChange}>{skuOptions}</select>
+  <label htmlFor="manual-donor">Донор</label>
+  <select id="manual-donor" className="input" value={fromBranch} onChange={handleDonorChange}>{donorOptions}</select>
+  <label htmlFor="manual-recipient">Получатель</label>
+  <select id="manual-recipient" className="input" value={toBranch} onChange={handleRecipientChange}>{recipientOptions}</select>
+  <label htmlFor="manual-qty">Количество</label>
+  <input id="manual-qty" type="number" min="0" step="any" value={qtyText} onChange={handleQtyChange} />
   <Button type="submit">Добавить перемещение</Button>
 </form>
 ```
 
-Each label is real and every dependent select resets when its upstream choice becomes invalid.
+Option copy includes `Егорьевск — доступно 15` and `Рязань — gap 10`.
 
-- [ ] **Step 3: Show physical availability next to options**
+- [ ] **Step 3: Implement explicit manual-only confirmation inline**
 
-Donor option text: `Егорьевск — доступно 15`.
-Recipient option text: `Рязань — gap 10`.
-
-- [ ] **Step 4: Implement `MANUAL_ONLY` confirmation without modal fatigue**
-
-When validation returns `requiresManualOnlyConfirmation=true`, do not add immediately. Render persistent inline warning:
-
-```text
-Эта связь исключена из автоматической ребалансировки.
-Добавить конкретное перемещение вручную?
-[Отмена] [Добавить вручную]
+```tsx
+{validation.requiresManualOnlyConfirmation && pendingInput && (
+  <Alert tone="warning">
+    Эта связь исключена из автоматической ребалансировки.
+    <div className="inline-actions">
+      <Button secondary onClick={() => setPendingInput(null)}>Отмена</Button>
+      <Button onClick={() => commitManualTransfer(pendingInput)}>Добавить вручную</Button>
+    </div>
+  </Alert>
+)}
 ```
 
-Only the second button appends the manual input to `rebalanceDraft.manualTransfers`.
+Do not change the pair setting.
 
-- [ ] **Step 5: Verify existing-line behavior**
+- [ ] **Step 4: Existing identity becomes a manual override, not a duplicate**
 
-If the same `sku/from/to` already exists in scenario, submitting manual input replaces that transfer quantity/source per Task 4; UI copy says `Количество существующего перемещения будет изменено`.
+If `transferKey()` already exists, show `Количество существующего перемещения будет изменено` and rely on Task 4 replacement semantics.
 
-- [ ] **Step 6: Run tests + typecheck**
+- [ ] **Step 5: Run GREEN and commit**
 
 ```bash
 npm test -- --run tests/ui/manualTransferBuilder.test.tsx tests/domain/rebalanceScenario.test.ts
 npm run typecheck
-```
-
-- [ ] **Step 7: Commit**
-
-```bash
 git add src/features/rebalance/ManualTransferBuilder.tsx src/features/rebalance/RebalancePage.tsx src/styles/app.css tests/ui/manualTransferBuilder.test.tsx
 git commit -m "feat: add manual rebalance transfers"
 ```
@@ -1415,79 +1347,74 @@ git commit -m "feat: add manual rebalance transfers"
 - Create: `tests/ui/geographySettings.test.tsx`
 
 **Interfaces:**
-- Dialog edits a local draft `GeographyPairSetting[]` and only writes to AppState/persistence on `Сохранить`.
-- Matrix mirrors one unordered pair in two visual cells.
-- Saving changes rebuilds proposal/scenario through normal `derive()` inputs but does not replace approved plan.
+- Dialog edits local draft settings and commits only on `Сохранить`.
+- Full mirrored matrix reads/writes one unordered pair.
+- Saved geography rebuilds proposal/scenario but never replaces approved plan automatically.
 
 - [ ] **Step 1: Write RED symmetric matrix test**
 
-Open settings with branches `A, B, C`, change `A ↔ B` from `MANUAL_ONLY` to `PRIORITY`, assert both visual cells expose accessible name `A ↔ B: Приоритетно` and `B ↔ A: Приоритетно`, but the draft data contains one pair setting.
+With branches `A, B, C`, change `A ↔ B` from `MANUAL_ONLY` to `PRIORITY`; assert both visual cells announce their directional readable labels while the underlying draft contains one unordered pair setting.
 
-- [ ] **Step 2: Use `AppDialog` as a large settings surface**
+- [ ] **Step 2: Open a large `AppDialog` settings surface**
 
-Dialog title: `Настройка географии перемещений`.
-Description: `Связь симметрична и действует одинаково в обе стороны.`
-
-The body owns scrolling; title/actions remain visible. Background workspace is inert while open.
-
-- [ ] **Step 3: Render full mirrored matrix but write one unordered pair**
-
-Diagonal cells render `—` and are non-interactive.
-
-Each editable cell is a real button with text/accessible name; cycling order:
-
-```text
-Только вручную → Допустимо → Приоритетно → Только вручную
+```tsx
+<AppDialog
+  open={open}
+  title="Настройка географии перемещений"
+  description="Связь симметрична и действует одинаково в обе стороны."
+  onClose={requestClose}
+  actions={actionBar}
+>
+  <GeographyMatrix branches={branches} settings={draftSettings} onChange={setPairRelation} />
+</AppDialog>
 ```
 
-The mirrored cell reads the same underlying relation immediately.
+Body scrolls; title/actions remain reachable.
 
-- [ ] **Step 4: Add pair selection and bulk actions**
+- [ ] **Step 3: Render mirrored cells over one unordered owner**
 
-Selection uses checkboxes for unordered pairs, not duplicate mirrored cells. Show exact `Выбрано пар: N` and actions:
-
-```text
-Сделать приоритетными
-Сделать допустимыми
-Только вручную
-```
-
-Bulk action updates every selected pair in local draft.
-
-- [ ] **Step 5: Implement Save/Cancel/dirty behavior**
-
-`Сохранить`:
+Diagonal cells are `—`. Editable cells are buttons whose relation cycles:
 
 ```ts
-await saveGeographySettings(draftSettings);
-set({ geographySettings: draftSettings, toast: 'Настройки географии сохранены.' });
+const nextRelation: Record<RebalanceRelation, RebalanceRelation> = {
+  MANUAL_ONLY: 'ALLOWED',
+  ALLOWED: 'PRIORITY',
+  PRIORITY: 'MANUAL_ONLY',
+};
 ```
 
-Do not change `approvedRebalancePlan`.
+Accessible name format: `Егорьевск ↔ Рязань: Допустимо`.
 
-If closing while dirty, prevent immediate close and show within the same dialog:
+- [ ] **Step 4: Add unordered pair selection and bulk actions**
 
-```text
-Есть несохранённые изменения.
-[Продолжить редактирование] [Отменить изменения]
+```ts
+const selectedKeys = new Set<string>();
+applyBulkRelation(selectedKeys, 'PRIORITY');
+applyBulkRelation(selectedKeys, 'ALLOWED');
+applyBulkRelation(selectedKeys, 'MANUAL_ONLY');
 ```
 
-Avoid a nested modal.
+Show `Выбрано пар: N`; selection uses checkboxes and never counts mirrored cell twice.
 
-- [ ] **Step 6: Add persistence failure recovery**
+- [ ] **Step 5: Implement save, persistence failure and dirty close**
 
-On save failure, keep the dialog and draft open, show an inline `role="alert"` message `Не удалось сохранить настройки географии. Повторите попытку.`; do not discard edits.
+```ts
+try {
+  await saveGeographySettings(draftSettings);
+  set({ geographySettings: draftSettings, toast: 'Настройки географии сохранены.' });
+  onSaved();
+} catch {
+  setSaveError('Не удалось сохранить настройки географии. Повторите попытку.');
+}
+```
 
-- [ ] **Step 7: Run focused tests**
+If dirty close is requested, stay in the same dialog and show `Есть несохранённые изменения` with `Продолжить редактирование` / `Отменить изменения`; do not open nested modal.
+
+- [ ] **Step 6: Run GREEN and commit**
 
 ```bash
 npm test -- --run tests/ui/geographySettings.test.tsx tests/persistence/persistence.test.ts tests/domain/geography.test.ts
 npm run typecheck
-```
-
-- [ ] **Step 8: Commit**
-
-```bash
 git add src/features/rebalance/GeographySettingsDialog.tsx src/features/rebalance/RebalancePage.tsx src/styles/app.css tests/ui/geographySettings.test.tsx
 git commit -m "feat: configure rebalance geography"
 ```
@@ -1508,87 +1435,66 @@ git commit -m "feat: configure rebalance geography"
 - Modify: `tests/ui/suppliersPage.test.tsx`
 
 **Interfaces:**
-- Approval commits current `derived.rebalanceScenario` using Task 6 invalidation helper.
-- Demand continues to show original gap; Orders/Suppliers use residual projection.
+- Approval commits `derived.rebalanceScenario.plan` only when scenario issues are empty.
+- Demand preserves original physical gap; Orders/Suppliers use residual purchase.
 
-- [ ] **Step 1: Write RED end-to-end component test for approval**
+- [ ] **Step 1: Write RED approval integration test**
 
-Synthetic state:
-- recipient gap 20;
-- scenario incoming 12;
-- current order calculated 20 before approval;
-- one unrelated manual order edit in another branch.
+Synthetic state: recipient gap 20, scenario incoming 12, current order calculated 20, unrelated manual edit in another branch. After `Утвердить перемещения`, assert recipient calculated order qty = 8 and unrelated edit remains.
 
-Click `Утвердить перемещения`; after commit assert recipient order calculated quantity becomes 8 and unrelated edit remains.
+- [ ] **Step 2: Add approval consequence summary and guard**
 
-- [ ] **Step 2: Add approval action with consequences summary**
-
-Primary button: `Утвердить перемещения`.
-
-Before approval show:
-
-```text
-После утверждения:
-− закупка сократится на X ₽
-− останется заказать Y ₽
-− N маршрутов / M SKU-линий / Q шт.
+```tsx
+<Button disabled={scenarioIssues.length > 0} onClick={requestApproval}>
+  Утвердить перемещения
+</Button>
 ```
 
-If affected manual order edits exist, open `AppDialog`:
+Before commit show `После утверждения: −X ₽ закупки · останется Y ₽ · N маршрутов · M SKU-линий · Q шт.`.
 
-```text
-Пересчитать заказы?
-У N затронутых строк есть ручные количества. Они будут сброшены,
-потому что изменится расчётная потребность.
-[Отмена] [Утвердить и пересчитать]
-```
+If affected manual order edits exist, open `AppDialog` with title `Пересчитать заказы?`, description `У N затронутых строк есть ручные количества. Они будут сброшены, потому что изменится расчётная потребность.`, actions `Отмена` / `Утвердить и пересчитать`. If no affected edits, commit directly.
 
-If no affected edits, approval can commit without a confirmation dialog.
+- [ ] **Step 3: Commit through the domain workflow helper**
 
-- [ ] **Step 3: Commit plan through `applyRebalanceApproval()`**
-
-Set the returned state patch plus toast:
-
-```text
-Перемещения утверждены. Закупочная потребность и заказы пересчитаны.
+```ts
+const patch = applyRebalanceApproval({
+  previousApprovedPlan: state.approvedRebalancePlan,
+  nextApprovedPlan: scenario,
+  edits: state.edits,
+  reviewedOrderIds: state.reviewedOrderIds,
+  exportedOrderIds: state.exportedOrderIds,
+  orders: derived.projection.orders,
+});
+set({
+  ...patch,
+  toast: 'Перемещения утверждены. Закупочная потребность и заказы пересчитаны.',
+});
 ```
 
 - [ ] **Step 4: Add original-vs-residual transparency to Demand**
 
-When approved incoming > 0 for a row, retain existing `Нужно сюда` = original `deficitQty` and add/show `Осталось заказать` = `residualPurchaseQty` in the branch view/detail. Do not relabel the original physical gap as residual.
+Use `derived.purchaseDemand` indexed by `skuCode\0branch`. Keep existing `Нужно сюда = deficitQty`; when approved incoming > 0, show `Осталось заказать = residualPurchaseQty`. Never relabel original gap as residual.
 
-- [ ] **Step 5: Add Orders context banner**
+- [ ] **Step 5: Add Orders/Suppliers context banners**
 
-When `approvedRebalancePlan != null`, show a compact info banner above the order matrix:
+Orders banner when approved plan exists:
 
 ```text
-В заказах учтена утверждённая ребалансировка:
-−X ₽ закупки · N маршрутов.
+В заказах учтена утверждённая ребалансировка: −X ₽ закупки · N маршрутов.
 [Открыть ребалансировку]
 ```
 
-Button sets `page: 'rebalance'`.
+Suppliers shows the same compact context but does not recalculate supplier totals itself; totals already come from residual orders.
 
-- [ ] **Step 6: Add Suppliers context without duplicating calculations**
+- [ ] **Step 6: Prove approved baseline survives draft changes**
 
-Supplier totals already derive from residual orders. Add only a short info line/banner that approved rebalance is included; do not reimplement supplier math in the page.
+Test: approve plan, then change Pareto target/mode/quantity. UI becomes `Есть новый черновик`, while `purchaseDemand` and Orders remain based on previous approved plan until next approval.
 
-- [ ] **Step 7: Preserve approved baseline when draft changes**
-
-Changing priority mode, Pareto target, geography or draft quantities must update proposal/scenario status to `Есть новый черновик` while `purchaseDemand` and orders continue using the prior `approvedRebalancePlan` until the next approval.
-
-Add a regression test for this exact behavior.
-
-- [ ] **Step 8: Run focused UI suites**
+- [ ] **Step 7: Run GREEN and commit**
 
 ```bash
 npm test -- --run tests/ui/rebalanceApproval.test.tsx tests/ui/demandPage.test.tsx tests/ui/ordersPage.test.tsx tests/ui/suppliersPage.test.tsx
 npm run typecheck
-```
-
-- [ ] **Step 9: Commit**
-
-```bash
 git add src/features/rebalance/RebalancePage.tsx src/features/demand/DemandPage.tsx src/features/orders/OrdersPage.tsx src/features/suppliers/SuppliersPage.tsx src/styles/app.css tests/ui
 git commit -m "feat: approve rebalance into purchase orders"
 ```
@@ -1604,15 +1510,14 @@ git commit -m "feat: approve rebalance into purchase orders"
 - Modify: `src/styles/app.css`
 - Modify: `tests/e2e/offline.spec.ts`
 - Create: `tests/ui/rebalanceStates.test.tsx`
-- Modify: `.github/workflows/verify.yml` only if the existing test command needs no automatic discovery (normally no change expected)
 
 **Interfaces:**
 - Production acceptance remains the existing offline `dist/ORDERS_AUTO/index.html` contract.
-- Rebalance has explicit empty/no-route/missing-price/invalid-norm states and works by keyboard.
+- Rebalance has explicit empty/no-route/missing-price/invalid-norm states and keyboard-equivalent operations.
 
-- [ ] **Step 1: Add explicit state tests before implementation**
+- [ ] **Step 1: Add RED state tests**
 
-Test exact messages:
+Exact messages:
 
 ```text
 В сети нет остатков выше MAX, доступных для автоматической ребалансировки.
@@ -1622,26 +1527,29 @@ Test exact messages:
 Есть излишек, но автоматические маршруты не настроены.
 ```
 
-Also test:
-- missing price retains quantity transfers and shows `Эффект неизвестен`/unknown count;
-- `NO_NORM`/`INVALID_NORM` diagnostic count explains exclusion;
-- `MANUAL_ONLY` never appears in auto proposal.
+Also assert missing-price transfers remain by quantity, invalid norms show exclusion counts, and `MANUAL_ONLY` never appears in auto proposal.
 
-- [ ] **Step 2: Add geography-blocked empty-state action**
+- [ ] **Step 2: Implement explicit empty/error branches**
 
-If physical donor surplus + recipient gaps exist but all pair relations are `MANUAL_ONLY`, show `Открыть настройку географии` and open the settings dialog.
+```tsx
+if (physicalSurplusCount === 0) {
+  return <EmptyState>В сети нет остатков выше MAX, доступных для автоматической ребалансировки.</EmptyState>;
+}
+if (proposal.transfers.length === 0 && blockedByGeographyCount > 0) {
+  return (
+    <EmptyState>
+      Есть излишек, но автоматические маршруты не настроены.
+      <Button onClick={() => setGeographyOpen(true)}>Открыть настройку географии</Button>
+    </EmptyState>
+  );
+}
+```
 
-- [ ] **Step 3: Verify keyboard contracts in component tests**
+Missing price shows `Эффект неизвестен` plus count; `NO_NORM/INVALID_NORM` show diagnostics and are not offered as transfer inputs.
 
-Cover:
-- Tab reaches mode, Pareto, map route buttons/list route buttons, inspector editors and approval;
-- Enter/Space activates route buttons;
-- Escape closes `AppDialog` when cancellation is allowed;
-- focus-visible class/outline is not hidden by sticky inspector/settings headers.
+- [ ] **Step 3: Add keyboard/reduced-motion/layout coverage**
 
-- [ ] **Step 4: Add reduced-motion and scrollbar CSS**
-
-Do not animate continuous paths. Any route/node transition must be behind:
+Component tests cover Tab to mode/Pareto/routes/inspector/approval, Enter/Space on route buttons, Escape on AppDialog, and focus-visible not obscured by sticky UI.
 
 ```css
 @media (prefers-reduced-motion: reduce) {
@@ -1653,44 +1561,42 @@ Do not animate continuous paths. Any route/node transition must be behind:
 }
 ```
 
-Ensure new overflow regions inherit or extend the app scrollbar baseline; do not hide scrollbars.
+New overflow areas keep visible scrollbars and do not add a competing page-level scroll owner.
 
-- [ ] **Step 5: Add real `file://` E2E workflow**
+- [ ] **Step 4: Extend real `file://` E2E**
 
-Extend `tests/e2e/offline.spec.ts` synthetic/local packaged flow to assert:
+In `tests/e2e/offline.spec.ts`, use the existing packaged-app fixture path and perform:
 
 ```text
-open file:// production app
-→ import synthetic reports using existing E2E fixture path
+open production file:// index
+→ import synthetic reports
 → open Ребалансировка
-→ configure one pair as Приоритетно
+→ set one pair to Приоритетно
 → choose 90%
-→ select a route
-→ change one transfer qty
+→ select route
+→ edit transfer quantity
 → approve
 → open Заказы
-→ verify residual calculated quantity
+→ assert residual calculated quantity
 ```
 
-Also assert no page/console errors and no HTTP/HTTPS runtime requests, preserving current package smoke checks.
+Preserve existing assertions: no page/console errors and no HTTP/HTTPS runtime requests.
 
-- [ ] **Step 6: Run Frontend Design Premium static checks locally if skill tooling is available**
+- [ ] **Step 5: Run Frontend Design Premium static audit with a resolved skill path**
 
-Run from the installed skill directory or equivalent:
+From repository root:
 
 ```bash
-python scripts/audit_project.py <repo-root> --mode strict --no-write
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SKILL_DIR="$(find "$HOME" -type d -path '*/frontend-design-premium' -print -quit)"
+test -n "$SKILL_DIR"
+python "$SKILL_DIR/scripts/audit_project.py" "$REPO_ROOT" --mode strict --no-write
+rg -n "window\.(alert|confirm|prompt)|onClick=\{.*div" src
 ```
 
-Resolve findings in touched UI. Specifically grep:
+Resolve touched-workflow findings. The grep should return no browser-native dialog call in the modified shell/workflow.
 
-```bash
-rg -n "window\.(alert|confirm|prompt)|onClick=\{.*div|TODO|TBD" src
-```
-
-Expected: no browser-native dialogs in touched shell/workflow and no plan placeholders.
-
-- [ ] **Step 7: Run full engineering gates**
+- [ ] **Step 6: Run full engineering gates**
 
 ```bash
 npm run typecheck
@@ -1699,52 +1605,28 @@ npm run build
 npm run test:e2e
 ```
 
-Expected:
-- all TypeScript/tests pass;
-- offline package validation passes;
-- `file://` Chrome smoke passes;
-- no runtime network dependency added.
+Expected: all pass; offline package validation and Chrome `file://` smoke remain green.
 
-- [ ] **Step 8: Manually inspect the production UI at two widths**
+- [ ] **Step 7: Manually inspect production UI**
 
-Open `dist/ORDERS_AUTO/index.html` via `file://` in Chrome/Edge and inspect:
-- desktop around 1440 px: map, KPI, inspector, settings matrix;
-- narrow desktop around 1024 px / 200% zoom: route list remains operable, map may horizontally scroll but actions are not clipped;
-- keyboard focus and `prefers-reduced-motion` behavior.
+Open `dist/ORDERS_AUTO/index.html` by `file://` in current Chrome/Edge. Inspect around 1440 px and around 1024 px / 200% zoom. Verify map, route list, inspector, geography matrix, keyboard focus and reduced-motion behavior remain usable; do not introduce an unrelated responsive redesign.
 
-Record only defects/verification result; do not introduce a responsive card redesign unrelated to this feature.
-
-- [ ] **Step 9: Final documentation drift check**
-
-Compare implemented types/labels with:
-- `DESIGN.md`;
-- approved design spec;
-- authoritative docs updated in Task 1.
-
-Run:
+- [ ] **Step 8: Final drift check and commit**
 
 ```bash
 git diff --check
 rg -n "Приоритетно|Допустимо|Только вручную|Сокращение закупки|Остаточная закупка" src docs
-```
-
-Fix terminology drift before completion.
-
-- [ ] **Step 10: Commit final verification changes**
-
-```bash
-git add src tests docs .github
-
+git add src tests docs
 git commit -m "test: verify offline rebalance workflow"
 ```
+
+Compare implementation with `DESIGN.md`, approved spec and authoritative docs from Task 1 before claiming completion.
 
 ---
 
 ## Execution order and review gates
 
 Implement Tasks 1–13 strictly in order because later interfaces depend on earlier contracts.
-
-Recommended review boundaries:
 
 ```text
 Gate A — Tasks 1–2: authoritative contracts + persistence schema
@@ -1755,7 +1637,7 @@ Gate E — Task 12: approval + downstream integration
 Gate F — Task 13: full verification / accessibility / file:// acceptance
 ```
 
-At each gate:
+At every gate:
 
 ```bash
 npm run typecheck
@@ -1771,21 +1653,19 @@ npm run test:e2e
 
 ## Definition of Done
 
-The feature is complete only when all are true:
-
 1. Auto proposal never takes donor below MAX and never uses `MANUAL_ONLY`.
 2. Both priority modes produce deterministic, tested plans.
-3. Pareto 80/90/95/100 works on `SKU × recipient`; `SKU` grouping remains analytics-only.
-4. Manual transfers obey physical MAX invariants and explicit manual-only warning semantics.
+3. Pareto 80/90/95/100 works on `SKU × recipient`; unknown-price transfer units remain physically present but outside the known-effect denominator; `SKU` grouping remains analytics-only.
+4. Manual transfers obey MAX invariants and explicit manual-only warning semantics.
 5. Geography matrix is symmetric, persists between sessions/imports and defaults unknown pairs to `MANUAL_ONLY`.
 6. Proposal/draft do not change orders; only approved plan creates residual purchase quantities.
 7. Original `deficitQty` remains intact and visible as physical gap.
 8. Approval resets only affected manual order edits/review/export state.
-9. A new input-report snapshot clears draft/approved rebalance state but preserves geography.
-10. Rebalance workspace clearly shows `Закупка до / Сокращение закупки / Остаточная закупка` and `маршруты / SKU-линии / единицы`.
+9. A new input snapshot clears draft/approved rebalance state but preserves geography.
+10. Workspace shows `Закупка до / Сокращение закупки / Остаточная закупка` and `маршруты / SKU-линии / единицы`.
 11. Flow-map and route-list expose the same actionable routes; all core actions work without drag and by keyboard.
-12. Downstream Demand/Suppliers/Orders explain why purchase totals differ from original demand after approval.
+12. Demand/Suppliers/Orders explain why purchase totals differ from original demand after approval.
 13. Empty/no-route/missing-price/invalid-norm states are explicit and actionable.
-14. No new external graph/map/runtime service or network dependency exists.
+14. No external graph/map/runtime service or new runtime network dependency exists.
 15. `npm run typecheck`, `npm test -- --run`, `npm run build`, `npm run test:e2e` all pass.
 16. Production `dist/ORDERS_AUTO/index.html` runs by double-click / `file://` in current Chrome/Edge and the existing rolling Release packaging contract remains intact.
