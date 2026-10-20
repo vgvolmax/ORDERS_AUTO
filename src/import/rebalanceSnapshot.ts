@@ -1,5 +1,5 @@
 import { normalizeKey } from '../domain/normalize';
-import { validateRebalanceSnapshot } from '../domain/rebalancing/validation';
+import { validatedSnapshot } from '../domain/rebalancing/validation';
 import { stockKey, type SnapshotAdapterInput, type SnapshotBuildResult, type RebalanceIssue } from '../domain/rebalancing/types';
 
 /** Adapt normalized legacy inputs without inventing reserves, units, quantity steps or branch identities. */
@@ -11,7 +11,9 @@ export function createRebalanceSnapshot(input: SnapshotAdapterInput): SnapshotBu
     const ids = aliases.get(key) ?? new Set<string>(); ids.add(branch.id); aliases.set(key, ids);
   }
   const policyMap = new Map(input.skuPolicies.map((p) => [p.skuCode, p]));
-  const duplicatePolicies = new Set(input.skuPolicies.filter((p, i, all) => all.findIndex((v) => v.skuCode === p.skuCode) !== i).map((p) => p.skuCode));
+  const policyCounts = new Map<string, number>();
+  for (const p of input.skuPolicies) policyCounts.set(p.skuCode, (policyCounts.get(p.skuCode) ?? 0) + 1);
+  const duplicatePolicies = new Set([...policyCounts].filter(([, n]) => n > 1).map(([code]) => code));
   const blockedSourceKeys = new Set<string>();
   for (const issue of input.sourceIssues ?? []) if (issue.code === 'DUPLICATE_SKU_BRANCH' && issue.skuCode && issue.branch) {
     for (const id of aliases.get(normalizeKey(issue.branch)) ?? []) blockedSourceKeys.add(stockKey(issue.skuCode, id));
@@ -37,15 +39,6 @@ export function createRebalanceSnapshot(input: SnapshotAdapterInput): SnapshotBu
       return { skuCode: s.code, name: s.name, unit: p?.unit ?? null, quantityStep: p?.quantityStep ?? null, referencePrice: s.referencePrice };
     }), stocks,
   };
-  const validation = validateRebalanceSnapshot(candidate); issues.push(...validation);
-  const invalidSkus = new Set(validation.filter((i) => i.severity === 'ERROR' && i.skuCode && i.stockIndex === undefined).map((i) => i.skuCode));
-  const invalidBranches = new Set(validation.filter((i) => i.severity === 'ERROR' && i.branchId && i.stockIndex === undefined).map((i) => i.branchId));
-  const invalidRows = new Set(validation.filter((i) => i.severity === 'ERROR' && i.stockIndex !== undefined).map((i) => i.stockIndex));
-  const rootInvalid = validation.some((i) => i.severity === 'ERROR' && !i.skuCode && !i.branchId && i.stockIndex === undefined);
-  return { snapshot: {
-    ...candidate,
-    branches: candidate.branches.filter((b) => !invalidBranches.has(b.id)),
-    skus: candidate.skus.filter((s) => !invalidSkus.has(s.skuCode)).map((s) => ({ ...s, referencePrice: s.referencePrice !== null && (!Number.isFinite(s.referencePrice) || s.referencePrice < 0) ? null : s.referencePrice })),
-    stocks: rootInvalid ? [] : stocks.filter((s, i) => !invalidRows.has(i) && !invalidSkus.has(s.skuCode) && !invalidBranches.has(s.branchId)),
-  }, issues };
+  const validated = validatedSnapshot(candidate);
+  return { snapshot: validated.snapshot, issues: [...issues, ...validated.issues] };
 }

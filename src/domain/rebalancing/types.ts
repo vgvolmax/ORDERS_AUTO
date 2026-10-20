@@ -7,7 +7,7 @@ export interface RebalanceStock { skuCode: string; branchId: string; stock: numb
 export interface RebalanceSnapshot { schemaVersion: 1; snapshotId: string; branches: RebalanceBranch[]; skus: RebalanceSku[]; stocks: RebalanceStock[] }
 export interface RebalanceIssue {
   code: string; message: string; severity: 'WARNING' | 'ERROR'; sourceRow: number | null;
-  skuCode?: string; branchId?: string; stockIndex?: number;
+  skuCode?: string; branchId?: string; stockIndex?: number; amount?: number | null; quantity?: number;
 }
 export interface SkuQuantityPolicy { skuCode: string; unit: string; quantityStep: number }
 export interface SnapshotAdapterInput {
@@ -54,3 +54,5 @@ export class RebalanceError extends Error {
   }
 }
 export const stockKey = (skuCode: string, branchId: string): string => JSON.stringify([skuCode, branchId]);
+
+export interface RouteIndex { outgoing: ReadonlyMap<string, ReadonlySet<string>>; stalePairs: RoutePair[] }

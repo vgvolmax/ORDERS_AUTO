@@ -44,3 +44,18 @@ export function validateRebalanceSnapshot(snapshot: RebalanceSnapshot): Rebalanc
   });
   return issues;
 }
+
+/** Keep independent valid rows usable, while excluding every ambiguous identity/duplicate. */
+export function validatedSnapshot(snapshot: RebalanceSnapshot): { snapshot: RebalanceSnapshot; issues: RebalanceIssue[] } {
+  const issues = validateRebalanceSnapshot(snapshot);
+  const invalidSkus = new Set(issues.filter((i) => i.severity === 'ERROR' && i.skuCode && i.stockIndex === undefined).map((i) => i.skuCode));
+  const invalidBranches = new Set(issues.filter((i) => i.severity === 'ERROR' && i.branchId && i.stockIndex === undefined).map((i) => i.branchId));
+  const invalidRows = new Set(issues.filter((i) => i.severity === 'ERROR' && i.stockIndex !== undefined).map((i) => i.stockIndex));
+  const rootInvalid = issues.some((i) => i.severity === 'ERROR' && !i.skuCode && !i.branchId && i.stockIndex === undefined);
+  return { snapshot: {
+    ...snapshot,
+    branches: snapshot.branches.filter((b) => !invalidBranches.has(b.id)),
+    skus: snapshot.skus.filter((s) => !invalidSkus.has(s.skuCode)).map((s) => ({ ...s, referencePrice: s.referencePrice !== null && (!Number.isFinite(s.referencePrice) || s.referencePrice < 0) ? null : s.referencePrice })),
+    stocks: rootInvalid ? [] : snapshot.stocks.filter((s, i) => !invalidRows.has(i) && !invalidSkus.has(s.skuCode) && !invalidBranches.has(s.branchId)),
+  }, issues };
+}

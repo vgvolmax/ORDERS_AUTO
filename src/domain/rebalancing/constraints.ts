@@ -3,7 +3,7 @@ import { isStepQuantity, receiverTarget, sumQuantities } from './numbers';
 import { RebalanceError, stockKey, type RebalanceConfig, type RouteDirection, type RebalanceSnapshot, type AcceptedTransfer, type RebalanceIssue } from './types';
 
 export const routePairKey = (a: string, b: string): string => JSON.stringify([a, b].sort());
-export function routeRules(config: RebalanceConfig): Map<string, { a: string; b: string; direction: RouteDirection }> {
+export function routeRules(config: Pick<RebalanceConfig, 'routeConfig'>): Map<string, { a: string; b: string; direction: RouteDirection }> {
   const rules = new Map<string, { a: string; b: string; direction: RouteDirection }>();
   for (const pair of config.routeConfig.pairs) {
     const key = routePairKey(pair.branchAId, pair.branchBId);
@@ -21,7 +21,7 @@ export function assertConfig(config: RebalanceConfig): void {
   }
   routeRules(config);
 }
-export function routeAllows(config: RebalanceConfig, from: string, to: string, rules = routeRules(config)): boolean {
+export function routeAllows(config: Pick<RebalanceConfig, 'routeConfig'>, from: string, to: string, rules = routeRules(config)): boolean {
   if (from === to) return false;
   const rule = rules.get(routePairKey(from, to));
   if (!rule) return config.routeConfig.mode === 'ALL_ALLOWED';
