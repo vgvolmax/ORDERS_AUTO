@@ -1,3 +1,5 @@
+> **Rebalancing20.10.2026:** для изменённой функции действуют уточнения в конце этого документа и `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md`; исторические правила03.09 в конфликтующей части заменены. PR1 реализует только домен, остальная интеграция — PR2.
+
 # ORDERS_AUTO — Derived Projections
 
 Этот документ дополняет `DATA_CONTRACTS.md` вычисляемыми моделями. Они не являются отдельным источником данных и каждый раз строятся из normalized input + supplier resolution + session edits.
@@ -133,3 +135,8 @@ If supplier history for one `supplier + skuCode` contains more than one distinct
 - UI displays `—` for unit.
 
 `MIXED_UNITS` extends the `ValidationIssue.code` union declared in `DATA_CONTRACTS.md` and must be included in the TypeScript implementation.
+
+
+## Расширение20.10.2026: текущая потребность
+
+buildPurchaseDemand(originalPricedDemand,accepted,branchRegistry) формирует PurchaseDemandLine. projectedStock=stock−acceptedOutgoingQty+acceptedIncomingQty; purchaseQty=max(0,Max−projectedStock) при валидном закупочном нормативе; purchaseAmount=null без цены. Исходные deficitQty/stock/status сохраняются; purchaseStatus считается по projectedStock. Общий buildOrderProjection использует purchaseQty для нового input и deficitQty для legacy input; calculatedQty, warnings, amounts, thresholds и unassigned должны использовать одну и ту же текущую базу. Сетевые purchase totals/missing-price counts отдельные от исходных networkDemandAmount. Без accepted поведение эквивалентно исходному.

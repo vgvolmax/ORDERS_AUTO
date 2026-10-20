@@ -1,3 +1,5 @@
+> **Rebalancing20.10.2026:** для изменённой функции действуют уточнения в конце этого документа и `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md`; исторические правила03.09 в конфликтующей части заменены. PR1 реализует только домен, остальная интеграция — PR2.
+
 # ORDERS_AUTO — Acceptance Criteria
 
 ## 1. Автоматические quality gates
@@ -184,3 +186,8 @@ Fixtures генерировать программно в `tests/fixtures/workbo
 - matrix сохраняет контекст большой таблицы за счёт sticky header и трёх sticky
   identity columns, использует прединдексированную модель и отображает пустые
   ячейки как `—`.
+
+
+## Расширение20.10.2026: PR1
+
+Обязательные доменные cases перечислены в docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md: default20, donor floorMax, receiver0%=10, configurable trigger, cap50, network trap20, rerouting Min→target, step0.25, strict money boundaries, subset filtering, accepted15/20/revoke15 → purchase35/15/30, no-op/revision/stale guards и неизменность входов. Прежний AC donor50%=40 отменён. Legacy orders/qty edits/prices/thresholds обязаны проходить без нового UI. Полное persistence/popover/file:// workflow новой функции относится к PR2; текущий offline E2E остаётся регрессионным gate PR1.

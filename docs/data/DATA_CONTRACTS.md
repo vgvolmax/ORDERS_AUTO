@@ -1,3 +1,5 @@
+> **Rebalancing20.10.2026:** для изменённой функции действуют уточнения в конце этого документа и `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md`; исторические правила03.09 в конфликтующей части заменены. PR1 реализует только домен, остальная интеграция — PR2.
+
 # ORDERS_AUTO — Data Contracts
 
 ## 1. Нормализация значений
@@ -208,3 +210,8 @@ export interface ValidationIssue {
 ```
 
 Fatal import означает только невозможность получить полезный dataset целиком. Ошибка одной строки не должна срывать весь импорт.
+
+
+## Расширение20.10.2026: отдельные rebalancing-контракты
+
+Контракты расположены в src/domain/rebalancing/types.ts: версия снимка, стабильный branch registry, политики unit/step, proposal и accepted identities. Код1С остаётся единственным SKU join key; branch IDs не являются названием. Pure RebalanceResult не содержит UUID/clock; RebalanceProposal добавляет app metadata. AcceptedTransfer хранит snapshotId/sourceRunId/sourceLineId/transferId, qty и копию условий. Legacy MinMaxDataset не получает вымышленные reserves/units/steps. PurchaseDemandLine расширяет PricedDemandLine, не меняя исходные stock/deficitQty. API и конкретные типы документируются в новом design и implementation plan; PR1 не меняет формат импортов/постоянное хранилище.
