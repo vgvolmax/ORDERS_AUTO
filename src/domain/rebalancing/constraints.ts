@@ -72,7 +72,7 @@ export function validateAcceptedLedger(snapshot: RebalanceSnapshot, accepted: re
     const threshold = t.acceptedConfig.recipientTrigger === 'BELOW_MIN' ? to.min! : to.max!;
     if (to.stock >= threshold) issue(t, 'Получатель не соответствовал исходному условию');
     const key = stockKey(t.skuCode, t.toBranchId);
-    upper.set(key, Math.max(upper.get(key) ?? 0, receiverTarget(to.min!, to.max!, t.acceptedConfig.receiverPct, sku.quantityStep)));
+    upper.set(key, Math.max(upper.get(key) ?? 0, receiverTarget(to.min!, to.max!, t.acceptedConfig.receiverPct)));
   }
   if (issues.length) return issues;
   const totals = acceptedTotals(accepted);

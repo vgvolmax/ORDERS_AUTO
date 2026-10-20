@@ -53,8 +53,8 @@ export function acceptTransfers(input: AcceptTransfersInput): AcceptedTransferCh
   const stocks = new Map(input.snapshot.stocks.map((s) => [stockKey(s.skuCode, s.branchId), s]));
   const addedSkus = new Set(additions.map((t) => t.skuCode));
   for (const t of additions) {
-    const sku = skus.get(t.skuCode)!, key = stockKey(t.skuCode, t.toBranchId), to = stocks.get(key)!;
-    if (sumQuantities([to.stock, totals.incoming.get(key) ?? 0]) > receiverTarget(to.min!, to.max!, p.config.receiverPct, sku.quantityStep!)) throw new RebalanceError('INVALID_TRANSFER_BATCH');
+    const key = stockKey(t.skuCode, t.toBranchId), to = stocks.get(key)!;
+    if (sumQuantities([to.stock, totals.incoming.get(key) ?? 0]) > receiverTarget(to.min!, to.max!, p.config.receiverPct)) throw new RebalanceError('INVALID_TRANSFER_BATCH');
   }
   for (const code of addedSkus) {
     const price = skus.get(code)!.referencePrice;

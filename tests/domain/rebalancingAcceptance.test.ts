@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { calculateRebalance } from '../../src/domain/rebalancing/calculate';
-import type { AcceptedTransfer } from '../../src/domain/rebalancing/types';
+import { acceptTransfers } from '../../src/domain/rebalancing/acceptedTransfers';
+import { rebalanceConfigFingerprint } from '../../src/domain/rebalancing/constraints';
+import type { AcceptedTransfer, RebalanceProposal } from '../../src/domain/rebalancing/types';
 import { config, snapshot } from '../fixtures/rebalanceFixtures';
 
 const qty = (s = snapshot(), c = config()) => calculateRebalance(s, c, []).transfers.reduce((v, t) => v + t.qty, 0);
@@ -29,6 +31,29 @@ describe('rebalancing business acceptance', () => {
     expect(qty(s)).toBe(20); expect(calculateRebalance(s, config(), []).balances[0]!.stockAfter).toBe(60.15);
     s.skus[0]!.quantityStep = 0.1; s.stocks[0]!.stock = 60.3;
     expect(qty(s)).toBe(0.3);
+  });
+  it('rounds transferable deltas instead of absolute stock targets, including acceptance', () => {
+    const s = snapshot(), c = config();
+    Object.assign(s.stocks[1]!, { stock: 0.5, min: 1, max: 2.5 });
+    const result = calculateRebalance(s, c, []);
+    expect(result.transfers[0]!.qty).toBe(2);
+    expect(result.balances.find((b) => b.branchId === 'R')!.stockAfter).toBe(2.5);
+    const proposal: RebalanceProposal = { ...result, runId: 'fraction', snapshotId: s.snapshotId, createdAt: '2026-10-20T13:00:00Z', baseAcceptedRevision: 0, configFingerprint: rebalanceConfigFingerprint(c), config: c };
+    const accepted = acceptTransfers({ snapshot: s, currentAccepted: [], currentProposal: proposal, selectedLineIds: result.transfers.map((t) => t.sourceLineId), currentRevision: 0, expectedRevision: 0, currentConfigFingerprint: proposal.configFingerprint, acceptedAt: '2026-10-20T13:01:00Z', transferIdBySourceLineId: { [result.transfers[0]!.sourceLineId]: 'fraction' } });
+    expect(accepted.nextAccepted[0]!.qty).toBe(2);
+    expect(calculateRebalance(s, c, accepted.nextAccepted).transfers).toEqual([]);
+    expect(qty(s, config({ receiverPct: 50 }))).toBe(1); // target1.75, stock after1.5.
+    expect(qty(s, config({ receiverPct: 0 }))).toBe(0); // next whole unit would exceed Min1.
+  });
+  it('covers a fractional Min shortage before filling another receiver above Min', () => {
+    const s = snapshot(); s.stocks[0]!.stock = 61;
+    Object.assign(s.stocks[1]!, { stock: 0.5, min: 1, max: 2 });
+    s.branches.push({ id: 'R2', name: 'R2', active: true, aliases: [] });
+    s.stocks.push({ skuCode: '00001', branchId: 'R2', stock: 0, min: 0, max: 10, sourceRow: 5 });
+    const result = calculateRebalance(s, config({ recipientTrigger: 'BELOW_MAX' }), []);
+    expect(result.transfers).toEqual([expect.objectContaining({ toBranchId: 'R', qty: 1 })]);
+    expect(result.balances.find((b) => b.branchId === 'R')!.stockAfter).toBe(1.5);
+    expect(result.uncoveredNeed.find((b) => b.branchId === 'R')!.toMin).toBe(0);
   });
   it('accepts missing price when filters are off and keeps money unknown', () => {
     const s = snapshot(); s.skus[0]!.referencePrice = null;

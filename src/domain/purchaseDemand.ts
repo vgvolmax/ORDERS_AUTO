@@ -40,7 +40,10 @@ export function buildPurchaseDemand(demand: PricedDemandLine[], accepted: Accept
     const key = keys[i]!, incoming = totals.incoming.get(key) ?? 0, outgoing = totals.outgoing.get(key) ?? 0;
     const projectedStock = sumQuantities([line.stock, incoming, -outgoing]);
     if (incoming > 0 || outgoing > 0) {
-      if (line.max === null || line.max <= 0 || line.status === 'INVALID_NORM' || line.status === 'NO_NORM' ||
+      // Explicit zero norms permit donating surplus, while procurement keeps NO_NORM/zero need.
+      const zeroNormDonor = line.min === 0 && line.max === 0 && incoming === 0;
+      if (line.min === null || !Number.isFinite(line.min) || line.min < 0 || line.max === null || !Number.isFinite(line.max) || line.max < line.min ||
+          line.status === 'INVALID_NORM' || (line.status === 'NO_NORM' && !zeroNormDonor) ||
           (outgoing > 0 && subtractQuantity(line.stock, outgoing) < line.max) || (incoming > 0 && projectedStock > line.max))
         throw new RebalanceError('INVALID_ACCEPTED_LEDGER');
     }

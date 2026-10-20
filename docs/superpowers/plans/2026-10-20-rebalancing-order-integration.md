@@ -1,6 +1,6 @@
 # Ребалансировщик ORDERS_AUTO — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Делегирование — только если пользователь отдельно выберет такой способ исполнения.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. Делегирование — только если пользователь отдельно выберет такой способ исполнения.
 
 **Goal:** Оператор принимает конкретные предложенные перемещения; только принятые движения сразу меняют рабочую потребность и закупочные заказы, а поп-ап объясняет изменение и показывает исходную потребность.
 
@@ -10,7 +10,7 @@
 
 **Spec:** действующий функциональный baseline — раздел2 этого документа с уточнениями пользователя20.10.2026,16:50MSK. Источники: [новое ТЗ20.10 в ошибочно выбранном auto_offer](https://github.com/vgvolmax/auto_offer/blob/be86aa652fc022a7ec00e5f73f93911922724d5b/docs/superpowers/specs/2026-10-20-stock-rebalancing-mvp-design.md), [design ORDERS_AUTO03.09](https://github.com/vgvolmax/ORDERS_AUTO/blob/c26970c9592d8bd371bffa7b8604d2a3aae5c26a/docs/superpowers/specs/2026-09-03-rebalancing-module-design.md), [интеграционные уточнения03.09](https://github.com/vgvolmax/ORDERS_AUTO/blob/c26970c9592d8bd371bffa7b8604d2a3aae5c26a/docs/superpowers/specs/2026-09-03-rebalancing-integration-clarifications.md). Уточнения текущего пользователя имеют приоритет при перечисленных ниже расхождениях.
 
-**Статус:** план обновлён по уточнениям пользователя; целевой репозиторий **vgvolmax/ORDERS_AUTO подтверждён**. Программная реализация не начиналась, удалённые репозитории не изменены. План предназначен для размещения в `docs/superpowers/plans/2026-10-20-rebalancing-order-integration.md`. Это версия, заменяющая прежний вариант с донорским ползунком, отдельным внешним журналом и тремя обязательными режимами заказа.
+**Статус:** PR1 (Tasks0–4) реализован в `feat/rebalancing-pr1`; Tasks5–8 остаются PR2. В PR1 новая модель расчёта ещё не подключена к UI и сохранению сеанса. Нормативные решения и границы PR сохранены.
 
 ## Global Constraints
 
@@ -143,11 +143,11 @@ purchaseQty = max(0, Max − projectedStock)
 
 **Modify:** `AGENTS.md`, `docs/product/SPEC.md`, `docs/data/DATA_CONTRACTS.md`, `docs/data/DERIVED_PROJECTIONS.md`, `docs/architecture/ARCHITECTURE.md`, `docs/ux/UX_AND_EXPORT.md`, `docs/testing/ACCEPTANCE_CRITERIA.md`, `DESIGN.md`; исторические rebalancing design/plans03.09. **Create:** `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md` с разделом2 этого документа.
 
-- [ ] Закрепить подтверждённый ORDERS_AUTO и текущую приоритетность правил. Donor floor всегдаMax; recipient trigger configurable; route defaultsBOTH; сохраняется весь session state.
-- [ ] Заменить в AC нового ТЗ донор50%=40 на donor surplus20 независимо от настройки получателя; прежний AC-02 больше не действует. Сохранить новый default20, receiver0%=10, cap50 и network trap20. Для получателей добавить оба trigger mode.
-- [ ] Удалить из будущего плана внешний journal import, донорский slider и обязательные три режима orders. Зафиксировать accepted subset и popup как продуктовый workflow; старые conflicting statements пометить superseded, а не оставлять два нормативных алгоритма.
-- [ ] Проверить документальное покрытие настроек, финансовых фильтров, полного persistence и новой загрузки отчётов. Исторические Pareto/flow-map задачи не переносить автоматически в этот MVP; их статус отдельно зафиксировать в новом design.
-- [ ] Commit `docs: align accepted transfers and purchasing requirements`.
+- [x] Закрепить подтверждённый ORDERS_AUTO и текущую приоритетность правил. Donor floor всегдаMax; recipient trigger configurable; route defaultsBOTH; сохраняется весь session state.
+- [x] Заменить в AC нового ТЗ донор50%=40 на donor surplus20 независимо от настройки получателя; прежний AC-02 больше не действует. Сохранить новый default20, receiver0%=10, cap50 и network trap20. Для получателей добавить оба trigger mode.
+- [x] Удалить из будущего плана внешний journal import, донорский slider и обязательные три режима orders. Зафиксировать accepted subset и popup как продуктовый workflow; старые conflicting statements пометить superseded, а не оставлять два нормативных алгоритма.
+- [x] Проверить документальное покрытие настроек, финансовых фильтров, полного persistence и новой загрузки отчётов. Исторические Pareto/flow-map задачи не переносить автоматически в этот MVP; их статус отдельно зафиксировать в новом design.
+- [x] Commit `docs: align accepted transfers and purchasing requirements`.
 
 ### Task 1: Контракты, снимок и валидация
 
@@ -155,10 +155,10 @@ purchaseQty = max(0, Max − projectedStock)
 
 **Interfaces:** `createRebalanceSnapshot(input: SnapshotAdapterInput): SnapshotBuildResult`; `validateRebalanceSnapshot(snapshot: RebalanceSnapshot): RebalanceIssue[]`. Типы в `types.ts`: snapshotId/schemaVersion/branches{id,name,active}/skus{skuCode,name,unit,quantityStep,referencePrice}/stocks{skuCode,branchId,stock,min,max,sourceRow}; config{recipientTrigger:'BELOW_MIN'|'BELOW_MAX',receiverPct,routeConfig,unitPriceFilter,skuAmountFilter}; default triggerBELOW_MIN, receiverPct100, filters off. Issue содержит code/message/sourceRow/skuCode/branchId/severity. SnapshotBuildResult возвращает валидный набор и issues.
 
-- [ ] RED: ведущие нули сохраняются; дубли не выбираются last-write-wins; unknown branch alias требует mapping; missing Min/Max не превращаются в0; Min>Max/negative/nonfinite/step≤0 диагностируются; rename сохраняет ID; исходный dataset не мутирует. Закупочное NO_NORM при Max≤0 сохраняется; для ребалансировки явный нулевой норматив допустим, пропущенный — нет.
-- [ ] Run `npm test -- --run tests/domain/rebalancingValidation.test.ts tests/import/rebalanceSnapshot.test.ts`; ожидается RED из-за отсутствующих APIs.
-- [ ] Implement adapter над текущим MinMaxDataset, registry и сохранёнными SKU policies. Default синтетического fixture: SKU00001, unitшт, step1, price1200; D Min20/Max60/S80, R Min20/Max60/S10; routeBOTH.
-- [ ] GREEN той же командой; `npm run typecheck`; commit `feat: validate rebalance snapshots and recipient settings`.
+- [x] RED: ведущие нули сохраняются; дубли не выбираются last-write-wins; unknown branch alias требует mapping; missing Min/Max не превращаются в0; Min>Max/negative/nonfinite/step≤0 диагностируются; rename сохраняет ID; исходный dataset не мутирует. Закупочное NO_NORM при Max≤0 сохраняется; для ребалансировки явный нулевой норматив допустим, пропущенный — нет.
+- [x] Run `npm test -- --run tests/domain/rebalancingValidation.test.ts tests/import/rebalanceSnapshot.test.ts`; ожидается RED из-за отсутствующих APIs.
+- [x] Implement adapter над текущим MinMaxDataset, registry и сохранёнными SKU policies. Default синтетического fixture: SKU00001, unitшт, step1, price1200; D Min20/Max60/S80, R Min20/Max60/S10; routeBOTH.
+- [x] GREEN той же командой; `npm run typecheck`; commit `feat: validate rebalance snapshots and recipient settings`.
 
 ### Task 2: Принятие выбранных движений и отмена
 
@@ -166,12 +166,12 @@ purchaseQty = max(0, Max − projectedStock)
 
 **Interfaces:** `acceptTransfers(input: AcceptTransfersInput): AcceptedTransferChange`; `revokeTransfers(input: RevokeTransfersInput): AcceptedTransferChange`. AcceptTransfersInput: snapshot, currentAccepted, currentProposal:RebalanceProposal, selectedLineIds, currentRevision, expectedRevision, currentConfigFingerprint, acceptedAt и transferIdBySourceLineId. RevokeTransfersInput: snapshot, currentAccepted, transferIds, currentRevision, expectedRevision. Результат: nextAccepted, changedSkuBranchKeys, nextRevision либо typed validation error. AcceptedTransfer{transferId,sourceRunId,sourceLineId,skuCode,fromBranchId,toBranchId,qty,snapshotId,acceptedAt,acceptedConfig}; timestamps/IDs передаются параметрами, не создаются скрыто в чистой функции. BaseAcceptedRevision proposal — контекст расчёта, а не запрет на последовательное принятие; optimistic guard проверяет currentRevision===expectedRevision.
 
-- [ ] RED: proposal содержит вход15 и20, accept только первой строки → acceptedIncoming15; selection без accept→0; повторный accept той же sourceRunId/sourceLineId→no-op; revoke первой→0. Нельзя выбрать неизвестную/stale proposal line и принять qty из UI без проверки.
-- [ ] RED: BELOW_MIN, stock10/Min20/Max60, два донора с surplus15 и20. Последовательно принять15 и затем20 из одного run → incoming35, purchase15. После первого принятия прогнозный stock25 не запрещает вторую исходно допустимую строку. Заменённый run или другой configFingerprint даёт STALE_PROPOSAL; currentRevision!==expectedRevision даёт REVISION_CONFLICT. Identity конфликт даёт TRANSFER_ID_CONFLICT, нарушение количества/лимитов — INVALID_TRANSFER_BATCH; ledger не меняется при любой ошибке.
-- [ ] RED: два получателя суммарно не превышают donor stock−Max; accepted плюс новый batch проверяются совместно; Max/target/step/route и денежные пороги выбранного subset соблюдены. Совпавший transfer ID с другими неизменяемыми данными — ошибка. Вся некорректная партия отклоняется атомарно с причинами, частичного скрытого принятия нет.
-- [ ] Run `npm test -- --run tests/domain/acceptedTransfers.test.ts`; проверить RED.
-- [ ] Implement canonical accepted ledger и командные APIs. Непринятые/отклонённые строки не входят в ledger; отмена снимает только указанные accepted IDs. Изменение config не переписывает ledger.
-- [ ] GREEN; `npm run typecheck`; commit `feat: accept and revoke explicit transfer selections`.
+- [x] RED: proposal содержит вход15 и20, accept только первой строки → acceptedIncoming15; selection без accept→0; повторный accept той же sourceRunId/sourceLineId→no-op; revoke первой→0. Нельзя выбрать неизвестную/stale proposal line и принять qty из UI без проверки.
+- [x] RED: BELOW_MIN, stock10/Min20/Max60, два донора с surplus15 и20. Последовательно принять15 и затем20 из одного run → incoming35, purchase15. После первого принятия прогнозный stock25 не запрещает вторую исходно допустимую строку. Заменённый run или другой configFingerprint даёт STALE_PROPOSAL; currentRevision!==expectedRevision даёт REVISION_CONFLICT. Identity конфликт даёт TRANSFER_ID_CONFLICT, нарушение количества/лимитов — INVALID_TRANSFER_BATCH; ledger не меняется при любой ошибке.
+- [x] RED: два получателя суммарно не превышают donor stock−Max; accepted плюс новый batch проверяются совместно; Max/target/step/route и денежные пороги выбранного subset соблюдены. Совпавший transfer ID с другими неизменяемыми данными — ошибка. Вся некорректная партия отклоняется атомарно с причинами, частичного скрытого принятия нет.
+- [x] Run `npm test -- --run tests/domain/acceptedTransfers.test.ts`; проверить RED.
+- [x] Implement canonical accepted ledger и командные APIs. Непринятые/отклонённые строки не входят в ledger; отмена снимает только указанные accepted IDs. Изменение config не переписывает ledger.
+- [x] GREEN; `npm run typecheck`; commit `feat: accept and revoke explicit transfer selections`.
 
 ### Task 3: Детерминированное распределение с оставшимися ограничениями
 
@@ -179,13 +179,13 @@ purchaseQty = max(0, Max − projectedStock)
 
 **Interfaces:** `buildRouteIndex(config: RouteConfig, branches: RebalanceBranch[]): RouteIndex`; `calculateRebalance(snapshot: RebalanceSnapshot, config: RebalanceConfig, accepted: AcceptedTransfer[]): RebalanceResult`; public exports через `index.ts`. RebalanceResult{inputFingerprint,algorithmVersion,transfers,eligibleRecipientKeys,uncoveredNeed,balances,exclusions} содержит только детерминированные поля. App-layer оборачивает его в RebalanceProposal extends RebalanceResult {runId,createdAt,snapshotId,baseAcceptedRevision,configFingerprint}; эта обёртка определена в `types.ts`, её metadata передаются приложением, не генерируются алгоритмом. sourceLineId — канонический ключ skuCode/fromBranchId/toBranchId в пределах run.
 
-- [ ] RED: default donor20; donor никогда не отдаёт40 при stock80/Max60; receiverPct0% даёт10; recipient cap50. R S30/Min20/Max60: BELOW_MIN→0, BELOW_MAX→до30 при достаточном surplus. S=Min не подходит BELOW_MIN, S=Max не подходит BELOW_MAX. Если S>target, new transfer0.
-- [ ] RED: network trap D1/D2 по10, D1→R1/R2,D2→R1 → покрытие20. Дробный step0.25 соблюдён; отсутствие цены разрешено при filters off;1200×(6+5)=13200 проходит;1200×6=7200 и равенство порогу не проходят; перестановка входов даёт одинаковый canonical result.
-- [ ] RED: переход Min→target не замораживает ранний выбор дуг. BELOW_MAX, D1/D2 surplus10; D1→R1/R2, D2→R1; R1 stock0/Min10/Max10, R2 stock0/Min0/Max10. Итог D2→R1=10 и D1→R2=10: Min покрыт10, всего20. Если этап доMin выбрал D1→R1, residual graph обязан переназначить поток без потери покрытия доMin.
-- [ ] RED: accepted вход15 уменьшает остаточный recipient need; accepted исходящий15 при donor surplus20 оставляет новым предложениям максимум5; новый расчёт не удаляет accepted и не переиспользует ожидаемый вход.
-- [ ] Run `npm test -- --run tests/domain/rebalancingRoutes.test.ts tests/domain/rebalancingFlow.test.ts tests/domain/rebalancingAcceptance.test.ts`; проверить RED.
-- [ ] Implement целочисленные capacities в шагах SKU и residual graph с обратными дугами; сначала покрытие доMin, потом доtarget; supply только surplus>Max. В режиме BELOW_MAX eligible recipients фиксируются перед распределением по их прогнозному остатку с уже принятыми движениями. Переназначения потока не уменьшают достигнутые старшие цели; deterministic consolidation не ухудшает покрытие. Не заявлять точный fixed-charge minimum маршрутов.
-- [ ] GREEN; `npm run typecheck`; commit `feat: calculate donor-safe transfer proposals`.
+- [x] RED: default donor20; donor никогда не отдаёт40 при stock80/Max60; receiverPct0% даёт10; recipient cap50. R S30/Min20/Max60: BELOW_MIN→0, BELOW_MAX→до30 при достаточном surplus. S=Min не подходит BELOW_MIN, S=Max не подходит BELOW_MAX. Если S>target, new transfer0.
+- [x] RED: network trap D1/D2 по10, D1→R1/R2,D2→R1 → покрытие20. Дробный step0.25 соблюдён; отсутствие цены разрешено при filters off;1200×(6+5)=13200 проходит;1200×6=7200 и равенство порогу не проходят; перестановка входов даёт одинаковый canonical result.
+- [x] RED: переход Min→target не замораживает ранний выбор дуг. BELOW_MAX, D1/D2 surplus10; D1→R1/R2, D2→R1; R1 stock0/Min10/Max10, R2 stock0/Min0/Max10. Итог D2→R1=10 и D1→R2=10: Min покрыт10, всего20. Если этап доMin выбрал D1→R1, residual graph обязан переназначить поток без потери покрытия доMin.
+- [x] RED: accepted вход15 уменьшает остаточный recipient need; accepted исходящий15 при donor surplus20 оставляет новым предложениям максимум5; новый расчёт не удаляет accepted и не переиспользует ожидаемый вход.
+- [x] Run `npm test -- --run tests/domain/rebalancingRoutes.test.ts tests/domain/rebalancingFlow.test.ts tests/domain/rebalancingAcceptance.test.ts`; проверить RED.
+- [x] Implement целочисленные capacities в шагах SKU и residual graph с обратными дугами; сначала покрытие доMin, потом доtarget; supply только surplus>Max. В режиме BELOW_MAX eligible recipients фиксируются перед распределением по их прогнозному остатку с уже принятыми движениями. Переназначения потока не уменьшают достигнутые старшие цели; deterministic consolidation не ухудшает покрытие. Не заявлять точный fixed-charge minimum маршрутов.
+- [x] GREEN; `npm run typecheck`; commit `feat: calculate donor-safe transfer proposals`.
 
 ### Task 4: Текущая потребность и единый order builder
 
@@ -193,11 +193,11 @@ purchaseQty = max(0, Max − projectedStock)
 
 **Interfaces:** `buildPurchaseDemand(demand: PricedDemandLine[], accepted: AcceptedTransfer[], branchRegistry: BranchRegistry): PurchaseDemandLine[]`. PurchaseDemandLine extends PricedDemandLine; добавляет originalNeed,acceptedIncomingQty,acceptedOutgoingQty,projectedStock,purchaseQty,purchaseAmount,purchaseStatus,acceptedTransferIds. Original deficitQty/stock остаются исходными внутри модели; UI текущей потребности читает purchase-поля. `buildOrderProjection(demand: (PricedDemandLine|PurchaseDemandLine)[],resolutions:SupplierResolution[],edits:OrderQtyEdit[],settings:OrderSettings):OrderProjection` использует purchaseQty при наличии, legacy deficitQty иначе.
 
-- [ ] RED: исходно50, приняты15→purchase35; неприняты20 не влияют; дополнительно приняты20→15; revoke15→30. Тестировать прямыми assertions `expect(line.purchaseQty).toBe(35)` и `expect(line.deficitQty).toBe(50)`. Original input frozen и не мутирует.
-- [ ] RED: fully covered SKU отсутствует в order lines/unassigned; partial сохраняет цену/blockers; донор не получает новый дефицит благодаря floorMax; price null не становится0; manual qty40 при purchase35 остаётся40 с предупреждением. Threshold modes пересчитываются по активным заказам.
-- [ ] Run `npm test -- --run tests/domain/purchaseDemand.test.ts tests/domain/orders.test.ts tests/domain/orderWorkflow.test.ts`; проверить RED новых cases и сохранность legacy behavior.
-- [ ] Implement один группировщик заказов, одну систему закупочных цен и порогов; не копировать orders.ts для сравнения. OrderLine получает purchase context и relevant accepted IDs; исходный расчёт доступен для popup.
-- [ ] GREEN; `npm run typecheck`; `npm test -- --run`; `npm run build`; commit `feat: build orders from accepted-transfer demand`.
+- [x] RED: исходно50, приняты15→purchase35; неприняты20 не влияют; дополнительно приняты20→15; revoke15→30. Тестировать прямыми assertions `expect(line.purchaseQty).toBe(35)` и `expect(line.deficitQty).toBe(50)`. Original input frozen и не мутирует.
+- [x] RED: fully covered SKU отсутствует в order lines/unassigned; partial сохраняет цену/blockers; донор не получает новый дефицит благодаря floorMax; price null не становится0; manual qty40 при purchase35 остаётся40 с предупреждением. Threshold modes пересчитываются по активным заказам.
+- [x] Run `npm test -- --run tests/domain/purchaseDemand.test.ts tests/domain/orders.test.ts tests/domain/orderWorkflow.test.ts`; проверить RED новых cases и сохранность legacy behavior.
+- [x] Implement один группировщик заказов, одну систему закупочных цен и порогов; не копировать orders.ts для сравнения. OrderLine получает purchase context и relevant accepted IDs; исходный расчёт доступен для popup.
+- [x] GREEN; `npm run typecheck`; `npm test -- --run`; `npm run build`; commit `feat: build orders from accepted-transfer demand`.
 
 **PR1 gate:** домен принимает только выбранные движения, не переиспользует запас, сохраняет floorMax и даёт правильный рабочий orderQty. UI новой функции пока не подключён; текущее приложение работает как раньше.
 
@@ -289,3 +289,13 @@ purchaseQty = max(0, Max − projectedStock)
 - Числовой сценарий50→35→15→30, пороговые/маршрутные инварианты, ошибка persistence и snapshot replacement покрыты конкретными задачами.
 - Новые типы живут в `src/domain/rebalancing/types.ts`; PurchaseDemandLine — в `src/domain/purchaseDemand.ts`; workspace storage DTO — в `src/persistence/workspaces.ts`. React-компоненты не содержат бизнес-формул.
 - Проверка документа и числовых примеров не является выполнением будущих unit/E2E-тестов приложения. Исходники приложения не изменялись.
+
+
+## Реализованные контракты PR1
+
+- `RebalanceProposal` хранит копию `config` вместе с `configFingerprint`: она передаётся в принятую запись и проверяется командой принятия.
+- `PurchaseDemandLine` дополнительно содержит `networkPurchaseQty`, `networkPurchaseAmount`, `networkPurchaseMissingPriceCount`; существующий order builder использует текущие количества и сохраняет исходный контекст.
+- `sourceRow` равен `null`, если legacy dataset не содержит физический номер строки; adapter принимает исходные parser issues, чтобы не скрывать ранее обнаруженные дубли.
+- Абсолютная цель `Min+(Max−Min)×pct/100` не округляется. К шагу вниз округляется доступное перемещение `target−projectedStock`; число шагов для покрытия положительного дефицита доMin округляется вверх, в пределах target capacity.
+- Явные `Min=Max=0` допускают донорский surplus. Закупочный статус такой строки остаётся `NO_NORM`, её закупка равна0.
+- После независимого ревью добавлены регрессии для нулевых нормативов донора, дробного остатка с целым шагом и приоритета дробного дефицита доMin. Все три замечания Important исправлены; Critical/Minor не выявлены. Ревью не оценивало отложенные UI/persistence/export-marker задачи PR2.

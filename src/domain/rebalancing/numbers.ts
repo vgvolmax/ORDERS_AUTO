@@ -40,10 +40,10 @@ export function isStepQuantity(qty: number, step: number): boolean {
   const n = a.n * b.d, d = a.d * b.n;
   return n % d === 0n && n / d <= BigInt(Number.MAX_SAFE_INTEGER);
 }
-export function receiverTarget(min: number, max: number, pct: number, step: number): number {
+/** Absolute stock ceiling; callers round the transferable delta to the quantity step. */
+export function receiverTarget(min: number, max: number, pct: number): number {
   const base = decimal(min), width = decimal(subtractQuantity(max, min)), percent = decimal(pct);
-  const target = number(add(base, { n: width.n * percent.n, d: width.d * percent.d * 100n }));
-  return quantityFromUnits(stepUnits(target, step), step);
+  return number(add(base, { n: width.n * percent.n, d: width.d * percent.d * 100n }));
 }
 export function moneyGreaterThan(qty: number, price: number, threshold: number): boolean {
   const q = decimal(qty), p = decimal(price), t = decimal(threshold);

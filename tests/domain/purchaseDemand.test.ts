@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPurchaseDemand } from '../../src/domain/purchaseDemand';
+import { calculateDemand, priceDemand } from '../../src/domain/demand';
 import { buildOrderProjection } from '../../src/domain/orders';
 import { calculateRebalance } from '../../src/domain/rebalancing/calculate';
 import { acceptTransfers, revokeTransfers } from '../../src/domain/rebalancing/acceptedTransfers';
@@ -24,6 +25,22 @@ function move(qty = 15): AcceptedTransfer {
 }
 
 describe('effective purchasing from accepted transfers', () => {
+  it('projects accepted surplus from an explicit zero-norm donor without creating donor purchases', () => {
+    const s = snapshot(); Object.assign(s.stocks[0]!, { stock: 20, min: 0, max: 0 });
+    const c = config(), result = calculateRebalance(s, c, []);
+    expect(result.transfers[0]!.qty).toBe(20);
+    const proposal: RebalanceProposal = { ...result, runId: 'zero-norm', snapshotId: s.snapshotId, createdAt: '2026-10-20T13:00:00Z', baseAcceptedRevision: 0, configFingerprint: rebalanceConfigFingerprint(c), config: c };
+    const accepted = acceptTransfers({ snapshot: s, currentAccepted: [], currentProposal: proposal, selectedLineIds: result.transfers.map((t) => t.sourceLineId), currentRevision: 0, expectedRevision: 0, currentConfigFingerprint: proposal.configFingerprint, acceptedAt: '2026-10-20T13:01:00Z', transferIdBySourceLineId: { [result.transfers[0]!.sourceLineId]: 'zero' } });
+    const skus = [{ code: '00001', article: 'A', name: 'Товар', referencePrice: 100, reportedTotalStock: null }];
+    const original = priceDemand(calculateDemand({ skus, branches: s.branches.map((b) => b.name), branchStocks: s.stocks.map((row) => ({ ...row, branch: s.branches.find((b) => b.id === row.branchId)!.name })) }), skus, [resolution]);
+    const projected = buildPurchaseDemand(original, accepted.nextAccepted, s.branches);
+    expect(projected[0]).toMatchObject({ status: 'NO_NORM', purchaseStatus: 'NO_NORM', projectedStock: 0, purchaseQty: 0 });
+    expect(buildOrderProjection(projected, [resolution], [], settings).orders[0]!.totalQty).toBe(30);
+    for (const norms of [{ min: null, max: 0 }, { min: 1, max: 0 }, { min: -1, max: 0 }, { min: null, max: null }]) {
+      const invalid = original.map((line, i) => i === 0 ? { ...line, ...norms } : line);
+      expect(() => buildPurchaseDemand(invalid, accepted.nextAccepted, s.branches)).toThrow();
+    }
+  });
   it('changes current need but retains immutable original context and network quantities', () => {
     const data = lines(); const before = structuredClone(data); data.forEach(Object.freeze); Object.freeze(data);
     const result = buildPurchaseDemand(data, [move()], registry());

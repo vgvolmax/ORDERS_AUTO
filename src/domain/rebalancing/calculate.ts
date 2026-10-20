@@ -46,10 +46,11 @@ export function calculateRebalance(input: RebalanceSnapshot, config: RebalanceCo
           if (stock < row.max!) emit('NOT_BELOW_TRIGGER', 'Остаток не ниже выбранного порога получателя', row.skuCode, { branchId: row.branchId, sourceRow: row.sourceRow });
           continue;
         }
-        const target = receiverTarget(row.min!, row.max!, config.receiverPct, step);
+        const target = receiverTarget(row.min!, row.max!, config.receiverPct);
         targetByKey.set(key, target); eligibleRecipientKeys.push(key);
         const targetNeed = stepUnits(Math.max(0, subtractQuantity(target, stock)), step);
-        const minNeed = Math.min(targetNeed, stepUnits(Math.max(0, subtractQuantity(row.min!, stock)), step));
+        // One whole step may be needed to cross a fractional Min shortage, within the target cap.
+        const minNeed = Math.min(targetNeed, stepUnits(Math.max(0, subtractQuantity(row.min!, stock)), step, 'ceil'));
         if (targetNeed > 0) receivers.push({ id: row.branchId, minNeed, targetNeed });
         else emit('TARGET_OR_STEP_LIMIT', 'Цель достигнута либо остаток потребности меньше шага', row.skuCode, { branchId: row.branchId, sourceRow: row.sourceRow });
       }
