@@ -160,6 +160,17 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     'B_TO_A',
   );
   await page.getByLabel('Режим маршрутов').selectOption('ALL_ALLOWED');
+  await expect(page.getByLabel('Маршрут Донор А → Получатель')).toHaveValue(
+    'A_TO_B',
+  );
+  await expect(page.getByLabel('Маршрут Получатель → Донор А')).toHaveValue(
+    'B_TO_A',
+  );
+  await expect(page.getByLabel('Маршрут Донор А → Получатель')).toBeEnabled();
+  await page.screenshot({
+    path: testInfo.outputPath('04-routes-1280.png'),
+    fullPage: true,
+  });
   await page.getByRole('tab', { name: 'Условия' }).click();
   await page
     .getByLabel('Получатель', { exact: true })
@@ -197,6 +208,10 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   });
   await page.getByRole('button', { name: 'Принять выбранные (1)' }).click();
   await expect(page.getByRole('dialog')).toContainText('50 → 35');
+  await page.screenshot({
+    path: testInfo.outputPath('05-acceptance-1280.png'),
+    fullPage: true,
+  });
   await page
     .getByRole('button', { name: 'Принять перемещения', exact: true })
     .click();
