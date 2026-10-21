@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { Dialog, useModalLayer } from '../../components/Dialog';
 import type { OrderLine } from '../../domain/types';
 import type { WorkflowOrder } from '../../app/selectors';
-import { Alert, Button, Input } from '../../components/ui';
+import { QuantityInput } from '../../components/QuantityInput';
+import { Alert, Button } from '../../components/ui';
 import { fmtQty, money, priceSourceLabel } from '../demand/DemandPage';
 
 export function OrderDrawer({
@@ -13,11 +14,17 @@ export function OrderDrawer({
   onReviewedChange,
   onExport,
   renderMovement,
+  saving = false,
 }: {
   order: WorkflowOrder;
+  saving?: boolean | undefined;
   renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   onClose: () => void;
-  onEdit: (skuCode: string, branch: string, qty: number) => void;
+  onEdit: (
+    skuCode: string,
+    branch: string,
+    qty: number,
+  ) => void | Promise<void>;
   onReviewedChange: (reviewed: boolean) => void;
   onExport: (allowBelowThreshold: boolean) => void;
 }) {
@@ -73,6 +80,7 @@ export function OrderDrawer({
                   type="checkbox"
                   aria-label="Заказ проверен"
                   checked={order.reviewed}
+                  disabled={saving}
                   onChange={(event) => onReviewedChange(event.target.checked)}
                 />
                 <span>
@@ -135,22 +143,13 @@ export function OrderDrawer({
                     {renderMovement?.(line)}
                   </td>
                   <td>
-                    <Input
+                    <QuantityInput
                       className={
                         line.orderQty !== line.calculatedQty ? 'manual-qty' : ''
                       }
                       aria-label={`Количество ${line.skuCode}`}
-                      type="number"
-                      min="0"
-                      step="any"
                       value={line.orderQty}
-                      onChange={(event) => {
-                        if (event.target.value === '') return;
-                        const qty = Number(event.target.value);
-                        if (Number.isFinite(qty) && qty >= 0) {
-                          onEdit(line.skuCode, line.branch, qty);
-                        }
-                      }}
+                      onCommit={(qty) => onEdit(line.skuCode, line.branch, qty)}
                     />
                     {line.warnings.map((warning) => (
                       <small className="warning-text" key={warning}>
@@ -177,12 +176,16 @@ export function OrderDrawer({
           {canOverrideThreshold && (
             <Button
               className="secondary danger-action"
+              disabled={saving}
               onClick={() => setOverrideOpen(true)}
             >
               Выгрузить несмотря на порог
             </Button>
           )}
-          <Button disabled={!canNormalExport} onClick={() => onExport(false)}>
+          <Button
+            disabled={!canNormalExport || saving}
+            onClick={() => onExport(false)}
+          >
             {order.status === 'EXPORTED'
               ? 'Скачать CSV ещё раз'
               : 'Скачать CSV заказа'}

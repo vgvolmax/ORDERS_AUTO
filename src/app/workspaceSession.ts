@@ -79,6 +79,7 @@ export function createWorkspaceSession({
       const operation = tail.then(async () => {
         const next = createInitialState({
           ...workspace.data,
+          importEpoch: state.importEpoch + 1,
           workspaceId: id(),
           snapshotId: workspace.snapshotId,
           workspaceRevision: 0,

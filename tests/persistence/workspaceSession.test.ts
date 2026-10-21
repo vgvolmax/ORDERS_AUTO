@@ -93,7 +93,7 @@ it('restores an archived complete workspace as a new active copy without resetti
     reviewedOrderIds: ['old-order'],
   });
   const { workspaceFromState } = await import('../../src/app/workspaceSession');
-  const current = createInitialState({ workspaceRevision: 2 });
+  const current = createInitialState({ workspaceRevision: 2, importEpoch: 7 });
   const writes: unknown[] = [],
     session = createWorkspaceSession({
       initial: current,
@@ -104,6 +104,7 @@ it('restores an archived complete workspace as a new active copy without resetti
     });
   await session.restore(workspaceFromState(old));
   expect(session.getState().snapshotId).toBe(old.snapshotId);
+  expect(session.getState().importEpoch).toBe(8);
   expect(session.getState().workspaceId).not.toBe(old.workspaceId);
   expect(session.getState().reviewedOrderIds).toEqual(['old-order']);
   expect(old.page).toBe('orders');

@@ -7,7 +7,8 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { WorkflowOrder } from '../../app/selectors';
-import { Button, Input } from '../../components/ui';
+import { QuantityInput } from '../../components/QuantityInput';
+import { Button } from '../../components/ui';
 import type { OrderLine } from '../../domain/types';
 import { fmtQty, money } from '../demand/DemandPage';
 
@@ -54,15 +55,21 @@ export function SupplierOrdersDrawer({
   renderMovement,
   widthPreferences,
   onWidthsChange,
+  saving = false,
 }: {
   supplier: string;
+  saving?: boolean | undefined;
   widthPreferences?: Record<string, number> | undefined;
   onWidthsChange?: ((value: Record<string, number>) => void) | undefined;
   renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   orders: WorkflowOrder[];
   branchOrder: string[];
   onClose: () => void;
-  onEdit: (order: WorkflowOrder, skuCode: string, qty: number) => void;
+  onEdit: (
+    order: WorkflowOrder,
+    skuCode: string,
+    qty: number,
+  ) => void | Promise<void>;
   onSetReviewed: (orderId: string, reviewed: boolean) => void;
   onSetAllReviewed: (orderIds: string[], reviewed: boolean) => void;
 }) {
@@ -418,26 +425,17 @@ export function SupplierOrdersDrawer({
                       >
                         {cell ? (
                           <>
-                            <Input
+                            <QuantityInput
                               className={
                                 cell.line.orderQty !== cell.line.calculatedQty
                                   ? 'matrix-qty-input manual'
                                   : 'matrix-qty-input'
                               }
                               aria-label={`Количество ${row.skuCode} ${branch}`}
-                              type="number"
-                              min="0"
-                              step="any"
                               value={cell.line.orderQty}
-                              onChange={(event) => {
-                                if (event.target.value === '') {
-                                  return;
-                                }
-                                const qty = Number(event.target.value);
-                                if (Number.isFinite(qty) && qty >= 0) {
-                                  onEdit(cell.order, row.skuCode, qty);
-                                }
-                              }}
+                              onCommit={(qty) =>
+                                onEdit(cell.order, row.skuCode, qty)
+                              }
                             />
                             {renderMovement?.(cell.line)}
                           </>

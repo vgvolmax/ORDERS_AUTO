@@ -5,7 +5,9 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { createWorkspaceSession } from '../../src/app/workspaceSession';
+import type { StatePatch } from '../../src/app/appStore';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrdersPage } from '../../src/features/orders/OrdersPage';
 import { baseState, renderWithStore } from './renderWithStore';
@@ -292,6 +294,56 @@ describe('OrdersPage', () => {
         'EXPORTED',
       );
     });
+  });
+
+  it('keeps the last typed value when it returns to the old quantity before a prior write completes', async () => {
+    let finish!: () => void,
+      writes = 0;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    function DurableOrders() {
+      const [state, publish] = useState(() => baseState());
+      const session = useRef<ReturnType<typeof createWorkspaceSession> | null>(
+        null,
+      );
+      if (!session.current)
+        session.current = createWorkspaceSession({
+          initial: state,
+          publish,
+          save: async () => {
+            if (++writes === 1) await gate;
+          },
+        });
+      const commit = (patch: StatePatch) => session.current!.commit(patch);
+      return (
+        <StoreContext.Provider
+          value={{
+            state,
+            set: (patch) => {
+              void commit(patch);
+            },
+            commit,
+          }}
+        >
+          <OrdersPage />
+        </StoreContext.Provider>
+      );
+    }
+    render(<DurableOrders />);
+    fireEvent.click(screen.getByRole('button', { name: /700,00/ }));
+    fireEvent.change(screen.getByLabelText('Количество SKU1'), {
+      target: { value: '4' },
+    });
+    fireEvent.change(screen.getByLabelText('Количество SKU1'), {
+      target: { value: '7' },
+    });
+    await waitFor(() => expect(writes).toBe(1));
+    finish();
+    await waitFor(() => expect(writes).toBe(2));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Количество SKU1')).toHaveValue(7),
+    );
   });
 
   it('uses neutral, reviewed and blocker-priority presentation states', () => {

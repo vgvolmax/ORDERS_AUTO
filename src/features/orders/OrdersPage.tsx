@@ -32,7 +32,7 @@ import { SupplierOrdersDrawer } from './SupplierOrdersDrawer';
 type ExportMode = 'ALL' | 'REVIEWED';
 
 export function OrdersPage() {
-  const { state, set, commit } = useStore();
+  const { state, set, commit, saving } = useStore();
   const derived = useDerivedState(state);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
@@ -186,18 +186,27 @@ export function OrdersPage() {
     }
   }
 
-  function editOrder(order: WorkflowOrder, skuCode: string, qty: number): void {
+  async function editOrder(
+    order: WorkflowOrder,
+    skuCode: string,
+    qty: number,
+  ): Promise<void> {
     try {
       const currentLine = order.lines.find((line) => line.skuCode === skuCode);
-      if (currentLine?.orderQty === qty) {
+      if (!commit && currentLine?.orderQty === qty) {
         set({ toast: 'Количество не изменилось.' });
         return;
       }
-      set((s) => {
+      const patch = (s: typeof state) => {
         const current = derive(s).projection.orders.find(
           (o) => o.id === order.id,
         );
         if (!current) throw new Error('Заказ изменился. Откройте его заново.');
+        if (
+          current.lines.find((line) => line.skuCode === skuCode)?.orderQty ===
+          qty
+        )
+          return { toast: 'Количество не изменилось.' };
         return {
           ...applyOrderQtyChange({
             edits: s.edits,
@@ -210,35 +219,38 @@ export function OrdersPage() {
           toast:
             'Количество и сумма заказа пересчитаны. Проверка заказа снята.',
         };
-      });
+      };
+      if (commit) await commit(patch);
+      else set(patch);
     } catch (error) {
       console.error('Failed to edit order quantity', error);
       set({ toast: 'Не удалось изменить количество в заказе.' });
+      throw error;
     }
   }
 
   function setReviewed(orderId: string, reviewed: boolean): void {
-    set({
+    set((current) => ({
       reviewedOrderIds: setOrderReviewed(
-        state.reviewedOrderIds,
+        current.reviewedOrderIds,
         orderId,
         reviewed,
       ),
       toast: reviewed ? 'Заказ отмечен проверенным.' : 'Проверка заказа снята.',
-    });
+    }));
   }
 
   function setAllReviewed(orderIds: string[], reviewed: boolean): void {
-    set({
+    set((current) => ({
       reviewedOrderIds: setOrdersReviewed(
-        state.reviewedOrderIds,
+        current.reviewedOrderIds,
         orderIds,
         reviewed,
       ),
       toast: reviewed
         ? `Проверены заказы: ${orderIds.length}.`
         : `Проверка снята: ${orderIds.length}.`,
-    });
+    }));
   }
 
   async function exportSingle(
@@ -279,14 +291,16 @@ export function OrdersPage() {
         </div>
         <div className="export-actions">
           <Button
-            disabled={exportable.length === 0 || Boolean(busy)}
+            disabled={exportable.length === 0 || Boolean(busy || saving)}
             onClick={() => zip('ALL')}
           >
             {busy || `Скачать все (${exportable.length})`}
           </Button>
           <Button
             className="secondary"
-            disabled={reviewedExportable.length === 0 || Boolean(busy)}
+            disabled={
+              reviewedExportable.length === 0 || Boolean(busy || saving)
+            }
             onClick={() => zip('REVIEWED')}
           >
             Скачать проверенные ({reviewedExportable.length})
@@ -509,7 +523,8 @@ export function OrdersPage() {
                         <Button
                           className="secondary"
                           disabled={
-                            supplierExportable.length === 0 || Boolean(busy)
+                            supplierExportable.length === 0 ||
+                            Boolean(busy || saving)
                           }
                           onClick={() => excel(supplier, 'ALL')}
                         >
@@ -519,7 +534,7 @@ export function OrdersPage() {
                           className="secondary"
                           disabled={
                             supplierReviewedExportable.length === 0 ||
-                            Boolean(busy)
+                            Boolean(busy || saving)
                           }
                           onClick={() => excel(supplier, 'REVIEWED')}
                         >
@@ -543,6 +558,7 @@ export function OrdersPage() {
       {selected && (
         <OrderDrawer
           order={selected}
+          saving={Boolean(busy || saving)}
           renderMovement={(line) => (
             <MovementIndicator
               scope={{ skuCode: line.skuCode, branch: line.branch }}
@@ -563,6 +579,7 @@ export function OrdersPage() {
       {selectedSupplier && selectedSupplierOrders.length > 0 && (
         <SupplierOrdersDrawer
           supplier={selectedSupplier}
+          saving={Boolean(busy || saving)}
           renderMovement={(line) => (
             <MovementIndicator
               scope={{ skuCode: line.skuCode, branch: line.branch }}

@@ -153,6 +153,29 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await page
     .getByRole('button', { name: 'Ребалансировка', exact: true })
     .click();
+  await page.getByRole('tab', { name: 'Маршруты' }).click();
+  await page.getByLabel('Режим маршрутов').selectOption('SELECTIVE');
+  await page.getByLabel('Маршрут Донор А → Получатель').selectOption('A_TO_B');
+  await expect(page.getByLabel('Маршрут Получатель → Донор А')).toHaveValue(
+    'B_TO_A',
+  );
+  await page.getByLabel('Режим маршрутов').selectOption('ALL_ALLOWED');
+  await page.getByRole('tab', { name: 'Условия' }).click();
+  await page
+    .getByLabel('Получатель', { exact: true })
+    .selectOption('BELOW_MAX');
+  await expect(page.getByLabel('Получатель', { exact: true })).toHaveValue(
+    'BELOW_MAX',
+  );
+  await page
+    .getByLabel('Получатель', { exact: true })
+    .selectOption('BELOW_MIN');
+  await page.getByLabel('Получатель', { exact: true }).focus();
+  await page.keyboard.press('Space');
+  await page.screenshot({
+    path: testInfo.outputPath('00-conditions-select-1280.png'),
+  });
+  await page.keyboard.press('Escape');
   await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
   await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
   await page
@@ -164,7 +187,10 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   ).toBeVisible();
   await page
     .getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор А/ })
-    .check();
+    .click();
+  await expect(
+    page.getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор А/ }),
+  ).toBeChecked();
   await page.screenshot({
     path: testInfo.outputPath('01-selected-1280.png'),
     fullPage: true,
@@ -180,7 +206,10 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   // An additional selected proposal remains unapplied across navigation and reload.
   await page
     .getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор Б/ })
-    .check();
+    .click();
+  await expect(
+    page.getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор Б/ }),
+  ).toBeChecked();
   await page.getByRole('button', { name: 'Получатель', exact: true }).click();
   const row = page.getByRole('row').filter({ hasText: 'SKU1' });
   await expect(row).toContainText('35');
@@ -204,7 +233,10 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     '35',
   );
   await page.getByLabel('Количество SKU1', { exact: true }).fill('40');
-  await page.getByRole('checkbox', { name: 'Заказ проверен' }).check();
+  await page.getByRole('checkbox', { name: 'Заказ проверен' }).click();
+  await expect(
+    page.getByRole('checkbox', { name: 'Заказ проверен' }),
+  ).toBeChecked();
   const csvDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Скачать CSV заказа' }).click();
   const csv = await csvDownload;
@@ -254,6 +286,23 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await report.xlsx.load(await readWorkbook((await exported.path())!));
   expect(report.getWorksheet('Принятые')!.getCell('D2').value).toBe(15);
   expect(report.getWorksheet('Предложения')!.getCell('D2').value).toBe(20);
+  await page.getByRole('button', { name: 'Загрузить новые отчёты' }).click();
+  await page.getByRole('button', { name: 'Начать новый сеанс' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Импорт отчётов 1С' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'История сеансов' }).click();
+  const archived = page
+    .getByRole('row')
+    .filter({ hasText: 'min.xlsx' })
+    .filter({ hasText: 'sup.xlsx' });
+  await archived
+    .getByRole('button', { name: 'Восстановить', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Восстановить копию' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Учтённые перемещения · 1' }),
+  ).toBeVisible();
   await page.getByRole('button', { name: /Отменить принятие SKU1/ }).click();
   await expect(page.getByRole('dialog')).toContainText('ручные количества');
   await page

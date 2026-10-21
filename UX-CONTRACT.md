@@ -14,7 +14,7 @@ ORDERS_AUTO — русский локальный инструмент заку�
 |---|---|---|---|---|
 | Table Selection | ResultsTable / SupplierDecisions | persisted selectedLineIds / uiPreferences | Видимые предложения; supplier scope явно выбирается | acceptTransfers.test.tsx; offline.spec.ts |
 | Select/Listbox | components/ui.tsx Select | native HTML select | OS popup принят для компактных настроек и русских option labels; без авторского popup | rebalancingPage.test.tsx; browser keyboard |
-| Form | ConditionsPanel / PolicyEditor | domain validation + app commit | inline settings; explicit save for unit/step; noValidate | rebalancingPage.test.tsx |
+| Form | ConditionsPanel / PolicyEditor / QuantityInput | domain validation + app commit | inline settings; explicit save for unit/step; noValidate | rebalancingPage.test.tsx |
 | Scrollbar | styles/app.css | глобальные scrollbar-color/width | Таблицы имеют собственный горизонтальный/вертикальный scroll | offline screenshots |
 | Toast | App | state.toast | Один status, 3.5 секунды; ошибки сохранения имеют отдельный постоянный banner | workspaceRestore / persistence tests |
 | CRUD | workspaceSession + rebalanceActions | committed workspace | Принять/отменить с подтверждением; импорт и восстановление создают новый сеанс | offline.spec.ts; workspaceSession.test.ts |
@@ -42,7 +42,7 @@ ORDERS_AUTO — русский локальный инструмент заку�
 
 Dialog и useModalLayer — канонический владелец focus trap, Escape, inert background, scroll lock и возврата фокуса; drawers используют тот же hook и portal. Вложенный диалог выше drawer, toast выше диалога; runtime tokens определены в CSS. Длинный текст скроллится внутри ограниченного viewport окна.
 
-Сохранение — pessimistic: persist, затем publish. Команды сериализуются, используют ревизии workspace/accepted ledger. Ошибка записи сохраняет предыдущую версию и показывает постоянное объяснение с повторным открытием сохранённого сеанса. CAS не позволяет другой вкладке молча перезаписать актуальную версию. Импорт имеет отдельное поколение отмены: позднее чтение не возвращает сброшенный сеанс. Никаких автоматических очисток БД или переносов accepted в свежий импорт.
+Сохранение бизнес-состояния — pessimistic: persist, затем publish. QuantityInput хранит локальный текст ввода, чтобы быстрый набор не затирался промежуточной записью; количество в расчёте меняется после сохранения. Ошибка возвращает последнее сохранённое значение. Проверка и экспорт ждут завершения записи количества. Команды сериализуются, используют ревизии workspace/accepted ledger. Ошибка записи сохраняет предыдущую версию и показывает постоянное объяснение с повторным открытием сохранённого сеанса. CAS не позволяет другой вкладке молча перезаписать актуальную версию. Импорт имеет отдельное поколение отмены: позднее чтение не возвращает сброшенный сеанс. Никаких автоматических очисток БД или переносов accepted в свежий импорт.
 
 ## Verification
 
