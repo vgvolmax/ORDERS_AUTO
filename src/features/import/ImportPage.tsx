@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { calculateDemand } from '../../domain/demand';
 import { resolveSuppliers } from '../../domain/suppliers';
@@ -8,7 +8,9 @@ import { parseSupplierWorkbook } from '../../import/supplierParser';
 import { Alert, Button } from '../../components/ui';
 
 export function ImportPage() {
-  const { state, set } = useStore();
+  const { state, set, commit } = useStore();
+  const reads = useRef({ min: 0, sup: 0 });
+  const [failures, setFailures] = useState({ min: '', sup: '' });
   const anyLoading = state.minMaxLoading || state.supplierLoading;
 
   const supplierResolutionSummary = useMemo(() => {
@@ -35,73 +37,35 @@ export function ImportPage() {
   }, [state.minMax, state.suppliers, state.overrides]);
 
   async function load(file: File, kind: 'min' | 'sup') {
+    const token = ++reads.current[kind];
     set(kind === 'min' ? { minMaxLoading: true } : { supplierLoading: true });
+    setFailures((previous) => ({ ...previous, [kind]: '' }));
     try {
-      const buffer = await file.arrayBuffer();
-      if (kind === 'min') {
-        const result = parseMinMaxWorkbook(buffer);
-        set({
-          minMax: result.fatal ? null : result.data,
-          minMaxFileName: file.name,
-          minMaxIssues: result.issues,
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-          toast: result.fatal
-            ? 'Отчёт MIN/MAX не принят — исправьте ошибку файла.'
-            : 'Отчёт MIN/MAX успешно распознан.',
-        });
-      } else {
-        const result = parseSupplierWorkbook(buffer);
-        set({
-          suppliers: result.fatal ? null : result.data,
-          supplierFileName: file.name,
-          supplierIssues: result.issues,
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-          toast: result.fatal
-            ? 'Отчёт поставщиков не принят — исправьте ошибку файла.'
-            : 'Отчёт поставщиков успешно распознан.',
-        });
+      const bytes = await file.arrayBuffer();
+      if (reads.current[kind] !== token) return;
+      const result = kind === 'min' ? parseMinMaxWorkbook(bytes) : parseSupplierWorkbook(bytes);
+      if (result.fatal || !result.data) {
+        setFailures((previous) => ({ ...previous, [kind]: result.issues.map((i) => i.message).join(' ') || 'Файл не принят. Проверьте формат отчёта.' }));
+        return;
       }
+      const ref = { fileId: crypto.randomUUID(), name: file.name, type: file.type, size: file.size, lastModified: file.lastModified };
+      const update = (current: typeof state) => reads.current[kind] !== token ? {} : {
+        ...(kind === 'min' ? { minMax: result.data as NonNullable<typeof state.minMax>, minMaxFileName: file.name, minMaxIssues: result.issues } : { suppliers: result.data as NonNullable<typeof state.suppliers>, supplierFileName: file.name, supplierIssues: result.issues }),
+        rawImports: { ...current.rawImports, [kind === 'min' ? 'minMax' : 'suppliers']: ref }, pendingFiles: [{ ...ref, bytes }],
+        reviewedOrderIds: [], exportedOrderIds: [], toast: 'Отчёт успешно распознан и сохранён.',
+      };
+      if (commit) await commit(update); else set(update);
     } catch {
-      if (kind === 'min') {
-        set({
-          minMax: null,
-          minMaxFileName: file.name,
-          minMaxIssues: [
-            {
-              severity: 'ERROR',
-              code: 'MISSING_REQUIRED_COLUMN',
-              message: 'Не удалось прочитать файл MIN/MAX.',
-            },
-          ],
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-        });
-      } else {
-        set({
-          suppliers: null,
-          supplierFileName: file.name,
-          supplierIssues: [
-            {
-              severity: 'ERROR',
-              code: 'MISSING_REQUIRED_COLUMN',
-              message: 'Не удалось прочитать файл поставщиков.',
-            },
-          ],
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-        });
-      }
+      if (reads.current[kind] === token) setFailures((previous) => ({ ...previous, [kind]: 'Не удалось прочитать или сохранить файл. Предыдущий отчёт сохранён. Повторите выбор файла.' }));
     } finally {
-      set(kind === 'min' ? { minMaxLoading: false } : { supplierLoading: false });
+      if (reads.current[kind] === token) set(kind === 'min' ? { minMaxLoading: false } : { supplierLoading: false });
     }
   }
 
   return (
     <main>
       <header>
-        <p className="eyebrow">Шаг 1 из 4</p>
+        <p className="eyebrow">Рабочий сеанс</p>
         <h1>Импорт отчётов 1С</h1>
         <p>
           Загрузите два отчёта. Они обрабатываются только в браузере и никуда
@@ -110,6 +74,9 @@ export function ImportPage() {
       </header>
 
       {anyLoading && <Alert>Обработка отчёта…</Alert>}
+      {failures.min && <Alert tone="danger">MIN/MAX: {failures.min}</Alert>}
+      {failures.sup && <Alert tone="danger">Поставщики: {failures.sup}</Alert>}
+      {(state.minMax || state.suppliers) && <p>Замена отчёта создаёт новый сеанс без принятых перемещений и ручных количеств. Предыдущая работа остаётся в истории.</p>}
 
       <div className="upload-grid">
         <FileCard
@@ -219,6 +186,7 @@ function FileCard({
             const file = event.target.files?.[0];
             if (file) {
               onFile(file);
+              event.target.value = '';
             }
           }}
         />

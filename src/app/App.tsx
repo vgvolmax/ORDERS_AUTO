@@ -1,64 +1,49 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DemandPage } from '../features/demand/DemandPage';
 import { ImportPage } from '../features/import/ImportPage';
 import { OrdersPage } from '../features/orders/OrdersPage';
 import { SuppliersPage } from '../features/suppliers/SuppliersPage';
 import { getSupplierOverrides } from '../persistence/supplierOverrides';
-import { defaults, getSettings, saveSettings } from '../persistence/settings';
-import { StoreContext, type AppState } from './appStore';
-
-function createInitialState(
-  overrides: AppState['overrides'] = [],
-  settings: AppState['settings'] = defaults,
-): AppState {
-  return {
-    minMax: null,
-    suppliers: null,
-    minMaxFileName: null,
-    supplierFileName: null,
-    minMaxIssues: [],
-    supplierIssues: [],
-    overrides,
-    edits: [],
-    settings,
-    reviewedOrderIds: [],
-    exportedOrderIds: [],
-    page: 'import',
-    toast: null,
-    minMaxLoading: false,
-    supplierLoading: false,
-  };
-}
+import { getSettings } from '../persistence/settings';
+import { StoreContext, type AppState, type StatePatch } from './appStore';
+import { createInitialState } from './initialState';
+import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
+import { loadActiveWorkspace, saveWorkspace } from '../persistence/workspaces';
 
 export function App() {
   const [state, setState] = useState<AppState>(() => createInitialState());
   const [initializing, setInitializing] = useState(true);
-
-  const set = (patch: Partial<AppState>) => {
-    setState((current) => ({ ...current, ...patch }));
+  const [pending, setPending] = useState(0);
+  const [retry, setRetry] = useState(0);
+  const session = useRef<ReturnType<typeof createWorkspaceSession> | null>(null);
+  const commit = async (patch: StatePatch) => {
+    if (!session.current) throw new Error('Локальное хранилище ещё не готово');
+    setPending((n) => n + 1);
+    try { await session.current.commit(patch); }
+    catch (error) {
+      session.current.transient({ storageError: error instanceof Error ? error.message : 'Ошибка локального хранилища', toast: 'Изменения не сохранены. Предыдущая версия сеанса сохранена.' });
+      throw error;
+    } finally { setPending((n) => n - 1); }
   };
-
-  useEffect(() => {
-    Promise.all([getSupplierOverrides(), getSettings()])
-      .then(([overrides, settings]) => {
-        setState((current) => ({ ...current, overrides, settings }));
-      })
-      .catch(() => {
-        set({
-          toast:
-            'Не удалось открыть локальное хранилище. Работа продолжится без сохранения настроек.',
-        });
-      })
-      .finally(() => setInitializing(false));
-  }, []);
-
-  useEffect(() => {
-    if (!initializing) {
-      saveSettings(state.settings).catch(() => {
-        set({ toast: 'Не удалось сохранить настройки порога на этом компьютере.' });
-      });
+  const set = (patch: StatePatch) => {
+    if (typeof patch !== 'function' && Object.keys(patch).every((key) => ['toast', 'minMaxLoading', 'supplierLoading', 'storageError'].includes(key))) {
+      session.current?.transient(patch); return;
     }
-  }, [state.settings, initializing]);
+    void commit(patch).catch(() => undefined);
+  };
+  useEffect(() => {
+    let cancelled = false; setInitializing(true);
+    void (async () => {
+      try {
+        const active = await loadActiveWorkspace();
+        const initial = active ? stateFromWorkspace(active) : createInitialState({ overrides: await getSupplierOverrides(), settings: await getSettings() });
+        if (!cancelled) { session.current = createWorkspaceSession({ initial, save: saveWorkspace, publish: setState }); setState(initial); }
+      } catch (error) {
+        if (!cancelled) setState((current) => ({ ...current, storageError: error instanceof Error ? error.message : 'Не удалось восстановить сеанс' }));
+      } finally { if (!cancelled) setInitializing(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [retry]);
 
   useEffect(() => {
     if (!state.toast) {
@@ -72,6 +57,7 @@ export function App() {
     return <div className="boot">Загрузка сохранённых настроек…</div>;
   }
 
+  if (!session.current) return <main><h1>Не удалось открыть сохранённый сеанс</h1><p role="alert">{state.storageError}</p><button onClick={() => setRetry((n) => n + 1)}>Повторить загрузку</button></main>;
   const imported = Boolean(state.minMax && state.suppliers);
   const resetImports = () => {
     if (
@@ -82,11 +68,11 @@ export function App() {
     ) {
       return;
     }
-    setState(createInitialState(state.overrides, state.settings));
+    set({ minMax: null, suppliers: null, minMaxFileName: null, supplierFileName: null, minMaxIssues: [], supplierIssues: [], rawImports: { minMax: null, suppliers: null }, page: 'import' });
   };
 
   return (
-    <StoreContext.Provider value={{ state, set }}>
+    <StoreContext.Provider value={{ state, set, commit, saving: pending > 0 }}>
       <div className="shell">
         <aside className="sidebar">
           <div className="brand">
@@ -139,6 +125,8 @@ export function App() {
         </aside>
 
         <div className="content">
+          <div className="workspace-save-state" role="status">{pending ? 'Сохранение сеанса…' : 'Сеанс сохранён на этом компьютере'}</div>
+          {state.storageError && <div className="alert danger" role="alert">Изменения не применены: {state.storageError}. Повторите действие. При конфликте другой вкладки откройте сохранённый сеанс заново.</div>}
           {state.page === 'import' ? (
             <ImportPage />
           ) : state.page === 'all' ? (

@@ -1,11 +1,12 @@
 import type { ReactElement } from 'react';
 import { render } from '@testing-library/react';
-import { StoreContext, type AppState } from '../../src/app/appStore';
+import { createInitialState } from '../../src/app/initialState';
+import { StoreContext, type AppState, type StatePatch } from '../../src/app/appStore';
 
 export function renderWithStore(
   ui: ReactElement,
   state: AppState,
-  set: (patch: Partial<AppState>) => void = () => undefined,
+  set: (patch: StatePatch) => void = () => undefined,
 ) {
   return render(
     <StoreContext.Provider value={{ state, set }}>{ui}</StoreContext.Provider>,
@@ -14,6 +15,7 @@ export function renderWithStore(
 
 export function baseState(overrides: Partial<AppState> = {}): AppState {
   return {
+    ...createInitialState(),
     minMax: {
       skus: [
         {

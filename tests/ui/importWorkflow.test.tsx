@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { loadActiveWorkspace, loadWorkspaceFile } from '../../src/persistence/workspaces';
 import { App } from '../../src/app/App';
 import { buildMinMaxFixture, buildSupplierFixture } from '../fixtures/workbookBuilders';
 
@@ -46,6 +47,11 @@ describe('import workflow', () => {
       expect(screen.getByText(/2 SKU/i)).toBeInTheDocument();
       expect(screen.getByText(/2 поставщик/i)).toBeInTheDocument();
     });
+
+    const saved = await loadActiveWorkspace();
+    expect(saved!.data.rawImports.minMax?.name).toBe('Min-Max.xlsx');
+    expect(saved!.data.rawImports.suppliers?.name).toBe('Поставщики.xls');
+    expect((await loadWorkspaceFile(saved!.data.rawImports.minMax!.fileId))!.bytes.byteLength).toBe(buildMinMaxFixture().byteLength);
 
     // Fixture contains MIN > MAX and a missing reference price; both are warnings,
     // therefore import remains usable but the user must see them before ordering.

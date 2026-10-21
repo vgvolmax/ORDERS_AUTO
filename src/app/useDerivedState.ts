@@ -17,6 +17,12 @@ export function useDerivedState(state: AppState): DerivedState {
       state.edits,
       state.settings,
       state.exportedOrderIds,
+      state.reviewedOrderIds,
+      state.snapshotId,
+      state.rebalance.accepted,
+      state.rebalance.registry,
+      state.rebalance.policies,
+      state.rebalance.proposal,
     ],
   );
 }

@@ -1,34 +1,18 @@
 import { createContext, useContext } from 'react';
-import type {
-  MinMaxDataset,
-  OrderQtyEdit,
-  OrderSettings,
-  SupplierDataset,
-  SupplierOverride,
-  ValidationIssue,
-} from '../domain/types';
+import type { WorkspaceData, WorkspaceFile } from '../domain/workspace';
 
-export interface AppState {
-  minMax: MinMaxDataset | null;
-  suppliers: SupplierDataset | null;
-  minMaxFileName: string | null;
-  supplierFileName: string | null;
-  minMaxIssues: ValidationIssue[];
-  supplierIssues: ValidationIssue[];
-  overrides: SupplierOverride[];
-  edits: OrderQtyEdit[];
-  settings: OrderSettings;
-  reviewedOrderIds: string[];
-  exportedOrderIds: string[];
-  page: string;
-  toast: string | null;
-  minMaxLoading: boolean;
-  supplierLoading: boolean;
+export interface AppState extends WorkspaceData {
+  workspaceId: string; workspaceRevision: number; snapshotId: string; workspaceCreatedAt: string;
+  toast: string | null; minMaxLoading: boolean; supplierLoading: boolean;
+  pendingFiles?: WorkspaceFile[]; storageError?: string | null;
 }
+export type StatePatch = Partial<AppState> | ((current: AppState) => Partial<AppState>);
 
 export interface Store {
   state: AppState;
-  set: (patch: Partial<AppState>) => void;
+  set: (patch: StatePatch) => void;
+  commit?: (patch: StatePatch) => Promise<void>;
+  saving?: boolean;
 }
 
 export const StoreContext = createContext<Store | null>(null);
