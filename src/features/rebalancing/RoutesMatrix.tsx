@@ -27,7 +27,6 @@ export function RoutesMatrix({
       b.name.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru')),
     );
   const direction = (a: string, b: string): RouteDirection => {
-    if (value.mode === 'ALL_ALLOWED') return 'BOTH';
     const pair = value.pairs.find(
       (p) =>
         (p.branchAId === a && p.branchBId === b) ||
@@ -37,6 +36,8 @@ export function RoutesMatrix({
       ? pair.branchAId === a
         ? pair.direction
         : reverse(pair.direction)
+      : value.mode === 'ALL_ALLOWED'
+      ? 'BOTH'
       : 'BLOCKED';
   };
   const columns: VirtualColumn<RebalanceBranch>[] = [
@@ -57,11 +58,10 @@ export function RoutesMatrix({
         ) : (
           <Select
             aria-label={`Маршрут ${from.name} → ${to.name}`}
-            disabled={value.mode === 'ALL_ALLOWED'}
             value={direction(from.id, to.id)}
             onChange={(e) =>
               onChange({
-                mode: 'SELECTIVE',
+                mode: value.mode,
                 pairs: [
                   ...value.pairs.filter(
                     (p) =>
@@ -102,9 +102,9 @@ export function RoutesMatrix({
             }
           >
             <option value="ALL_ALLOWED">
-              Все пары разрешены в обе стороны
+              Ненастроенные пары — в обе стороны
             </option>
-            <option value="SELECTIVE">Настроить направления</option>
+            <option value="SELECTIVE">Ненастроенные пары — запрещены</option>
           </Select>
         </label>
         <label>
@@ -114,8 +114,9 @@ export function RoutesMatrix({
       </div>
       <p>
         Строка — отправитель, столбец — получатель. Изменение пары сразу
-        отражается с обеих сторон. В выборочном режиме ненастроенные пары
-        запрещены.
+        отражается с обеих сторон. Общий режим применяется только к
+        ненастроенным парам. Сохранённые направления и запреты сохраняются при
+        смене режима; их можно изменить в ячейке пары.
       </p>
       <div
         className="route-matrix"

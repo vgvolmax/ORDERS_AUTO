@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { Alert, Button } from '../../components/ui';
+import { VirtualTable } from '../../components/VirtualTable';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
 import { fmtQty } from '../demand/DemandPage';
 export function AcceptTransfersDialog({
@@ -23,14 +25,20 @@ export function AcceptTransfersDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  const changes = after.filter((n) =>
-    before.some(
-      (p) =>
-        p.skuCode === n.skuCode &&
-        p.branch === n.branch &&
-        p.purchaseQty !== n.purchaseQty,
-    ),
-  );
+  const changes = useMemo(() => {
+    const key = (line: PurchaseDemandLine) =>
+      JSON.stringify([line.skuCode, line.branch]);
+    const previous = new Map(
+      before.map((line) => [key(line), line.purchaseQty]),
+    );
+    const rows: { line: PurchaseDemandLine; previousQty: number }[] = [];
+    for (const line of after) {
+      const previousQty = previous.get(key(line));
+      if (previousQty !== undefined && previousQty !== line.purchaseQty)
+        rows.push({ line, previousQty });
+    }
+    return rows;
+  }, [before, after]);
   return (
     <Dialog
       title={
@@ -57,33 +65,36 @@ export function AcceptTransfersDialog({
       }
     >
       <p>Строк: {count}. Изменение текущей закупки:</p>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Код</th>
-              <th>Подразделение</th>
-              <th>Было → станет</th>
-            </tr>
-          </thead>
-          <tbody>
-            {changes.map((l) => (
-              <tr key={`${l.skuCode}\0${l.branch}`}>
-                <td>{l.skuCode}</td>
-                <td>{l.branch}</td>
-                <td>
-                  {fmtQty(
-                    before.find(
-                      (p) => p.skuCode === l.skuCode && p.branch === l.branch,
-                    )!.purchaseQty,
-                  )}{' '}
-                  → {fmtQty(l.purchaseQty)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <p>Изменённых строк закупки: {changes.length}.</p>
+      <VirtualTable
+        rows={changes}
+        getRowKey={({ line }) => JSON.stringify([line.skuCode, line.branch])}
+        emptyMessage="Расчётное количество закупки не меняется."
+        columns={[
+          {
+            key: 'sku',
+            header: 'Код',
+            width: '140px',
+            render: ({ line }) => line.skuCode,
+          },
+          {
+            key: 'branch',
+            header: 'Подразделение',
+            width: 'minmax(180px, 1fr)',
+            render: ({ line }) => line.branch,
+          },
+          {
+            key: 'quantity',
+            header: 'Было → станет',
+            width: '160px',
+            render: ({ line, previousQty }) => (
+              <>
+                {fmtQty(previousQty)} → {fmtQty(line.purchaseQty)}
+              </>
+            ),
+          },
+        ]}
+      />
       {clearedEdits > 0 && (
         <Alert tone="warning">
           Будут сброшены ручные количества в изменившихся строках:{' '}

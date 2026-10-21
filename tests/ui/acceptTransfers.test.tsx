@@ -12,6 +12,7 @@ import { RebalancingPage } from '../../src/features/rebalancing/RebalancingPage'
 import { createProposal } from '../../src/app/rebalanceActions';
 import { derive } from '../../src/app/selectors';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
+import { AcceptTransfersDialog } from '../../src/features/rebalancing/AcceptTransfersDialog';
 export function Harness() {
   const [state, update] = useState(() => {
     const s = rebalanceAppState();
@@ -85,5 +86,71 @@ it('selection is independent; accept subset, cancel dialog, accept rest, recalcu
   );
   await waitFor(() =>
     expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('30'),
+  );
+});
+
+it('compares large purchase reports in linear work and reuses the comparison while saving', () => {
+  const base = derive(rebalanceAppState()).purchaseDemand[0]!;
+  const size = 1000;
+  let keyReads = 0;
+  const before = Array.from({ length: size }, (_, i) => ({
+    ...base,
+    get skuCode() {
+      keyReads++;
+      return `SKU${i}`;
+    },
+    purchaseQty: 50,
+  }));
+  const after = Array.from({ length: size }, (_, i) => ({
+    ...base,
+    skuCode: `SKU${i}`,
+    purchaseQty: i === size - 1 ? 35 : 50,
+  }));
+  const props = {
+    kind: 'accept' as const,
+    count: 1,
+    before,
+    after,
+    clearedEdits: 0,
+    busy: false,
+    error: '',
+    onConfirm: () => undefined,
+    onClose: () => undefined,
+  };
+  const { rerender } = render(<AcceptTransfersDialog {...props} />);
+  expect(screen.getByRole('dialog')).toHaveTextContent('50 → 35');
+  expect(screen.getAllByRole('row')).toHaveLength(2);
+  // Count actual data reads instead of a machine-dependent time limit.
+  expect(keyReads).toBeLessThan(size * 10);
+  keyReads = 0;
+  rerender(<AcceptTransfersDialog {...props} busy />);
+  expect(keyReads).toBe(0);
+  expect(screen.getByRole('button', { name: 'Сохранение…' })).toBeDisabled();
+});
+
+it('keeps bulk acceptance previews bounded instead of rendering every changed purchase row', () => {
+  const base = derive(rebalanceAppState()).purchaseDemand[0]!;
+  const before = Array.from({ length: 500 }, (_, i) => ({
+    ...base,
+    skuCode: `SKU${i}`,
+    purchaseQty: 50,
+  }));
+  const after = before.map((line) => ({ ...line, purchaseQty: 35 }));
+  render(
+    <AcceptTransfersDialog
+      kind="accept"
+      count={500}
+      before={before}
+      after={after}
+      clearedEdits={0}
+      busy={false}
+      error=""
+      onConfirm={() => undefined}
+      onClose={() => undefined}
+    />,
+  );
+  expect(screen.getAllByRole('row').length).toBeLessThan(120);
+  expect(screen.getByRole('dialog')).toHaveTextContent(
+    'Изменённых строк закупки: 500',
   );
 });

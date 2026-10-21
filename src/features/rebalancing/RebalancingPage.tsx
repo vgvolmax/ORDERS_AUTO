@@ -120,15 +120,19 @@ export function RebalancingPage() {
       setError(rebalanceMessage(e));
     }
   }
-  const preview = confirmation
-    ? (() => {
-        try {
-          return prepareAcceptedChange(state, confirmation);
-        } catch {
-          return null;
-        }
-      })()
-    : null;
+  const preview = useMemo(() => {
+    if (!confirmation) return null;
+    try {
+      return prepareAcceptedChange(state, confirmation);
+    } catch {
+      return null;
+    }
+  }, [state, confirmation]);
+  const previewDemand = useMemo(
+    () =>
+      preview ? derive({ ...state, ...preview.patch }).purchaseDemand : [],
+    [state, preview],
+  );
   async function confirm() {
     if (!confirmation || busy) return;
     setBusy(true);
@@ -383,7 +387,7 @@ export function RebalancingPage() {
           kind={confirmation.kind}
           count={confirmation.ids.length}
           before={d.purchaseDemand}
-          after={derive({ ...state, ...preview.patch }).purchaseDemand}
+          after={previewDemand}
           clearedEdits={preview.clearedEditCount}
           busy={busy}
           error={error}

@@ -60,6 +60,56 @@ it('mirrors one-way routes and keeps the diagonal unavailable', async () => {
     'B_TO_A',
   );
 });
+it('preserves and edits route exceptions when the default for unconfigured pairs changes', async () => {
+  const { RoutesMatrix } = await import(
+    '../../src/features/rebalancing/RoutesMatrix'
+  );
+  const { buildRouteIndex } = await import('../../src/domain/rebalancing');
+  const { useState } = await import('react');
+  const registry = rebalanceAppState().rebalance.registry;
+  let current: import('../../src/domain/rebalancing').RouteConfig = {
+    mode: 'SELECTIVE',
+    pairs: [{ branchAId: 'b0', branchBId: 'b2', direction: 'BLOCKED' }],
+  };
+  function Routes() {
+    const [value, set] = useState(current);
+    return (
+      <RoutesMatrix
+        registry={registry}
+        value={value}
+        onChange={(next) => {
+          current = next;
+          set(next);
+        }}
+      />
+    );
+  }
+  render(<Routes />);
+  const mode = screen.getByLabelText('Режим маршрутов');
+  fireEvent.change(mode, { target: { value: 'ALL_ALLOWED' } });
+  const forward = screen.getByLabelText('Маршрут Донор А → Получатель');
+  expect(forward).toHaveValue('BLOCKED');
+  expect(screen.getByLabelText('Маршрут Получатель → Донор А')).toHaveValue(
+    'BLOCKED',
+  );
+  expect(screen.getByLabelText('Маршрут Донор А → Донор Б')).toHaveValue(
+    'BOTH',
+  );
+  expect(forward).toBeEnabled();
+  fireEvent.change(forward, { target: { value: 'A_TO_B' } });
+  expect(mode).toHaveValue('ALL_ALLOWED');
+  expect(screen.getByLabelText('Маршрут Получатель → Донор А')).toHaveValue(
+    'B_TO_A',
+  );
+  const graph = buildRouteIndex(current, registry);
+  expect(graph.outgoing.get('b0')!.has('b2')).toBe(true);
+  expect(graph.outgoing.get('b2')!.has('b0')).toBe(false);
+  fireEvent.change(mode, { target: { value: 'SELECTIVE' } });
+  expect(forward).toHaveValue('A_TO_B');
+  expect(screen.getByLabelText('Маршрут Донор А → Донор Б')).toHaveValue(
+    'BLOCKED',
+  );
+});
 it('does not invent quantity policies and explicitly assigns the operators unit and step', () => {
   const state = rebalanceAppState();
   state.rebalance.policies = [];
