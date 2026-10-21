@@ -3,14 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowOrder } from '../../src/app/selectors';
 import { SupplierOrdersDrawer } from '../../src/features/orders/SupplierOrdersDrawer';
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'orders-auto:supplier-matrix-column-widths:v1';
+const COLUMN_WIDTHS_STORAGE_KEY =
+  'orders-auto:supplier-matrix-column-widths:v1';
 
-function line(
-  skuCode: string,
-  branch: string,
-  qty: number,
-  price = 100,
-) {
+function line(skuCode: string, branch: string, qty: number, price = 100) {
   return {
     skuCode,
     article: `ART-${skuCode}`,
@@ -80,7 +76,9 @@ describe('SupplierOrdersDrawer', () => {
     );
 
     const leninaHeader = screen.getByRole('columnheader', { name: /Ленина/i });
-    const stupinoHeader = screen.getByRole('columnheader', { name: /Ступино/i });
+    const stupinoHeader = screen.getByRole('columnheader', {
+      name: /Ступино/i,
+    });
     expect(leninaHeader).toBeInTheDocument();
     expect(stupinoHeader).toBeInTheDocument();
     expect(screen.getByText('ART-SKU1')).toBeInTheDocument();
@@ -137,13 +135,17 @@ describe('SupplierOrdersDrawer', () => {
     fireEvent.click(stupino);
     expect(onSetReviewed).toHaveBeenCalledWith(orders[1]!.id, true);
 
-    fireEvent.click(screen.getByRole('button', { name: /отметить все проверенными/i }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /отметить все проверенными/i }),
+    );
     expect(onSetAllReviewed).toHaveBeenCalledWith(
       orders.map((order) => order.id),
       true,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /снять проверку со всех/i }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /снять проверку со всех/i }),
+    );
     expect(onSetAllReviewed).toHaveBeenCalledWith(
       orders.map((order) => order.id),
       false,
@@ -170,7 +172,9 @@ describe('SupplierOrdersDrawer', () => {
       screen.getByRole('button', { name: 'Изменить ширину столбца Артикул' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Изменить ширину столбца Номенклатура' }),
+      screen.getByRole('button', {
+        name: 'Изменить ширину столбца Номенклатура',
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Изменить ширину столбца Ленина' }),
@@ -230,7 +234,9 @@ describe('SupplierOrdersDrawer', () => {
     const initialWidth = Number.parseFloat(codeHeader.style.width);
 
     fireEvent.keyDown(resizer, { key: 'ArrowRight' });
-    expect(Number.parseFloat(codeHeader.style.width)).toBeGreaterThan(initialWidth);
+    expect(Number.parseFloat(codeHeader.style.width)).toBeGreaterThan(
+      initialWidth,
+    );
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Сбросить ширину столбцов' }),
@@ -239,4 +245,26 @@ describe('SupplierOrdersDrawer', () => {
     expect(Number.parseFloat(codeHeader.style.width)).toBe(initialWidth);
     expect(window.localStorage.getItem(COLUMN_WIDTHS_STORAGE_KEY)).toBeNull();
   });
+});
+
+it('waits for quantity persistence before review while allowing the operator to finish typing', () => {
+  render(
+    <SupplierOrdersDrawer
+      supplier="Поставщик А"
+      orders={makeOrders()}
+      branchOrder={['Ленина', 'Ступино']}
+      saving
+      onClose={() => undefined}
+      onEdit={() => undefined}
+      onSetReviewed={() => undefined}
+      onSetAllReviewed={() => undefined}
+    />,
+  );
+  expect(
+    screen.getByRole('checkbox', { name: 'Проверен Ленина' }),
+  ).toBeDisabled();
+  expect(
+    screen.getByRole('button', { name: 'Отметить все проверенными' }),
+  ).toBeDisabled();
+  expect(screen.getByLabelText('Количество SKU1 Ленина')).toBeEnabled();
 });

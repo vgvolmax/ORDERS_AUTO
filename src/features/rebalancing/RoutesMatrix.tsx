@@ -3,7 +3,7 @@ import {
   VirtualTable,
   type VirtualColumn,
 } from '../../components/VirtualTable';
-import { Input, SearchInput, Select } from '../../components/ui';
+import { SearchInput, Select } from '../../components/ui';
 import type {
   BranchRegistry,
   RebalanceBranch,

@@ -6,6 +6,7 @@ import type {
   BranchRegistry,
   RebalanceProposal,
   RebalanceTransfer,
+  SkuQuantityPolicy,
 } from '../../domain/rebalancing';
 export function ResultsTable({
   proposal,
@@ -13,6 +14,7 @@ export function ResultsTable({
   selected,
   rejected,
   registry,
+  policies,
   query,
   onQuery,
   onSelection,
@@ -27,6 +29,7 @@ export function ResultsTable({
   selected: string[];
   rejected: string[];
   registry: BranchRegistry;
+  policies: SkuQuantityPolicy[];
   query: string;
   onQuery: (q: string) => void;
   onSelection: (ids: string[]) => void;
@@ -36,6 +39,7 @@ export function ResultsTable({
   stale: boolean;
   busy: boolean;
 }) {
+  const units = new Map(policies.map((p) => [p.skuCode, p.unit]));
   const names = new Map(registry.map((b) => [b.id, b.name]));
   const name = (id: string) => names.get(id) ?? id;
   const acceptedSources = new Set(
@@ -79,9 +83,9 @@ export function ResultsTable({
     {
       key: 'qty',
       header: 'Количество',
-      width: '115px',
+      width: '140px',
       className: 'num',
-      render: (t: T) => fmtQty(t.qty),
+      render: (t: T) => `${fmtQty(t.qty)} ${units.get(t.skuCode) ?? ''}`,
     },
   ];
   return (

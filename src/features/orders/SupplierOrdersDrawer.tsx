@@ -246,6 +246,7 @@ export function SupplierOrdersDrawer({
 
         <div className="supplier-review-actions">
           <Button
+            disabled={saving}
             className="secondary"
             onClick={() =>
               onSetAllReviewed(
@@ -257,6 +258,7 @@ export function SupplierOrdersDrawer({
             Отметить все проверенными
           </Button>
           <Button
+            disabled={saving}
             className="secondary"
             onClick={() =>
               onSetAllReviewed(
@@ -346,6 +348,7 @@ export function SupplierOrdersDrawer({
                               type="checkbox"
                               aria-label={`Проверен ${branch}`}
                               checked={order.reviewed}
+                              disabled={saving}
                               onChange={(event) =>
                                 onSetReviewed(order.id, event.target.checked)
                               }

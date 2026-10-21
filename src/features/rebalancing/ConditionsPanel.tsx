@@ -43,6 +43,11 @@ export function ConditionsPanel({
     <>
       <section className="panel">
         <h2>Условия перемещений</h2>
+        <p>
+          Денежные фильтры используют справочную цену MIN/MAX. Позиции с
+          неизвестной ценой попадут в исключения при включённых денежных
+          фильтрах.
+        </p>
         <div className="rebalance-fields">
           <label>
             Получатель

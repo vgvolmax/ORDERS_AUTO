@@ -302,6 +302,7 @@ export function RebalancingPage() {
                 selected={r.selectedLineIds}
                 rejected={r.rejectedLineIds}
                 registry={r.registry}
+                policies={r.policies}
                 query={r.query}
                 onQuery={(query) => edit({ query })}
                 onSelection={(selectedLineIds) => edit({ selectedLineIds })}

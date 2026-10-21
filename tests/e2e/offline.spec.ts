@@ -211,6 +211,9 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     page.getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор Б/ }),
   ).toBeChecked();
   await page.getByRole('button', { name: 'Получатель', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Получатель', exact: true }),
+  ).toBeVisible();
   const row = page.getByRole('row').filter({ hasText: 'SKU1' });
   await expect(row).toContainText('35');
   await row.getByRole('button', { name: /Учтённые перемещения/ }).click();
@@ -228,6 +231,9 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     page.getByRole('heading', { name: 'Поставщики', exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Заказы', exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: /SKU · Готов/ }).click();
   await expect(page.getByLabel('Количество SKU1', { exact: true })).toHaveValue(
     '35',
@@ -309,6 +315,9 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     .getByRole('button', { name: 'Отменить принятие', exact: true })
     .click();
   await page.getByRole('button', { name: 'Получатель', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Получатель', exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: 'SKU1' })).toContainText(
     '50',
   );
