@@ -33,7 +33,11 @@ export function VirtualTable<T>({
     overscan: 10,
   });
   const template = columns.map((column) => column.width).join(' ');
-  const minimumWidth = columns.reduce((sum, column) => sum + Number(column.width.match(/(?:minmax\()?([0-9.]+)px/)?.[1] ?? 80), 0);
+  const minimumWidth = columns.reduce(
+    (sum, column) =>
+      sum + Number(column.width.match(/(?:minmax\()?([0-9.]+)px/)?.[1] ?? 80),
+    0,
+  );
 
   if (rows.length === 0) {
     return <div className="empty">{emptyMessage}</div>;
@@ -42,51 +46,51 @@ export function VirtualTable<T>({
   return (
     <div className="virtual-table" role="table">
       <div style={{ minWidth: minimumWidth }}>
-      <TableHeader columns={columns} template={template} />
+        <TableHeader columns={columns} template={template} />
 
-      {shouldVirtualize ? (
-        <div className="virtual-scroll" ref={scrollRef}>
-          <div
-            className="virtual-spacer"
-            style={{ height: virtualizer.getTotalSize() }}
-          >
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const row = rows[virtualRow.index]!;
-              return (
-                <TableRow
-                  key={getRowKey(row)}
-                  row={row}
-                  columns={columns}
-                  template={template}
-                  details={renderDetails?.(row)}
-                  measureRef={virtualizer.measureElement}
-                  dataIndex={virtualRow.index}
-                  style={{ transform: `translateY(${virtualRow.start}px)` }}
-                />
-              );
-            })}
+        {shouldVirtualize ? (
+          <div className="virtual-scroll" ref={scrollRef}>
+            <div
+              className="virtual-spacer"
+              style={{ height: virtualizer.getTotalSize() }}
+            >
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const row = rows[virtualRow.index]!;
+                return (
+                  <TableRow
+                    key={getRowKey(row)}
+                    row={row}
+                    columns={columns}
+                    template={template}
+                    details={renderDetails?.(row)}
+                    measureRef={virtualizer.measureElement}
+                    dataIndex={virtualRow.index}
+                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  />
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ) : (
-        // Small result sets are cheaper and more accessible as ordinary DOM
-        // rows. Large operational datasets still use virtualization.
-        <div
-          className="virtual-scroll"
-          style={{ height: 'auto', maxHeight: 'min(68vh, 720px)' }}
-        >
-          {rows.map((row, index) => (
-            <TableRow
-              key={getRowKey(row)}
-              row={row}
-              columns={columns}
-              template={template}
-              details={renderDetails?.(row)}
-              dataIndex={index}
-              style={{ position: 'relative', top: 'auto', left: 'auto' }}
-            />
-          ))}
-        </div>
-      )}
+        ) : (
+          // Small result sets are cheaper and more accessible as ordinary DOM
+          // rows. Large operational datasets still use virtualization.
+          <div
+            className="virtual-scroll"
+            style={{ height: 'auto', maxHeight: 'min(68vh, 720px)' }}
+          >
+            {rows.map((row, index) => (
+              <TableRow
+                key={getRowKey(row)}
+                row={row}
+                columns={columns}
+                template={template}
+                details={renderDetails?.(row)}
+                dataIndex={index}
+                style={{ position: 'relative', top: 'auto', left: 'auto' }}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -106,11 +110,7 @@ function TableHeader<T>({
       style={{ gridTemplateColumns: template }}
     >
       {columns.map((column) => (
-        <div
-          key={column.key}
-          className={column.className}
-          role="columnheader"
-        >
+        <div key={column.key} className={column.className} role="columnheader">
           {column.header}
         </div>
       ))}
@@ -143,16 +143,9 @@ function TableRow<T>({
       role="row"
       style={style}
     >
-      <div
-        className="virtual-row"
-        style={{ gridTemplateColumns: template }}
-      >
+      <div className="virtual-row" style={{ gridTemplateColumns: template }}>
         {columns.map((column) => (
-          <div
-            key={column.key}
-            className={column.className}
-            role="cell"
-          >
+          <div key={column.key} className={column.className} role="cell">
             {column.render(row)}
           </div>
         ))}

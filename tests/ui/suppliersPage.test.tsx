@@ -74,14 +74,17 @@ function ambiguousState(): AppState {
 }
 
 function expectAutoPreview(count: number): void {
-  const hasExpectedPreview = screen.getAllByRole('status').some((element) =>
-    new RegExp(`будет назначено:\\s*${count}`, 'i').test(element.textContent ?? ''),
-  );
+  const hasExpectedPreview = screen
+    .getAllByRole('status')
+    .some((element) =>
+      new RegExp(`будет назначено:\\s*${count}`, 'i').test(
+        element.textContent ?? '',
+      ),
+    );
   expect(hasExpectedPreview).toBe(true);
 }
 
 describe('SuppliersPage', () => {
-
   it('shows below-MIN count and never presents an incomplete amount as complete', () => {
     const state = baseState({
       minMax: {
@@ -129,11 +132,17 @@ describe('SuppliersPage', () => {
     fireEvent.click(sku1);
     expect(sku1).toBeChecked();
 
-    fireEvent.click(screen.getByRole('button', { name: /свернуть.*требуют решения/i }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /свернуть.*требуют решения/i }),
+    );
     expect(screen.queryByText('Код SKU1')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /развернуть.*требуют решения/i }));
-    expect(screen.getByRole('checkbox', { name: /выбрать SKU1/i })).toBeChecked();
+    fireEvent.click(
+      screen.getByRole('button', { name: /развернуть.*требуют решения/i }),
+    );
+    expect(
+      screen.getByRole('checkbox', { name: /выбрать SKU1/i }),
+    ).toBeChecked();
   });
 
   it('previews and applies minimum-price automation only to selected rows', async () => {
@@ -146,9 +155,15 @@ describe('SuppliersPage', () => {
     });
 
     expectAutoPreview(1);
-    fireEvent.click(screen.getByRole('button', { name: /применить автовыбор/i }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /применить автовыбор/i }),
+    );
 
-    await waitFor(() => expect(set).toHaveBeenCalledWith(expect.objectContaining({ overrides: expect.any(Array) })));
+    await waitFor(() =>
+      expect(set).toHaveBeenCalledWith(
+        expect.objectContaining({ overrides: expect.any(Array) }),
+      ),
+    );
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({
         overrides: [
@@ -175,32 +190,70 @@ describe('SuppliersPage', () => {
 
   it('explicitly previews and overwrites a manual selection as AUTO', async () => {
     const state = ambiguousState();
-    state.overrides = [{
-      skuCode: 'SKU1', supplier: 'Дорогой', source: 'MANUAL', updatedAt: '2026-01-01',
-    }];
+    state.overrides = [
+      {
+        skuCode: 'SKU1',
+        supplier: 'Дорогой',
+        source: 'MANUAL',
+        updatedAt: '2026-01-01',
+      },
+    ];
     const set = vi.fn();
     renderWithStore(<SuppliersPage />, state, set);
 
     expectAutoPreview(1);
-    fireEvent.click(screen.getByRole('checkbox', { name: /перезаписать ручные назначения/i }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: /перезаписать ручные назначения/i }),
+    );
     expectAutoPreview(2);
-    expect(screen.getByRole('checkbox', { name: /выбрать SKU1/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /применить автовыбор/i }));
+    expect(
+      screen.getByRole('checkbox', { name: /выбрать SKU1/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: /применить автовыбор/i }),
+    );
 
-    await waitFor(() => expect(set).toHaveBeenCalledWith(expect.objectContaining({ overrides: expect.arrayContaining([expect.objectContaining({ skuCode: 'SKU1', supplier: 'Дешёвый', source: 'AUTO' })]) })));
+    await waitFor(() =>
+      expect(set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overrides: expect.arrayContaining([
+            expect.objectContaining({
+              skuCode: 'SKU1',
+              supplier: 'Дешёвый',
+              source: 'AUTO',
+            }),
+          ]),
+        }),
+      ),
+    );
   });
 
   it('keeps overwrite choice and compact summary visible across collapse', () => {
     const state = ambiguousState();
-    state.overrides = [{
-      skuCode: 'SKU1', supplier: 'Дорогой', source: 'MANUAL', updatedAt: '2026-01-01',
-    }];
+    state.overrides = [
+      {
+        skuCode: 'SKU1',
+        supplier: 'Дорогой',
+        source: 'MANUAL',
+        updatedAt: '2026-01-01',
+      },
+    ];
     renderWithStore(<SuppliersPage />, state);
-    const overwrite = screen.getByRole('checkbox', { name: /перезаписать ручные назначения/i });
+    const overwrite = screen.getByRole('checkbox', {
+      name: /перезаписать ручные назначения/i,
+    });
     fireEvent.click(overwrite);
-    fireEvent.click(screen.getByRole('button', { name: /свернуть.*требуют решения/i }));
-    expect(screen.getByRole('heading', { name: /требуют решения · 1 позиций/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /развернуть.*требуют решения/i }));
-    expect(screen.getByRole('checkbox', { name: /перезаписать ручные назначения/i })).toBeChecked();
+    fireEvent.click(
+      screen.getByRole('button', { name: /свернуть.*требуют решения/i }),
+    );
+    expect(
+      screen.getByRole('heading', { name: /требуют решения · 1 позиций/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: /развернуть.*требуют решения/i }),
+    );
+    expect(
+      screen.getByRole('checkbox', { name: /перезаписать ручные назначения/i }),
+    ).toBeChecked();
   });
 });

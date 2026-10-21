@@ -7,10 +7,17 @@ import { saveWorkspace } from '../../src/persistence/workspaces';
 import { baseState } from './renderWithStore';
 beforeEach(() => vi.stubGlobal('indexedDB', new IDBFactory()));
 it('restores imported reports and working page without a second import', async () => {
-  const state = baseState({ workspaceRevision: 0, page: 'orders', minMaxFileName: 'min.xlsx', supplierFileName: 'sup.xls' });
+  const state = baseState({
+    workspaceRevision: 0,
+    page: 'orders',
+    minMaxFileName: 'min.xlsx',
+    supplierFileName: 'sup.xls',
+  });
   await saveWorkspace(workspaceFromState(state), -1);
   render(<App />);
   expect(await screen.findByRole('heading', { name: /Заказы/ })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Ленина' })).toBeVisible();
-  expect(screen.queryByRole('heading', { name: 'Импорт отчётов 1С' })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('heading', { name: 'Импорт отчётов 1С' }),
+  ).not.toBeInTheDocument();
 });

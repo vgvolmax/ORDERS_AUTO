@@ -1,7 +1,11 @@
 import type { ReactElement } from 'react';
 import { render } from '@testing-library/react';
 import { createInitialState } from '../../src/app/initialState';
-import { StoreContext, type AppState, type StatePatch } from '../../src/app/appStore';
+import {
+  StoreContext,
+  type AppState,
+  type StatePatch,
+} from '../../src/app/appStore';
 
 export function renderWithStore(
   ui: ReactElement,

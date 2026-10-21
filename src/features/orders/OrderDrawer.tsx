@@ -21,9 +21,11 @@ export function OrderDrawer({
   onReviewedChange: (reviewed: boolean) => void;
   onExport: (allowBelowThreshold: boolean) => void;
 }) {
-  const ref = useRef<HTMLElement>(null); useModalLayer(ref, onClose);
+  const ref = useRef<HTMLElement>(null);
+  useModalLayer(ref, onClose);
   const [overrideOpen, setOverrideOpen] = useState(false);
-  const canNormalExport = order.status === 'READY' || order.status === 'EXPORTED';
+  const canNormalExport =
+    order.status === 'READY' || order.status === 'EXPORTED';
   const canOverrideThreshold =
     order.status === 'BLOCKED' &&
     order.blockers.length === 1 &&
@@ -40,7 +42,14 @@ export function OrderDrawer({
         if (event.currentTarget === event.target) onClose();
       }}
     >
-      <aside ref={ref} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Состав заказа">
+      <aside
+        ref={ref}
+        tabIndex={-1}
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Состав заказа"
+      >
         <div className="drawer-head">
           <div>
             <p className="eyebrow">Состав заказа</p>
@@ -56,7 +65,9 @@ export function OrderDrawer({
             </p>
             <div className="order-review-strip">
               <label
-                className={`review-toggle ${order.reviewed ? 'is-reviewed' : ''} ${hardBlocked ? 'has-blocker' : ''}`}
+                className={`review-toggle ${
+                  order.reviewed ? 'is-reviewed' : ''
+                } ${hardBlocked ? 'has-blocker' : ''}`}
               >
                 <input
                   type="checkbox"
@@ -64,10 +75,14 @@ export function OrderDrawer({
                   checked={order.reviewed}
                   onChange={(event) => onReviewedChange(event.target.checked)}
                 />
-                <span>{order.reviewed ? '✓ Заказ проверен' : 'Заказ не проверен'}</span>
+                <span>
+                  {order.reviewed ? '✓ Заказ проверен' : 'Заказ не проверен'}
+                </span>
               </label>
               {order.manualEditCount > 0 && (
-                <span className="manual-indicator">✋ {order.manualEditCount} изменено</span>
+                <span className="manual-indicator">
+                  ✋ {order.manualEditCount} изменено
+                </span>
               )}
             </div>
           </div>
@@ -115,7 +130,10 @@ export function OrderDrawer({
                   <td className="num">{fmtQty(line.stock)}</td>
                   <td className="num">{line.min ?? '—'}</td>
                   <td className="num">{line.max ?? '—'}</td>
-                  <td className="num">{fmtQty(line.calculatedQty)}{renderMovement?.(line)}</td>
+                  <td className="num">
+                    {fmtQty(line.calculatedQty)}
+                    {renderMovement?.(line)}
+                  </td>
                   <td>
                     <Input
                       className={
@@ -141,7 +159,9 @@ export function OrderDrawer({
                     ))}
                   </td>
                   <td className="num">
-                    {line.unitPrice == null ? 'Нет цены' : money(line.unitPrice)}
+                    {line.unitPrice == null
+                      ? 'Нет цены'
+                      : money(line.unitPrice)}
                   </td>
                   <td>{priceSourceLabel(line.priceSource)}</td>
                   <td className="num">
@@ -169,7 +189,36 @@ export function OrderDrawer({
           </Button>
         </div>
       </aside>
-      {overrideOpen && <Dialog title="Выгрузить заказ ниже порога?" onClose={() => setOverrideOpen(false)} actions={<><Button className="secondary" onClick={() => setOverrideOpen(false)}>Отмена</Button><Button onClick={() => { setOverrideOpen(false); onExport(true); }}>Выгрузить несмотря на порог</Button></>}><p>Заказ ниже установленной минимальной суммы. Он будет выгружен с текущими количествами.</p></Dialog>}
-    </div>, document.body
+      {overrideOpen && (
+        <Dialog
+          title="Выгрузить заказ ниже порога?"
+          onClose={() => setOverrideOpen(false)}
+          actions={
+            <>
+              <Button
+                className="secondary"
+                onClick={() => setOverrideOpen(false)}
+              >
+                Отмена
+              </Button>
+              <Button
+                onClick={() => {
+                  setOverrideOpen(false);
+                  onExport(true);
+                }}
+              >
+                Выгрузить несмотря на порог
+              </Button>
+            </>
+          }
+        >
+          <p>
+            Заказ ниже установленной минимальной суммы. Он будет выгружен с
+            текущими количествами.
+          </p>
+        </Dialog>
+      )}
+    </div>,
+    document.body,
   );
 }

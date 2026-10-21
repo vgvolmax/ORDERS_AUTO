@@ -171,3 +171,12 @@ src/domain/rebalancing/index.ts — публичный вход чистого �
 
 
 Уточнение21.10.2026: flow.ts использует min-cost maximum flow с точными BigInt-весами фактически закрываемого Min. Число шагов остаётся целым; полный и частичный вклад последнего шага различаются. economics.ts — единый владелец диагностики оставшихся принятых сумм для команд и нового расчёта; предупреждения не отменяют и не принимают движения.
+
+
+## Реализация PR2
+
+`app/workspaceSession.ts` сериализует команды и публикует состояние после успешного сохранения. `persistence/workspaces.ts` сохраняет whole-state DTO (`domain/workspace.ts`) и ссылки на исходные файлы одной CAS-транзакцией IndexedDB v2; старые stores v1 остаются для миграции. Новый импорт сохраняет прежний workspace и создаёт новый snapshot без переноса accepted/edits. Восстановление истории создаёт копию с прежним snapshotId и сохранёнными решениями.
+
+`app/rebalanceActions.ts` связывает команды домена с общей purchase projection и адресной инвалидацией `domain/rebalanceWorkflow.ts`. `selectors` выдаёт originalDemand/purchaseDemand; Demand/Suppliers/Orders используют одну текущую основу. `movementSummary` агрегирует только принятые IDs с явными единицами; React пояснение не меняет бизнес-состояние. Allocation запускается только явной командой расчёта. Экспорт markers проверяет соответствие фактически выгруженному CSV payload и тому же снимку перед фиксацией.
+
+UI ownership и миграция существующих controls описаны в `UX-CONTRACT.md`; автономные runtime ограничения не изменены.

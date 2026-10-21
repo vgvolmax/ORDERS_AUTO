@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -7,9 +8,12 @@ import type {
 
 export function Button({
   className = '',
+  onClick,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button className={`button ${className}`} {...props} />;
+  return (
+    <button className={`button ${className}`} onClick={onClick} {...props} />
+  );
 }
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
@@ -46,7 +50,10 @@ export function Alert({
   tone?: 'info' | 'warning' | 'danger' | undefined;
 }) {
   return (
-    <div className={`alert ${tone}`} role={tone === 'danger' ? 'alert' : 'status'}>
+    <div
+      className={`alert ${tone}`}
+      role={tone === 'danger' ? 'alert' : 'status'}
+    >
       {children}
     </div>
   );
@@ -54,4 +61,41 @@ export function Alert({
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
+}
+
+export function SearchInput({
+  value,
+  onValueChange,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  value: string;
+  onValueChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <span className="search-control">
+      <input
+        ref={ref}
+        className="input"
+        {...props}
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+      />
+      {value && (
+        <button
+          type="button"
+          className="search-clear"
+          aria-label="Очистить поиск"
+          title="Очистить поиск"
+          onClick={(e) => {
+            e.preventDefault();
+            onValueChange('');
+            ref.current?.focus();
+          }}
+        >
+          ×
+        </button>
+      )}
+    </span>
+  );
 }

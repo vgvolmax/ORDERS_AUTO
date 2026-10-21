@@ -11,6 +11,7 @@ import {
   Input,
   MetricCard,
   Select,
+  SearchInput,
 } from '../../components/ui';
 import {
   buildAutoSupplierOverrides,
@@ -42,15 +43,36 @@ export function SuppliersPage() {
   const derived = useDerivedState(state);
   const [query, setQuery] = usePreference('suppliers:query', '');
   const [amountFrom, setAmountFrom] = usePreference('suppliers:amountFrom', '');
-  const [showBelowThreshold, setShowBelowThreshold] = usePreference('suppliers:belowThreshold', false);
-  const [decisionsOpen, setDecisionsOpen] = usePreference('suppliers:decisionsOpen', true);
-  const [selectedCodes, setSelectedCodes] = usePreference<string[]>('suppliers:selectedCodes', []);
-  const selectedSkuCodes = useMemo(() => new Set(selectedCodes), [selectedCodes]);
-  const setSelectedSkuCodes = (codes: Set<string>) => setSelectedCodes([...codes]);
-  const [autoStrategy, setAutoStrategy] =
-    usePreference<SupplierAutoStrategy>('suppliers:autoStrategy', 'MIN_PRICE');
-  const [autoScope, setAutoScope] = usePreference<SupplierAutoScope>('suppliers:autoScope', 'ALL');
-  const [overwriteManual, setOverwriteManual] = usePreference('suppliers:overwriteManual', false);
+  const [showBelowThreshold, setShowBelowThreshold] = usePreference(
+    'suppliers:belowThreshold',
+    false,
+  );
+  const [decisionsOpen, setDecisionsOpen] = usePreference(
+    'suppliers:decisionsOpen',
+    true,
+  );
+  const [selectedCodes, setSelectedCodes] = usePreference<string[]>(
+    'suppliers:selectedCodes',
+    [],
+  );
+  const selectedSkuCodes = useMemo(
+    () => new Set(selectedCodes),
+    [selectedCodes],
+  );
+  const setSelectedSkuCodes = (codes: Set<string>) =>
+    setSelectedCodes([...codes]);
+  const [autoStrategy, setAutoStrategy] = usePreference<SupplierAutoStrategy>(
+    'suppliers:autoStrategy',
+    'MIN_PRICE',
+  );
+  const [autoScope, setAutoScope] = usePreference<SupplierAutoScope>(
+    'suppliers:autoScope',
+    'ALL',
+  );
+  const [overwriteManual, setOverwriteManual] = usePreference(
+    'suppliers:overwriteManual',
+    false,
+  );
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const neededSkuCodes = useMemo(
@@ -74,13 +96,16 @@ export function SuppliersPage() {
   const operationPool = derived.resolutions.filter(
     (resolution) =>
       neededSkuCodes.has(resolution.skuCode) &&
-      (problems.includes(resolution) || resolution.status === 'MANUAL_SELECTED'),
+      (problems.includes(resolution) ||
+        resolution.status === 'MANUAL_SELECTED'),
   );
   const problemSkuCodes = new Set(problems.map((problem) => problem.skuCode));
   const problemDemand = derived.purchaseDemand.filter(
     (line) => problemSkuCodes.has(line.skuCode) && line.purchaseQty > 0,
   );
-  const problemAmount = problemDemand.some((line) => line.purchaseAmount == null)
+  const problemAmount = problemDemand.some(
+    (line) => line.purchaseAmount == null,
+  )
     ? null
     : problemDemand.reduce((sum, line) => sum + (line.purchaseAmount ?? 0), 0);
 
@@ -94,7 +119,14 @@ export function SuppliersPage() {
         strategy: autoStrategy,
         overwriteManual,
       }),
-    [operationPool, state.overrides, selectedSkuCodes, autoScope, autoStrategy, overwriteManual],
+    [
+      operationPool,
+      state.overrides,
+      selectedSkuCodes,
+      autoScope,
+      autoStrategy,
+      overwriteManual,
+    ],
   );
 
   const summaries = buildSupplierSummaries(
@@ -140,20 +172,39 @@ export function SuppliersPage() {
       updatedAt: new Date().toISOString(),
     };
     try {
-      const patch = (s: typeof state) => ({ overrides: mergeOverrides(s.overrides, [override]), toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.` });
-      if (commit) await commit(patch); else set(patch(state));
-    } catch { set({ toast: 'Не удалось сохранить выбор поставщика. Предыдущий выбор сохранён.' }); }
+      const patch = (s: typeof state) => ({
+        overrides: mergeOverrides(s.overrides, [override]),
+        toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.`,
+      });
+      if (commit) await commit(patch);
+      else set(patch(state));
+    } catch {
+      set({
+        toast:
+          'Не удалось сохранить выбор поставщика. Предыдущий выбор сохранён.',
+      });
+    }
   }
 
   async function applyAutomation(): Promise<void> {
     if (!autoOverrides.length || bulkBusy) return;
     setBulkBusy(true);
     try {
-      const patch = (s: typeof state) => ({ overrides: mergeOverrides(s.overrides, autoOverrides), toast: `Автоматически назначено: ${autoOverrides.length}.` });
-      if (commit) await commit(patch); else set(patch(state));
+      const patch = (s: typeof state) => ({
+        overrides: mergeOverrides(s.overrides, autoOverrides),
+        toast: `Автоматически назначено: ${autoOverrides.length}.`,
+      });
+      if (commit) await commit(patch);
+      else set(patch(state));
       setSelectedSkuCodes(new Set());
-    } catch { set({ toast: 'Не удалось сохранить массовый выбор поставщиков. Повторите действие.' }); }
-    finally { setBulkBusy(false); }
+    } catch {
+      set({
+        toast:
+          'Не удалось сохранить массовый выбор поставщиков. Повторите действие.',
+      });
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   return (
@@ -215,9 +266,9 @@ export function SuppliersPage() {
       >
         <label>
           Поиск поставщика
-          <Input
+          <SearchInput
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onValueChange={setQuery}
             placeholder="Название поставщика"
           />
         </label>
@@ -457,8 +508,8 @@ function SupplierDecisions({
                     {resolution.status === 'STALE_OVERRIDE'
                       ? 'Сохранённый поставщик отсутствует в свежем отчёте.'
                       : resolution.candidates.length === 0
-                        ? 'Нет истории поставщиков для автоматического выбора.'
-                        : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
+                      ? 'Нет истории поставщиков для автоматического выбора.'
+                      : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
                   </p>
                 </div>
 
@@ -472,7 +523,10 @@ function SupplierDecisions({
                   >
                     <option value="">Выберите поставщика…</option>
                     {resolution.candidates.map((candidate) => (
-                      <option key={candidate.supplier} value={candidate.supplier}>
+                      <option
+                        key={candidate.supplier}
+                        value={candidate.supplier}
+                      >
                         {candidate.supplier}
                         {candidate.supplier === resolution.recommendedSupplier
                           ? ' — рекомендуемый'
@@ -579,17 +633,11 @@ function buildSupplierSummaries(
         skuCount: new Set(positiveLines.map((line) => line.skuCode)).size,
         branchCount: new Set(supplierOrders.map((order) => order.branch)).size,
         belowMinSkuCount: belowMinSku.size,
-        totalQty: positiveLines.reduce(
-          (sum, line) => sum + line.orderQty,
-          0,
-        ),
+        totalQty: positiveLines.reduce((sum, line) => sum + line.orderQty, 0),
         totalAmount:
           missingPriceLineCount > 0
             ? null
-            : positiveLines.reduce(
-                (sum, line) => sum + (line.amount ?? 0),
-                0,
-              ),
+            : positiveLines.reduce((sum, line) => sum + (line.amount ?? 0), 0),
         missingPriceLineCount,
         belowThresholdOrderCount: supplierOrders.filter(
           (order) => order.belowThreshold,
@@ -606,9 +654,7 @@ function buildSupplierSummaries(
 }
 
 function hasHardBlocker(order: Order) {
-  return order.blockers.some(
-    (blocker) => blocker !== 'Ниже минимальной суммы',
-  );
+  return order.blockers.some((blocker) => blocker !== 'Ниже минимальной суммы');
 }
 
 function mergeOverrides(

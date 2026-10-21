@@ -1,6 +1,6 @@
 import type { StockStatus } from '../domain/types';
 import { stockStatusLabels } from './StatusBadge';
-import { Input, Select } from './ui';
+import { Input, SearchInput, Select } from './ui';
 
 export interface DemandFilters {
   query: string;
@@ -33,7 +33,10 @@ export function FiltersBar({
   suppliers: string[];
   resultCount: number;
 }) {
-  const update = <K extends keyof DemandFilters>(key: K, next: DemandFilters[K]) => {
+  const update = <K extends keyof DemandFilters>(
+    key: K,
+    next: DemandFilters[K],
+  ) => {
     onChange({ ...value, [key]: next });
   };
 
@@ -41,9 +44,9 @@ export function FiltersBar({
     <section className="filters" aria-label="Фильтры">
       <label className="filter-search">
         Поиск по коду, артикулу или названию
-        <Input
+        <SearchInput
           value={value.query}
-          onChange={(event) => update('query', event.target.value)}
+          onValueChange={(query) => update('query', query)}
           placeholder="Например, 40748 или герметик"
         />
       </label>
