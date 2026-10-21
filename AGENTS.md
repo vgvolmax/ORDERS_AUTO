@@ -21,6 +21,8 @@
 
 Если документы противоречат друг другу, приоритет: `SPEC.md` → `DATA_CONTRACTS.md` + `DERIVED_PROJECTIONS.md` → `UX_AND_EXPORT.md` → `ARCHITECTURE.md` → design/spec → implementation plan. Для Rebalancing уточнение `2026-09-03-rebalancing-integration-clarifications.md` имеет приоритет над конфликтующей формулировкой базового Rebalancing design spec только в явно перечисленных в нём интеграционных вопросах; `2026-09-03-rebalancing-integration-amendment.md` аналогично переопределяет конфликтующие шаги базового Rebalancing implementation plan.
 
+Для текущей реализации дополнительно прочитать `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md` и `docs/superpowers/plans/2026-10-20-rebalancing-order-integration.md`. Они заменяют конфликтующие rebalancing-правила03.09 в перечисленных новых требованиях; product/data/UX документы актуализированы в том же changeset. PR1 ограничен Tasks0–4; Tasks5–8 относятся к PR2.
+
 ## 2. Неподвижные архитектурные ограничения
 
 - Никакого backend/FastAPI/Express/SQLite.

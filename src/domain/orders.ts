@@ -1,3 +1,4 @@
+import type { PurchaseDemandLine } from './purchaseDemand';
 import type {
   Order,
   OrderProjection,
@@ -8,7 +9,7 @@ import type {
 } from './types';
 
 export function buildOrderProjection(
-  demand: PricedDemandLine[],
+  demand: (PricedDemandLine | PurchaseDemandLine)[],
   resolutions: SupplierResolution[],
   edits: OrderQtyEdit[],
   settings: OrderSettings,
@@ -23,8 +24,10 @@ export function buildOrderProjection(
   const unassigned: OrderProjection['unassigned'] = [];
 
   for (const line of demand) {
+    const purchase = 'purchaseQty' in line ? line : null;
+    const calculatedQty = purchase ? purchase.purchaseQty : line.deficitQty;
     if (
-      line.deficitQty <= 0 ||
+      calculatedQty <= 0 ||
       line.status === 'INVALID_NORM' ||
       line.status === 'NO_NORM'
     ) {
@@ -68,25 +71,31 @@ export function buildOrderProjection(
     };
 
     const orderQty =
-      editBySkuBranch.get(`${line.skuCode}\0${line.branch}`) ?? line.deficitQty;
+      editBySkuBranch.get(`${line.skuCode}\0${line.branch}`) ?? calculatedQty;
     if (orderQty < 0) {
       throw new Error('Количество не может быть отрицательным');
     }
 
     order.lines.push({
+      ...(purchase ? { purchaseContext: {
+        originalNeed: purchase.originalNeed, acceptedIncomingQty: purchase.acceptedIncomingQty, acceptedOutgoingQty: purchase.acceptedOutgoingQty,
+        projectedStock: purchase.projectedStock, purchaseQty: purchase.purchaseQty, purchaseAmount: purchase.purchaseAmount, purchaseStatus: purchase.purchaseStatus,
+        acceptedTransferIds: [...purchase.acceptedTransferIds], networkPurchaseQty: purchase.networkPurchaseQty,
+        networkPurchaseAmount: purchase.networkPurchaseAmount, networkPurchaseMissingPriceCount: purchase.networkPurchaseMissingPriceCount,
+      } } : {}),
       skuCode: line.skuCode,
       article: line.article,
       name: line.name,
       branch: line.branch,
       supplier: resolution.selectedSupplier,
-      calculatedQty: line.deficitQty,
+      calculatedQty,
       orderQty,
       unit: line.unit,
       unitPrice: line.unitPrice,
       priceSource: line.priceSource,
       amount: line.unitPrice == null ? null : orderQty * line.unitPrice,
       warnings:
-        orderQty > line.deficitQty ? ['Количество выше расчётного'] : [],
+        orderQty > calculatedQty ? ['Количество выше расчётного'] : [],
       stock: line.stock,
       min: line.min,
       max: line.max,

@@ -1,3 +1,5 @@
+> **Rebalancing20.10.2026:** для изменённой функции действуют уточнения в конце этого документа и `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md`; исторические правила03.09 в конфликтующей части заменены. PR1 реализует только домен, остальная интеграция — PR2.
+
 # ORDERS_AUTO — Technical Architecture
 
 ## 1. Deployment model
@@ -161,3 +163,11 @@ Build acceptance:
 - `export error` — не меняет расчётные данные, пользователь получает понятное сообщение и может повторить экспорт.
 
 Технические stack traces не показывать пользователю.
+
+
+## Расширение20.10.2026: feature boundary
+
+src/domain/rebalancing/index.ts — публичный вход чистого домена; adapter src/import/rebalanceSnapshot.ts не меняет старый parser. Pure snapshot→proposal/accepted→purchaseDemand→existing orders, без React/storage/network в домене. PR1 оставляет selectors/UI/persistence на legacy input. PR2 подключает полное локальное сохранение raw+normalized reports и всего рабочего сеанса аддитивной миграцией; положение выше «только настройки» сохраняется как описание текущей поставки, не целевого rebalancing workflow. Runtime file:// и portable offline package остаются обязательными.
+
+
+Уточнение21.10.2026: flow.ts использует min-cost maximum flow с точными BigInt-весами фактически закрываемого Min. Число шагов остаётся целым; полный и частичный вклад последнего шага различаются. economics.ts — единый владелец диагностики оставшихся принятых сумм для команд и нового расчёта; предупреждения не отменяют и не принимают движения.

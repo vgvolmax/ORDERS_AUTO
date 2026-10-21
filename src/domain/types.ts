@@ -106,7 +106,23 @@ export interface OrderSettings {
   thresholdMode: ThresholdMode;
 }
 
+/** Current accepted-transfer purchasing basis; original physical demand remains available separately. */
+export interface PurchaseDemandContext {
+  originalNeed: number;
+  acceptedIncomingQty: number;
+  acceptedOutgoingQty: number;
+  projectedStock: number;
+  purchaseQty: number;
+  purchaseAmount: number | null;
+  purchaseStatus: StockStatus;
+  acceptedTransferIds: string[];
+  networkPurchaseQty: number;
+  networkPurchaseAmount: number;
+  networkPurchaseMissingPriceCount: number;
+}
+
 export interface OrderLine {
+  purchaseContext?: PurchaseDemandContext;
   skuCode: string;
   article: string | null;
   name: string;
@@ -139,7 +155,7 @@ export interface Order {
 }
 
 export interface UnassignedDemand {
-  demand: PricedDemandLine;
+  demand: PricedDemandLine & Partial<PurchaseDemandContext>;
   supplierResolution: SupplierResolution;
   blocker:
     | 'NO_SUPPLIER'

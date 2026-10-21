@@ -1,3 +1,5 @@
+> **SUPERSEDED20.10.2026:** при конфликте применяется новый `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md` и нормативные product/data/UX документы. Donor floor толькоMax; recipient trigger настраивается; defaultBOTH и направленные routes; only accepted subset; full persistence — PR2. Greedy allocation, donor buffer, MANUAL_ONLY defaults, обязательные Pareto/flow-map и сохранение только географии не являются требованиями текущего MVP.
+
 # Rebalancing Module Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
