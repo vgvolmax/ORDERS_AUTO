@@ -50,7 +50,7 @@ export function buildPurchaseDemand(demand: PricedDemandLine[], accepted: Accept
     const calculation = calculateStockStatus(projectedStock, line.min, line.max);
     const purchaseQty = calculation.deficitQty;
     return { ...line, originalNeed: line.deficitQty, acceptedIncomingQty: incoming, acceptedOutgoingQty: outgoing, projectedStock, purchaseQty,
-      purchaseAmount: line.unitPrice === null ? null : purchaseQty * line.unitPrice, purchaseStatus: calculation.status,
+      purchaseAmount: line.unitPrice === null ? null : purchaseQty * line.unitPrice, purchaseStatus: calculation.status, purchaseDeficitPct: calculation.deficitPct,
       acceptedTransferIds: [...(transferIdsByKey.get(key) ?? [])].sort(), networkPurchaseQty: 0, networkPurchaseAmount: 0, networkPurchaseMissingPriceCount: 0 };
   });
   const networks = new Map<string, { quantities: number[]; amounts: number[]; missing: number }>();

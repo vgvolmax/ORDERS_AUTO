@@ -1,18 +1,8 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SuppliersPage } from '../../src/features/suppliers/SuppliersPage';
 import type { AppState } from '../../src/app/appStore';
 import { baseState, renderWithStore } from './renderWithStore';
-
-const mocks = vi.hoisted(() => ({
-  saveSupplierOverride: vi.fn(),
-  saveSupplierOverrides: vi.fn(),
-}));
-
-vi.mock('../../src/persistence/supplierOverrides', () => ({
-  saveSupplierOverride: mocks.saveSupplierOverride,
-  saveSupplierOverrides: mocks.saveSupplierOverrides,
-}));
 
 function ambiguousState(): AppState {
   return baseState({
@@ -91,12 +81,6 @@ function expectAutoPreview(count: number): void {
 }
 
 describe('SuppliersPage', () => {
-  beforeEach(() => {
-    mocks.saveSupplierOverride.mockReset();
-    mocks.saveSupplierOverride.mockResolvedValue('SKU1');
-    mocks.saveSupplierOverrides.mockReset();
-    mocks.saveSupplierOverrides.mockResolvedValue(undefined);
-  });
 
   it('shows below-MIN count and never presents an incomplete amount as complete', () => {
     const state = baseState({
@@ -164,14 +148,7 @@ describe('SuppliersPage', () => {
     expectAutoPreview(1);
     fireEvent.click(screen.getByRole('button', { name: /применить автовыбор/i }));
 
-    await waitFor(() => expect(mocks.saveSupplierOverrides).toHaveBeenCalledTimes(1));
-    expect(mocks.saveSupplierOverrides).toHaveBeenCalledWith([
-      expect.objectContaining({
-        skuCode: 'SKU1',
-        supplier: 'Дешёвый',
-        source: 'AUTO',
-      }),
-    ]);
+    await waitFor(() => expect(set).toHaveBeenCalledWith(expect.objectContaining({ overrides: expect.any(Array) })));
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({
         overrides: [
@@ -210,12 +187,7 @@ describe('SuppliersPage', () => {
     expect(screen.getByRole('checkbox', { name: /выбрать SKU1/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /применить автовыбор/i }));
 
-    await waitFor(() => expect(mocks.saveSupplierOverrides).toHaveBeenCalled());
-    expect(mocks.saveSupplierOverrides).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ skuCode: 'SKU1', supplier: 'Дешёвый', source: 'AUTO' }),
-      ]),
-    );
+    await waitFor(() => expect(set).toHaveBeenCalledWith(expect.objectContaining({ overrides: expect.arrayContaining([expect.objectContaining({ skuCode: 'SKU1', supplier: 'Дешёвый', source: 'AUTO' })]) })));
   });
 
   it('keeps overwrite choice and compact summary visible across collapse', () => {

@@ -1,3 +1,7 @@
+import { useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Dialog, useModalLayer } from '../../components/Dialog';
+import type { OrderLine } from '../../domain/types';
 import type { WorkflowOrder } from '../../app/selectors';
 import { Alert, Button, Input } from '../../components/ui';
 import { fmtQty, money, priceSourceLabel } from '../demand/DemandPage';
@@ -8,13 +12,17 @@ export function OrderDrawer({
   onEdit,
   onReviewedChange,
   onExport,
+  renderMovement,
 }: {
   order: WorkflowOrder;
+  renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   onClose: () => void;
   onEdit: (skuCode: string, branch: string, qty: number) => void;
   onReviewedChange: (reviewed: boolean) => void;
   onExport: (allowBelowThreshold: boolean) => void;
 }) {
+  const ref = useRef<HTMLElement>(null); useModalLayer(ref, onClose);
+  const [overrideOpen, setOverrideOpen] = useState(false);
   const canNormalExport = order.status === 'READY' || order.status === 'EXPORTED';
   const canOverrideThreshold =
     order.status === 'BLOCKED' &&
@@ -24,7 +32,7 @@ export function OrderDrawer({
     (blocker) => blocker !== 'Ниже минимальной суммы',
   );
 
-  return (
+  return createPortal(
     <div
       className="drawer-back"
       role="presentation"
@@ -32,7 +40,7 @@ export function OrderDrawer({
         if (event.currentTarget === event.target) onClose();
       }}
     >
-      <aside className="drawer" aria-label="Состав заказа">
+      <aside ref={ref} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Состав заказа">
         <div className="drawer-head">
           <div>
             <p className="eyebrow">Состав заказа</p>
@@ -86,7 +94,7 @@ export function OrderDrawer({
                 <th>Артикул</th>
                 <th>Код</th>
                 <th>Товар</th>
-                <th className="num">Остаток</th>
+                <th className="num">Остаток по отчёту</th>
                 <th className="num">MIN</th>
                 <th className="num">MAX</th>
                 <th className="num">Расчёт до MAX</th>
@@ -107,7 +115,7 @@ export function OrderDrawer({
                   <td className="num">{fmtQty(line.stock)}</td>
                   <td className="num">{line.min ?? '—'}</td>
                   <td className="num">{line.max ?? '—'}</td>
-                  <td className="num">{fmtQty(line.calculatedQty)}</td>
+                  <td className="num">{fmtQty(line.calculatedQty)}{renderMovement?.(line)}</td>
                   <td>
                     <Input
                       className={
@@ -149,15 +157,7 @@ export function OrderDrawer({
           {canOverrideThreshold && (
             <Button
               className="secondary danger-action"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Заказ ниже установленной минимальной суммы. Выгрузить его несмотря на порог?',
-                  )
-                ) {
-                  onExport(true);
-                }
-              }}
+              onClick={() => setOverrideOpen(true)}
             >
               Выгрузить несмотря на порог
             </Button>
@@ -169,6 +169,7 @@ export function OrderDrawer({
           </Button>
         </div>
       </aside>
-    </div>
+      {overrideOpen && <Dialog title="Выгрузить заказ ниже порога?" onClose={() => setOverrideOpen(false)} actions={<><Button className="secondary" onClick={() => setOverrideOpen(false)}>Отмена</Button><Button onClick={() => { setOverrideOpen(false); onExport(true); }}>Выгрузить несмотря на порог</Button></>}><p>Заказ ниже установленной минимальной суммы. Он будет выгружен с текущими количествами.</p></Dialog>}
+    </div>, document.body
   );
 }

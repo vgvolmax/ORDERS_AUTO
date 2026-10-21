@@ -8,7 +8,7 @@ import { StoreContext, type AppState } from '../../src/app/appStore';
 function StatefulOrders({ initial }: { initial: AppState }) {
   const [state, setState] = useState(initial);
   return (
-    <StoreContext.Provider value={{ state, set: (patch) => setState((current) => ({ ...current, ...patch })) }}>
+    <StoreContext.Provider value={{ state, set: (patch) => setState((current) => ({ ...current, ...(typeof patch === 'function' ? patch(current) : patch) })) }}>
       <OrdersPage />
     </StoreContext.Provider>
   );

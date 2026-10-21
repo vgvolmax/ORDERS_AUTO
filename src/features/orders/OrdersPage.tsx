@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { derive, type WorkflowOrder } from '../../app/selectors';
+import { useDerivedState } from '../../app/useDerivedState';
+import { usePreference } from '../../app/usePreference';
+import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import { Alert, Button, EmptyState, Input, MetricCard } from '../../components/ui';
 import {
@@ -19,12 +22,12 @@ type ExportMode = 'ALL' | 'REVIEWED';
 
 export function OrdersPage() {
   const { state, set } = useStore();
-  const derived = derive(state);
+  const derived = useDerivedState(state);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
-  const [supplierQuery, setSupplierQuery] = useState('');
-  const [showBelowThreshold, setShowBelowThreshold] = useState(false);
+  const [supplierQuery, setSupplierQuery] = usePreference('orders:query', '');
+  const [showBelowThreshold, setShowBelowThreshold] = usePreference('orders:belowThreshold', false);
 
   const orders = derived.projection.orders;
   const visibleOrders = useMemo(() => {
@@ -160,17 +163,10 @@ export function OrdersPage() {
         set({ toast: 'Количество не изменилось.' });
         return;
       }
-      const next = applyOrderQtyChange({
-        edits: state.edits,
-        reviewedOrderIds: state.reviewedOrderIds,
-        exportedOrderIds: state.exportedOrderIds,
-        order,
-        skuCode,
-        qty,
-      });
-      set({
-        ...next,
-        toast: 'Количество и сумма заказа пересчитаны. Проверка заказа снята.',
+      set((s) => {
+        const current = derive(s).projection.orders.find((o) => o.id === order.id);
+        if (!current) throw new Error('Заказ изменился. Откройте его заново.');
+        return { ...applyOrderQtyChange({ edits: s.edits, reviewedOrderIds: s.reviewedOrderIds, exportedOrderIds: s.exportedOrderIds, order: current, skuCode, qty }), toast: 'Количество и сумма заказа пересчитаны. Проверка заказа снята.' };
       });
     } catch (error) {
       console.error('Failed to edit order quantity', error);
@@ -476,6 +472,7 @@ export function OrdersPage() {
       {selected && (
         <OrderDrawer
           order={selected}
+          renderMovement={(line) => <MovementIndicator scope={{ skuCode: line.skuCode, branch: line.branch }} manualOrderQty={line.orderQty !== line.calculatedQty ? line.orderQty : undefined} />}
           onClose={() => setSelectedId(null)}
           onEdit={(skuCode, _branch, qty) => editOrder(selected, skuCode, qty)}
           onReviewedChange={(reviewed) => setReviewed(selected.id, reviewed)}
@@ -488,8 +485,11 @@ export function OrdersPage() {
       {selectedSupplier && selectedSupplierOrders.length > 0 && (
         <SupplierOrdersDrawer
           supplier={selectedSupplier}
+          renderMovement={(line) => <MovementIndicator scope={{ skuCode: line.skuCode, branch: line.branch }} manualOrderQty={line.orderQty !== line.calculatedQty ? line.orderQty : undefined} />}
           orders={selectedSupplierOrders}
           branchOrder={branches}
+          widthPreferences={state.uiPreferences.supplierMatrixWidths as Record<string, number> | undefined}
+          onWidthsChange={(supplierMatrixWidths) => set((s) => ({ uiPreferences: { ...s.uiPreferences, supplierMatrixWidths } }))}
           onClose={() => setSelectedSupplier(null)}
           onEdit={editOrder}
           onSetReviewed={setReviewed}

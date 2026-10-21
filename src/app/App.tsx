@@ -123,7 +123,7 @@ export function App() {
 
         <div className="content">
           <div className="workspace-save-state" role="status">{pending ? 'Сохранение сеанса…' : state.storageError ? 'Изменения не сохранены' : state.workspaceRevision < 0 ? 'Начните с загрузки отчётов' : 'Сеанс сохранён на этом компьютере'}</div>
-          {state.storageError && <div className="alert danger" role="alert">Изменения не применены: {state.storageError}. Повторите действие. При конфликте другой вкладки откройте сохранённый сеанс заново.</div>}
+          {state.storageError && <div className="alert danger" role="alert">Изменения не применены: {state.storageError}. Повторите действие. При конфликте другой вкладки откройте сохранённый сеанс заново. <button className="link" disabled={pending > 0} onClick={() => setRetry((n) => n + 1)}>Открыть сохранённый сеанс</button></div>}
           {state.page === 'import' ? (
             <ImportPage />
           ) : state.page === 'all' ? (

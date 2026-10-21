@@ -115,6 +115,7 @@ export interface PurchaseDemandContext {
   purchaseQty: number;
   purchaseAmount: number | null;
   purchaseStatus: StockStatus;
+  purchaseDeficitPct: number | null;
   acceptedTransferIds: string[];
   networkPurchaseQty: number;
   networkPurchaseAmount: number;

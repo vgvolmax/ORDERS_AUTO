@@ -79,7 +79,7 @@ export function buildOrderProjection(
     order.lines.push({
       ...(purchase ? { purchaseContext: {
         originalNeed: purchase.originalNeed, acceptedIncomingQty: purchase.acceptedIncomingQty, acceptedOutgoingQty: purchase.acceptedOutgoingQty,
-        projectedStock: purchase.projectedStock, purchaseQty: purchase.purchaseQty, purchaseAmount: purchase.purchaseAmount, purchaseStatus: purchase.purchaseStatus,
+        projectedStock: purchase.projectedStock, purchaseQty: purchase.purchaseQty, purchaseAmount: purchase.purchaseAmount, purchaseStatus: purchase.purchaseStatus, purchaseDeficitPct: purchase.purchaseDeficitPct,
         acceptedTransferIds: [...purchase.acceptedTransferIds], networkPurchaseQty: purchase.networkPurchaseQty,
         networkPurchaseAmount: purchase.networkPurchaseAmount, networkPurchaseMissingPriceCount: purchase.networkPurchaseMissingPriceCount,
       } } : {}),

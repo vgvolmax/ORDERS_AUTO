@@ -1,4 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useModalLayer } from '../../components/Dialog';
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -48,8 +50,14 @@ export function SupplierOrdersDrawer({
   onEdit,
   onSetReviewed,
   onSetAllReviewed,
+  renderMovement,
+  widthPreferences,
+  onWidthsChange,
 }: {
   supplier: string;
+  widthPreferences?: Record<string, number> | undefined;
+  onWidthsChange?: ((value: Record<string, number>) => void) | undefined;
+  renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   orders: WorkflowOrder[];
   branchOrder: string[];
   onClose: () => void;
@@ -57,13 +65,14 @@ export function SupplierOrdersDrawer({
   onSetReviewed: (orderId: string, reviewed: boolean) => void;
   onSetAllReviewed: (orderIds: string[], reviewed: boolean) => void;
 }) {
+  const modalRef = useRef<HTMLElement>(null); useModalLayer(modalRef, onClose);
   const model = useMemo(
     () => buildMatrixModel(orders, branchOrder),
     [orders, branchOrder],
   );
   const defaultWidths = useMemo(() => buildDefaultColumnWidths(model), [model]);
   const [widthOverrides, setWidthOverrides] = useState<Record<string, number>>(
-    readStoredColumnWidths,
+    () => widthPreferences ?? readStoredColumnWidths(),
   );
   const resizeSession = useRef<ResizeSession | null>(null);
 
@@ -83,6 +92,7 @@ export function SupplierOrdersDrawer({
     setWidthOverrides((current) => {
       const next = { ...current, [key]: nextWidth };
       persistColumnWidths(next);
+      onWidthsChange?.(next);
       return next;
     });
   };
@@ -95,6 +105,7 @@ export function SupplierOrdersDrawer({
       const next = { ...current };
       delete next[key];
       persistColumnWidths(next);
+      onWidthsChange?.(next);
       return next;
     });
   };
@@ -102,6 +113,7 @@ export function SupplierOrdersDrawer({
   const resetAllColumnWidths = () => {
     setWidthOverrides({});
     persistColumnWidths({});
+    onWidthsChange?.({});
   };
 
   const startResize = (
@@ -188,9 +200,9 @@ export function SupplierOrdersDrawer({
     ...extra,
   });
 
-  return (
+  return createPortal(
     <div className="drawer-back" role="presentation">
-      <section
+      <section ref={modalRef} tabIndex={-1}
         className="drawer supplier-orders-drawer"
         role="dialog"
         aria-modal="true"
@@ -395,7 +407,7 @@ export function SupplierOrdersDrawer({
                         style={sizedStyle(branchWidth)}
                       >
                         {cell ? (
-                          <Input
+                          <><Input
                             className={
                               cell.line.orderQty !== cell.line.calculatedQty
                                 ? 'matrix-qty-input manual'
@@ -415,7 +427,7 @@ export function SupplierOrdersDrawer({
                                 onEdit(cell.order, row.skuCode, qty);
                               }
                             }}
-                          />
+                          />{renderMovement?.(cell.line)}</>
                         ) : (
                           <span className="matrix-empty">—</span>
                         )}
@@ -444,7 +456,7 @@ export function SupplierOrdersDrawer({
           </table>
         </div>
       </section>
-    </div>
+    </div>, document.body
   );
 }
 

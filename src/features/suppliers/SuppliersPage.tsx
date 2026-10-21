@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../../app/appStore';
-import { derive } from '../../app/selectors';
+import { useDerivedState } from '../../app/useDerivedState';
+import { usePreference } from '../../app/usePreference';
+import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import {
   Alert,
@@ -17,14 +19,9 @@ import {
 } from '../../domain/supplierAutomation';
 import type {
   Order,
-  PricedDemandLine,
   SupplierOverride,
   SupplierResolution,
 } from '../../domain/types';
-import {
-  saveSupplierOverride,
-  saveSupplierOverrides,
-} from '../../persistence/supplierOverrides';
 import { fmtQty, money } from '../demand/DemandPage';
 
 interface SupplierSummary {
@@ -41,29 +38,29 @@ interface SupplierSummary {
 }
 
 export function SuppliersPage() {
-  const { state, set } = useStore();
-  const derived = derive(state);
-  const [query, setQuery] = useState('');
-  const [amountFrom, setAmountFrom] = useState('');
-  const [showBelowThreshold, setShowBelowThreshold] = useState(false);
-  const [decisionsOpen, setDecisionsOpen] = useState(true);
-  const [selectedSkuCodes, setSelectedSkuCodes] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const { state, set, commit } = useStore();
+  const derived = useDerivedState(state);
+  const [query, setQuery] = usePreference('suppliers:query', '');
+  const [amountFrom, setAmountFrom] = usePreference('suppliers:amountFrom', '');
+  const [showBelowThreshold, setShowBelowThreshold] = usePreference('suppliers:belowThreshold', false);
+  const [decisionsOpen, setDecisionsOpen] = usePreference('suppliers:decisionsOpen', true);
+  const [selectedCodes, setSelectedCodes] = usePreference<string[]>('suppliers:selectedCodes', []);
+  const selectedSkuCodes = useMemo(() => new Set(selectedCodes), [selectedCodes]);
+  const setSelectedSkuCodes = (codes: Set<string>) => setSelectedCodes([...codes]);
   const [autoStrategy, setAutoStrategy] =
-    useState<SupplierAutoStrategy>('MIN_PRICE');
-  const [autoScope, setAutoScope] = useState<SupplierAutoScope>('ALL');
-  const [overwriteManual, setOverwriteManual] = useState(false);
+    usePreference<SupplierAutoStrategy>('suppliers:autoStrategy', 'MIN_PRICE');
+  const [autoScope, setAutoScope] = usePreference<SupplierAutoScope>('suppliers:autoScope', 'ALL');
+  const [overwriteManual, setOverwriteManual] = usePreference('suppliers:overwriteManual', false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const neededSkuCodes = useMemo(
     () =>
       new Set(
-        derived.demand
-          .filter((line) => line.deficitQty > 0)
+        derived.purchaseDemand
+          .filter((line) => line.purchaseQty > 0)
           .map((line) => line.skuCode),
       ),
-    [derived.demand],
+    [derived.purchaseDemand],
   );
 
   const problems = derived.resolutions.filter(
@@ -80,12 +77,12 @@ export function SuppliersPage() {
       (problems.includes(resolution) || resolution.status === 'MANUAL_SELECTED'),
   );
   const problemSkuCodes = new Set(problems.map((problem) => problem.skuCode));
-  const problemDemand = derived.demand.filter(
-    (line) => problemSkuCodes.has(line.skuCode) && line.deficitQty > 0,
+  const problemDemand = derived.purchaseDemand.filter(
+    (line) => problemSkuCodes.has(line.skuCode) && line.purchaseQty > 0,
   );
-  const problemAmount = problemDemand.some((line) => line.demandAmount == null)
+  const problemAmount = problemDemand.some((line) => line.purchaseAmount == null)
     ? null
-    : problemDemand.reduce((sum, line) => sum + (line.demandAmount ?? 0), 0);
+    : problemDemand.reduce((sum, line) => sum + (line.purchaseAmount ?? 0), 0);
 
   const autoOverrides = useMemo(
     () =>
@@ -102,7 +99,7 @@ export function SuppliersPage() {
 
   const summaries = buildSupplierSummaries(
     derived.projection.orders,
-    derived.demand,
+    derived.purchaseDemand,
   );
   const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
   const minimumAmount = amountFrom === '' ? null : Number(amountFrom);
@@ -142,46 +139,21 @@ export function SuppliersPage() {
       source: 'MANUAL',
       updatedAt: new Date().toISOString(),
     };
-    const previous = state.overrides;
-
-    set({
-      overrides: mergeOverrides(previous, [override]),
-      toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.`,
-    });
-
     try {
-      await saveSupplierOverride(override);
-    } catch {
-      set({
-        overrides: previous,
-        toast: 'Не удалось сохранить выбор поставщика.',
-      });
-    }
+      const patch = (s: typeof state) => ({ overrides: mergeOverrides(s.overrides, [override]), toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.` });
+      if (commit) await commit(patch); else set(patch(state));
+    } catch { set({ toast: 'Не удалось сохранить выбор поставщика. Предыдущий выбор сохранён.' }); }
   }
 
   async function applyAutomation(): Promise<void> {
-    if (autoOverrides.length === 0 || bulkBusy) {
-      return;
-    }
-
-    const previous = state.overrides;
+    if (!autoOverrides.length || bulkBusy) return;
     setBulkBusy(true);
-    set({
-      overrides: mergeOverrides(previous, autoOverrides),
-      toast: `Автоматически назначено: ${autoOverrides.length}.`,
-    });
-
     try {
-      await saveSupplierOverrides(autoOverrides);
+      const patch = (s: typeof state) => ({ overrides: mergeOverrides(s.overrides, autoOverrides), toast: `Автоматически назначено: ${autoOverrides.length}.` });
+      if (commit) await commit(patch); else set(patch(state));
       setSelectedSkuCodes(new Set());
-    } catch {
-      set({
-        overrides: previous,
-        toast: 'Не удалось сохранить массовый выбор поставщиков.',
-      });
-    } finally {
-      setBulkBusy(false);
-    }
+    } catch { set({ toast: 'Не удалось сохранить массовый выбор поставщиков. Повторите действие.' }); }
+    finally { setBulkBusy(false); }
   }
 
   return (
@@ -576,7 +548,7 @@ function SupplierRow({ summary }: { summary: SupplierSummary }) {
 
 function buildSupplierSummaries(
   orders: Order[],
-  demand: PricedDemandLine[],
+  demand: PurchaseDemandLine[],
 ): SupplierSummary[] {
   const suppliers = [...new Set(orders.map((order) => order.supplier))];
 
@@ -596,8 +568,8 @@ function buildSupplierSummaries(
           .filter(
             (line) =>
               line.selectedSupplier === supplier &&
-              line.deficitQty > 0 &&
-              line.status === 'BELOW_MIN',
+              line.purchaseQty > 0 &&
+              line.purchaseStatus === 'BELOW_MIN',
           )
           .map((line) => line.skuCode),
       );
