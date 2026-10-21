@@ -191,3 +191,6 @@ Fixtures генерировать программно в `tests/fixtures/workbo
 ## Расширение20.10.2026: PR1
 
 Обязательные доменные cases перечислены в docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md: default20, donor floorMax, receiver0%=10, configurable trigger, cap50, network trap20, rerouting Min→target, step0.25, strict money boundaries, subset filtering, accepted15/20/revoke15 → purchase35/15/30, no-op/revision/stale guards и неизменность входов. Прежний AC donor50%=40 отменён. Legacy orders/qty edits/prices/thresholds обязаны проходить без нового UI. Полное persistence/popover/file:// workflow новой функции относится к PR2; текущий offline E2E остаётся регрессионным gate PR1.
+
+
+Регрессии21.10.2026: при шаге1/излишке1 получатель с дефицитомMin1 имеет приоритет перед получателем с дефицитомMin0.1, даже при большем target второго. Полный перебор3072 дробных сетей сверяет реальное покрытиеMin и общий объём с независимым optimum. После accept6+5 по1200 и revoke5 при пороге>10000 обязательна диагностика оставшихся7200; разные runs не объединяются, no-op/новый расчёт не снимают предупреждение, восстановление суммы либо полная отмена группы снимают его.

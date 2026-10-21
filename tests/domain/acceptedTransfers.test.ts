@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { acceptTransfers, revokeTransfers } from '../../src/domain/rebalancing/acceptedTransfers';
+import { calculateRebalance } from '../../src/domain/rebalancing/calculate';
 import { rebalanceConfigFingerprint } from '../../src/domain/rebalancing/constraints';
 import type { AcceptTransfersInput, AcceptedTransfer, RebalanceProposal } from '../../src/domain/rebalancing/types';
 import { config, snapshot } from '../fixtures/rebalanceFixtures';
@@ -45,7 +46,7 @@ describe('explicit accepted movement ledger', () => {
   });
   it('selection alone and repeated acceptance are no-ops', () => {
     const input = acceptance(); input.selectedLineIds = [];
-    expect(acceptTransfers(input)).toEqual({ nextAccepted: [], changedSkuBranchKeys: [], nextRevision: 0 });
+    expect(acceptTransfers(input)).toEqual({ nextAccepted: [], changedSkuBranchKeys: [], nextRevision: 0, diagnostics: [] });
     const first = acceptTransfers({ ...input, selectedLineIds: ['line1', 'line1'] });
     const repeated = acceptTransfers({ ...input, currentAccepted: first.nextAccepted, selectedLineIds: ['line1'], currentRevision: 1, expectedRevision: 1 });
     expect(repeated.nextAccepted).toHaveLength(1); expect(repeated.nextRevision).toBe(1); expect(repeated.changedSkuBranchKeys).toEqual([]);
@@ -101,6 +102,55 @@ describe('explicit accepted movement ledger', () => {
     expect(all.nextAccepted.map((t) => t.qty)).toEqual([6, 5]);
     const revoked = revokeTransfers({ snapshot: input.snapshot, currentAccepted: all.nextAccepted, transferIds: ['transfer2'], currentRevision: 1, expectedRevision: 1 });
     expect(revoked.nextAccepted[0]!.qty).toBe(6);
+  });
+  it.each([10000, 7200])('reports retained accepted value at or below its strict threshold %s after revoke', (threshold) => {
+    const input = acceptance(); input.currentProposal.config.skuAmountFilter = { enabled: true, threshold };
+    input.currentProposal.transfers[0]!.qty = 6; input.currentProposal.transfers[1]!.qty = 5;
+    input.currentConfigFingerprint = input.currentProposal.configFingerprint = rebalanceConfigFingerprint(input.currentProposal.config);
+    const all = acceptTransfers({ ...input, selectedLineIds: ['line1', 'line2'] });
+    expect(all.diagnostics).toEqual([]);
+    const revoked = revokeTransfers({ snapshot: input.snapshot, currentAccepted: all.nextAccepted, transferIds: ['transfer2'], currentRevision: 1, expectedRevision: 1 });
+    const warning = expect.objectContaining({ code: 'ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD', severity: 'WARNING', sourceRunId: 'run1', skuCode: '00001', quantity: 6, amount: 7200, threshold });
+    expect(revoked.nextAccepted.map((t) => t.qty)).toEqual([6]);
+    expect(revoked.diagnostics).toEqual([warning]);
+    const recalculated = calculateRebalance(input.snapshot, input.currentProposal.config, revoked.nextAccepted);
+    expect(recalculated.transfers.length).toBeGreaterThan(0); // A new proposal must not mask the accepted run warning.
+    expect(recalculated.exclusions).toContainEqual(warning);
+    const unchanged = revokeTransfers({ snapshot: input.snapshot, currentAccepted: revoked.nextAccepted, transferIds: ['missing'], currentRevision: 2, expectedRevision: 2 });
+    expect(unchanged.nextRevision).toBe(2); expect(unchanged.diagnostics).toEqual([warning]);
+    const restored = acceptTransfers({ ...input, currentAccepted: revoked.nextAccepted, selectedLineIds: ['line2'], currentRevision: 2, expectedRevision: 2 });
+    expect(restored.diagnostics).toEqual([]);
+    const cleared = revokeTransfers({ snapshot: input.snapshot, currentAccepted: revoked.nextAccepted, transferIds: ['transfer1'], currentRevision: 2, expectedRevision: 2 });
+    expect(cleared.diagnostics).toEqual([]);
+  });
+  it('keeps retained economic diagnostics separate by run and uses saved acceptance conditions', () => {
+    const input = acceptance(); input.currentProposal.config.recipientTrigger = 'BELOW_MAX';
+    input.currentProposal.config.skuAmountFilter = { enabled: true, threshold: 10000 };
+    input.currentProposal.transfers[0]!.qty = 6; input.currentProposal.transfers[1]!.qty = 5;
+    input.currentConfigFingerprint = input.currentProposal.configFingerprint = rebalanceConfigFingerprint(input.currentProposal.config);
+    const first = acceptTransfers({ ...input, selectedLineIds: ['line1', 'line2'] });
+    const secondProposal = structuredClone(input.currentProposal); secondProposal.runId = 'run2'; secondProposal.baseAcceptedRevision = 1;
+    secondProposal.config.skuAmountFilter.threshold = 12000; secondProposal.configFingerprint = rebalanceConfigFingerprint(secondProposal.config);
+    const second = acceptTransfers({ ...input, currentProposal: secondProposal, currentConfigFingerprint: secondProposal.configFingerprint,
+      currentAccepted: first.nextAccepted, selectedLineIds: ['line1', 'line2'], currentRevision: 1, expectedRevision: 1,
+      transferIdBySourceLineId: { line1: 'second1', line2: 'second2' } });
+    const remaining = revokeTransfers({ snapshot: input.snapshot, currentAccepted: second.nextAccepted, transferIds: ['transfer2', 'second1'], currentRevision: 2, expectedRevision: 2 });
+    expect(remaining.diagnostics).toEqual([
+      expect.objectContaining({ sourceRunId: 'run1', quantity: 6, amount: 7200, threshold: 10000 }),
+      expect.objectContaining({ sourceRunId: 'run2', quantity: 5, amount: 6000, threshold: 12000 }),
+    ]);
+    const currentSettings = config(); // Disabling today's filter must not erase saved conditions of either run.
+    expect(calculateRebalance(input.snapshot, currentSettings, remaining.nextAccepted).exclusions)
+      .toEqual(expect.arrayContaining(remaining.diagnostics));
+  });
+  it('uses exact monetary comparison for retained accepted amounts at a decimal threshold', () => {
+    const input = acceptance(); input.snapshot.skus[0]!.referencePrice = 0.1;
+    input.currentProposal.config.skuAmountFilter = { enabled: true, threshold: 0.3 };
+    input.currentProposal.transfers[0]!.qty = 3; input.currentProposal.transfers[1]!.qty = 1;
+    input.currentConfigFingerprint = input.currentProposal.configFingerprint = rebalanceConfigFingerprint(input.currentProposal.config);
+    const all = acceptTransfers({ ...input, selectedLineIds: ['line1', 'line2'] });
+    const remaining = revokeTransfers({ snapshot: input.snapshot, currentAccepted: all.nextAccepted, transferIds: ['transfer2'], currentRevision: 1, expectedRevision: 1 });
+    expect(remaining.diagnostics).toEqual([expect.objectContaining({ code: 'ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD', quantity: 3, threshold: 0.3 })]);
   });
   it('compares monetary thresholds exactly for decimal prices', () => {
     const input = acceptance(); input.snapshot.skus[0]!.quantityStep = 0.1;

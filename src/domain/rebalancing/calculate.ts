@@ -3,9 +3,10 @@ import { assertConfig, acceptedTotals, rebalanceConfigFingerprint, validateAccep
 import { moneyGreaterThan, quantityFromUnits, receiverTarget, stepUnits, subtractQuantity, sumQuantities } from './numbers';
 import { buildRouteIndex } from './routes';
 import { allocateFlow, type FlowDonor, type FlowReceiver } from './flow';
+import { acceptedEconomicDiagnostics } from './economics';
 import { RebalanceError, stockKey, type RebalanceConfig, type RebalanceSnapshot, type AcceptedTransfer, type RebalanceResult, type RebalanceTransfer, type RebalanceIssue, type RebalanceStock } from './types';
 
-const ALGORITHM_VERSION = 'donor-max-flow-v1';
+const ALGORITHM_VERSION = 'donor-min-cost-flow-v2';
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const transferKey = (skuCode: string, from: string, to: string) => JSON.stringify([skuCode, from, to]);
 function fingerprint(s: RebalanceSnapshot, config: RebalanceConfig, accepted: AcceptedTransfer[]): string {
@@ -22,7 +23,7 @@ export function calculateRebalance(input: RebalanceSnapshot, config: RebalanceCo
   const validated = validatedSnapshot(input), s = validated.snapshot;
   const ledgerIssues = validateAcceptedLedger(s, accepted);
   if (ledgerIssues.length) throw new RebalanceError('INVALID_ACCEPTED_LEDGER', ledgerIssues);
-  const exclusions = [...validated.issues], routes = buildRouteIndex(config.routeConfig, s.branches), totals = acceptedTotals(accepted);
+  const exclusions = [...validated.issues, ...acceptedEconomicDiagnostics(s, accepted)], routes = buildRouteIndex(config.routeConfig, s.branches), totals = acceptedTotals(accepted);
   for (const p of routes.stalePairs) exclusions.push({ code: 'STALE_ROUTE', message: `Маршрут содержит отсутствующее/неактивное подразделение: ${p.branchAId} / ${p.branchBId}`, severity: 'WARNING', sourceRow: null });
   const skuStocks = new Map<string, RebalanceStock[]>();
   for (const line of s.stocks) { const rows = skuStocks.get(line.skuCode) ?? []; rows.push(line); skuStocks.set(line.skuCode, rows); }
@@ -49,9 +50,9 @@ export function calculateRebalance(input: RebalanceSnapshot, config: RebalanceCo
         const target = receiverTarget(row.min!, row.max!, config.receiverPct);
         targetByKey.set(key, target); eligibleRecipientKeys.push(key);
         const targetNeed = stepUnits(Math.max(0, subtractQuantity(target, stock)), step);
-        // One whole step may be needed to cross a fractional Min shortage, within the target cap.
-        const minNeed = Math.min(targetNeed, stepUnits(Math.max(0, subtractQuantity(row.min!, stock)), step, 'ceil'));
-        if (targetNeed > 0) receivers.push({ id: row.branchId, minNeed, targetNeed });
+        const minDeficit = Math.max(0, subtractQuantity(row.min!, stock));
+        const minNeed = Math.min(targetNeed, stepUnits(minDeficit, step));
+        if (targetNeed > 0) receivers.push({ id: row.branchId, minNeed, minDeficit, targetNeed });
         else emit('TARGET_OR_STEP_LIMIT', 'Цель достигнута либо остаток потребности меньше шага', row.skuCode, { branchId: row.branchId, sourceRow: row.sourceRow });
       }
       const totalCapacity = donors.reduce((sum, d) => sum + d.capacity, 0);
@@ -66,7 +67,7 @@ export function calculateRebalance(input: RebalanceSnapshot, config: RebalanceCo
     if (config.unitPriceFilter.enabled && !moneyGreaterThan(1, sku.referencePrice!, config.unitPriceFilter.threshold)) {
       emit('UNIT_PRICE_FILTER', 'Цена не строго больше порога', sku.skuCode); continue;
     }
-    const allocation = allocateFlow(donors, receivers, routes.outgoing, preferred).map((a) => ({
+    const allocation = allocateFlow(donors, receivers, routes.outgoing, step, preferred).map((a) => ({
       sourceLineId: transferKey(sku.skuCode, a.from, a.to), skuCode: sku.skuCode, fromBranchId: a.from, toBranchId: a.to, qty: quantityFromUnits(a.units, step),
     }));
     const totalQty = sumQuantities(allocation.map((t) => t.qty));

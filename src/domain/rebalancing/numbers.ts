@@ -20,6 +20,12 @@ export function sumQuantities(values: Iterable<number>): number {
   for (const value of values) result = add(result, decimal(value));
   return number(result);
 }
+/** Common exact decimal scale for comparing physical coverage without floating-point costs. */
+export function integerWeights(values: readonly number[]): bigint[] {
+  const parts = values.map(decimal);
+  const scale = parts.reduce((largest, value) => largest > value.d ? largest : value.d, 1n);
+  return parts.map((value) => value.n * (scale / value.d));
+}
 export const subtractQuantity = (a: number, b: number): number => sumQuantities([a, -b]);
 export function stepUnits(qty: number, step: number, rounding: 'floor' | 'ceil' = 'floor'): number {
   const a = decimal(qty), b = decimal(step);

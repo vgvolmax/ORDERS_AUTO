@@ -1,12 +1,14 @@
 import { assertConfig, assertSnapshot, acceptedTotals, rebalanceConfigFingerprint, validateAcceptedLedger } from './constraints';
 import { moneyGreaterThan, receiverTarget, sumQuantities } from './numbers';
-import { RebalanceError, stockKey, type AcceptTransfersInput, type RevokeTransfersInput, type AcceptedTransferChange, type AcceptedTransfer } from './types';
+import { acceptedEconomicDiagnostics } from './economics';
+import { RebalanceError, stockKey, type AcceptTransfersInput, type RevokeTransfersInput, type AcceptedTransferChange, type AcceptedTransfer, type RebalanceSnapshot } from './types';
 
 function revision(current: number, expected: number): void {
   if (!Number.isSafeInteger(current) || current < 0 || current !== expected || current >= Number.MAX_SAFE_INTEGER) throw new RebalanceError('REVISION_CONFLICT');
 }
-function change(current: AcceptedTransfer[], next: AcceptedTransfer[], keys: string[], currentRevision: number): AcceptedTransferChange {
-  return { nextAccepted: keys.length ? next : current, changedSkuBranchKeys: [...new Set(keys)].sort(), nextRevision: currentRevision + (keys.length ? 1 : 0) };
+function change(snapshot: RebalanceSnapshot, current: AcceptedTransfer[], next: AcceptedTransfer[], keys: string[], currentRevision: number): AcceptedTransferChange {
+  const nextAccepted = keys.length ? next : current;
+  return { nextAccepted, changedSkuBranchKeys: [...new Set(keys)].sort(), nextRevision: currentRevision + (keys.length ? 1 : 0), diagnostics: acceptedEconomicDiagnostics(snapshot, nextAccepted) };
 }
 const contextKeys = (t: AcceptedTransfer): string[] => [stockKey(t.skuCode, t.fromBranchId), stockKey(t.skuCode, t.toBranchId)];
 function assertLedger(input: { snapshot: AcceptTransfersInput['snapshot']; currentAccepted: AcceptedTransfer[] }): void {
@@ -41,7 +43,7 @@ export function acceptTransfers(input: AcceptTransfersInput): AcceptedTransferCh
     additions.push({ transferId: id, sourceRunId: p.runId, sourceLineId: t.sourceLineId, skuCode: t.skuCode, fromBranchId: t.fromBranchId, toBranchId: t.toBranchId, qty: t.qty,
       snapshotId: input.snapshot.snapshotId, acceptedAt: input.acceptedAt, acceptedConfig: structuredClone(p.config) });
   }
-  if (!additions.length) return change(input.currentAccepted, input.currentAccepted, [], input.currentRevision);
+  if (!additions.length) return change(input.snapshot, input.currentAccepted, input.currentAccepted, [], input.currentRevision);
   assertConfig(p.config);
   if (p.configFingerprint !== input.currentConfigFingerprint || p.configFingerprint !== rebalanceConfigFingerprint(p.config)) throw new RebalanceError('STALE_PROPOSAL');
   const eligible = new Set(p.eligibleRecipientKeys);
@@ -65,11 +67,11 @@ export function acceptTransfers(input: AcceptTransfersInput): AcceptedTransferCh
       if (p.config.skuAmountFilter.enabled && !moneyGreaterThan(runQty, price, p.config.skuAmountFilter.threshold)) throw new RebalanceError('INVALID_TRANSFER_BATCH');
     }
   }
-  return change(input.currentAccepted, next, additions.flatMap(contextKeys), input.currentRevision);
+  return change(input.snapshot, input.currentAccepted, next, additions.flatMap(contextKeys), input.currentRevision);
 }
 
 export function revokeTransfers(input: RevokeTransfersInput): AcceptedTransferChange {
   revision(input.currentRevision, input.expectedRevision); assertLedger(input);
   const ids = new Set(input.transferIds), removed = input.currentAccepted.filter((t) => ids.has(t.transferId));
-  return change(input.currentAccepted, input.currentAccepted.filter((t) => !ids.has(t.transferId)), removed.flatMap(contextKeys), input.currentRevision);
+  return change(input.snapshot, input.currentAccepted, input.currentAccepted.filter((t) => !ids.has(t.transferId)), removed.flatMap(contextKeys), input.currentRevision);
 }

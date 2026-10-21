@@ -8,6 +8,7 @@ export interface RebalanceSnapshot { schemaVersion: 1; snapshotId: string; branc
 export interface RebalanceIssue {
   code: string; message: string; severity: 'WARNING' | 'ERROR'; sourceRow: number | null;
   skuCode?: string; branchId?: string; stockIndex?: number; amount?: number | null; quantity?: number;
+  sourceRunId?: string; configFingerprint?: string; threshold?: number;
 }
 export interface SkuQuantityPolicy { skuCode: string; unit: string; quantityStep: number }
 export interface SnapshotAdapterInput {
@@ -46,7 +47,7 @@ export interface AcceptTransfersInput {
   transferIdBySourceLineId: Readonly<Record<string, string>>;
 }
 export interface RevokeTransfersInput { snapshot: RebalanceSnapshot; currentAccepted: AcceptedTransfer[]; transferIds: string[]; currentRevision: number; expectedRevision: number }
-export interface AcceptedTransferChange { nextAccepted: AcceptedTransfer[]; changedSkuBranchKeys: string[]; nextRevision: number }
+export interface AcceptedTransferChange { nextAccepted: AcceptedTransfer[]; changedSkuBranchKeys: string[]; nextRevision: number; diagnostics: RebalanceIssue[] }
 export type RebalanceErrorCode = 'INVALID_SNAPSHOT' | 'INVALID_CONFIG' | 'INVALID_ACCEPTED_LEDGER' | 'REVISION_CONFLICT' | 'STALE_PROPOSAL' | 'TRANSFER_ID_CONFLICT' | 'INVALID_TRANSFER_BATCH';
 export class RebalanceError extends Error {
   constructor(public readonly code: RebalanceErrorCode, public readonly issues: RebalanceIssue[] = []) {

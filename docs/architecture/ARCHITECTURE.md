@@ -168,3 +168,6 @@ Build acceptance:
 ## Расширение20.10.2026: feature boundary
 
 src/domain/rebalancing/index.ts — публичный вход чистого домена; adapter src/import/rebalanceSnapshot.ts не меняет старый parser. Pure snapshot→proposal/accepted→purchaseDemand→existing orders, без React/storage/network в домене. PR1 оставляет selectors/UI/persistence на legacy input. PR2 подключает полное локальное сохранение raw+normalized reports и всего рабочего сеанса аддитивной миграцией; положение выше «только настройки» сохраняется как описание текущей поставки, не целевого rebalancing workflow. Runtime file:// и portable offline package остаются обязательными.
+
+
+Уточнение21.10.2026: flow.ts использует min-cost maximum flow с точными BigInt-весами фактически закрываемого Min. Число шагов остаётся целым; полный и частичный вклад последнего шага различаются. economics.ts — единый владелец диагностики оставшихся принятых сумм для команд и нового расчёта; предупреждения не отменяют и не принимают движения.

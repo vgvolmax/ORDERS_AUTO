@@ -215,3 +215,6 @@ Fatal import означает только невозможность получ
 ## Расширение20.10.2026: отдельные rebalancing-контракты
 
 Контракты расположены в src/domain/rebalancing/types.ts: версия снимка, стабильный branch registry, политики unit/step, proposal и accepted identities. Код1С остаётся единственным SKU join key; branch IDs не являются названием. Pure RebalanceResult не содержит UUID/clock; RebalanceProposal добавляет app metadata. AcceptedTransfer хранит snapshotId/sourceRunId/sourceLineId/transferId, qty и копию условий. Legacy MinMaxDataset не получает вымышленные reserves/units/steps. PurchaseDemandLine расширяет PricedDemandLine, не меняя исходные stock/deficitQty. API и конкретные типы документируются в новом design и implementation plan; PR1 не меняет формат импортов/постоянное хранилище.
+
+
+Уточнение21.10.2026: `AcceptedTransferChange.diagnostics` обязателен и содержит `RebalanceIssue[]` после accept/revoke, включая no-op. Предупреждения accepted economics содержат sourceRunId/configFingerprint/quantity/amount/threshold; они не меняют ledger и возвращаются также в RebalanceResult.exclusions. Группировка — sourceRunId×SKU×сохранённая конфигурация, а не общая сумма разных расчётов.
