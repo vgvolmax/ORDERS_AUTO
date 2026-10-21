@@ -1,4 +1,5 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { StoreContext } from '../../src/app/appStore';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { RebalancingPage } from '../../src/features/rebalancing/RebalancingPage';
 import { renderWithStore } from './renderWithStore';
@@ -113,4 +114,36 @@ it('shows saved economic diagnostics immediately after a partial revocation', as
   expect(
     screen.getByText(/Оставшаяся сумма принятых перемещений/),
   ).toBeInTheDocument();
+});
+
+it('keeps settings focused and responsive while saves are pending, without enabling calculation', async () => {
+  const state = rebalanceAppState();
+  let finish!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  render(
+    <StoreContext.Provider
+      value={{
+        state,
+        set: () => undefined,
+        saving: true,
+        commit: async () => gate,
+      }}
+    >
+      <RebalancingPage />
+    </StoreContext.Provider>,
+  );
+  const slider = screen.getByRole('slider');
+  slider.focus();
+  fireEvent.change(slider, { target: { value: '20' } });
+  fireEvent.change(slider, { target: { value: '80' } });
+  expect(slider).toHaveValue('80');
+  expect(slider).toBeEnabled();
+  expect(slider).toHaveFocus();
+  expect(state.rebalance.config.receiverPct).toBe(100);
+  expect(
+    screen.getByRole('button', { name: 'Рассчитать перемещения' }),
+  ).toBeDisabled();
+  await act(async () => finish());
 });

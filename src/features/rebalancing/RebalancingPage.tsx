@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useDurableDraft } from '../../app/useDurableDraft';
 import { useStore, type AppState } from '../../app/appStore';
 import { useDerivedState } from '../../app/useDerivedState';
 import { derive } from '../../app/selectors';
@@ -6,10 +7,7 @@ import {
   createProposal,
   prepareAcceptedChange,
 } from '../../app/rebalanceActions';
-import {
-  rebalanceConfigFingerprint,
-  type RebalanceConfig,
-} from '../../domain/rebalancing';
+import { rebalanceConfigFingerprint } from '../../domain/rebalancing';
 import { Alert, Button, MetricCard } from '../../components/ui';
 import { ConditionsPanel } from './ConditionsPanel';
 import { RoutesMatrix } from './RoutesMatrix';
@@ -49,9 +47,47 @@ export function RebalancingPage() {
   }
   const edit = (update: Partial<typeof r>) =>
     set((s) => ({ rebalance: { ...s.rebalance, ...update } }));
-  function config(value: RebalanceConfig) {
-    edit({ config: value });
-  }
+  const [configDraft, config] = useDurableDraft(
+    r.config,
+    state.workspaceId,
+    (value) => save((s) => ({ rebalance: { ...s.rebalance, config: value } })),
+  );
+  const [query, changeQuery] = useDurableDraft(
+    r.query,
+    state.workspaceId,
+    (value) => save((s) => ({ rebalance: { ...s.rebalance, query: value } })),
+  );
+  const persistedDecisions = useMemo(
+    () => ({
+      selectedLineIds: r.selectedLineIds,
+      rejectedLineIds: r.rejectedLineIds,
+    }),
+    [r.selectedLineIds, r.rejectedLineIds],
+  );
+  const [decisions, changeDecisions] = useDurableDraft(
+    persistedDecisions,
+    state.workspaceId,
+    (value) => save((s) => ({ rebalance: { ...s.rebalance, ...value } })),
+  );
+  const [policies, changePolicies] = useDurableDraft(
+    r.policies,
+    state.workspaceId,
+    (value) =>
+      save((s) => {
+        if (s.rebalance.accepted.length)
+          throw new Error('Сначала отмените принятые перемещения');
+        return {
+          snapshotId: crypto.randomUUID(),
+          rebalance: {
+            ...s.rebalance,
+            policies: value,
+            proposal: null,
+            selectedLineIds: [],
+            rejectedLineIds: [],
+          },
+        };
+      }),
+  );
   const issues = [
     ...(d.snapshot?.issues ?? []),
     ...(r.proposal?.exclusions.filter((i) => !i.code.startsWith('ACCEPTED_')) ??
@@ -61,7 +97,8 @@ export function RebalancingPage() {
   const stale = Boolean(
     r.proposal &&
       (r.proposal.snapshotId !== state.snapshotId ||
-        r.proposal.configFingerprint !== rebalanceConfigFingerprint(r.config)),
+        r.proposal.configFingerprint !==
+          rebalanceConfigFingerprint(configDraft)),
   );
   function open(kind: 'accept' | 'revoke', ids: string[]) {
     setError('');
@@ -201,7 +238,10 @@ export function RebalancingPage() {
           value={r.proposal?.transfers.length ?? 0}
         />
         <MetricCard label="Принято строк" value={r.accepted.length} />
-        <MetricCard label="Отмечено строк" value={r.selectedLineIds.length} />
+        <MetricCard
+          label="Отмечено строк"
+          value={decisions.selectedLineIds.length}
+        />
       </div>
       <div
         role="tablist"
@@ -258,40 +298,24 @@ export function RebalancingPage() {
         id="rebalance-panel"
         aria-labelledby={`rebalance-tab-${r.tab}`}
       >
-        <fieldset
-          className="workspace-controls"
-          disabled={Boolean(saving || busy)}
-        >
+        <fieldset className="workspace-controls" disabled={busy}>
           {r.tab === 'routes' && (
             <RoutesMatrix
               registry={r.registry}
-              value={r.config.routeConfig}
-              onChange={(routeConfig) => config({ ...r.config, routeConfig })}
+              value={configDraft.routeConfig}
+              onChange={(routeConfig) =>
+                config({ ...configDraft, routeConfig })
+              }
             />
           )}
           {r.tab === 'conditions' && (
             <ConditionsPanel
-              config={r.config}
+              config={configDraft}
               onChange={config}
               skus={state.minMax?.skus ?? []}
-              policies={r.policies}
+              policies={policies}
               locked={r.accepted.length > 0}
-              onPolicies={(policies) =>
-                set((s) => {
-                  if (s.rebalance.accepted.length)
-                    throw new Error('Сначала отмените принятые перемещения');
-                  return {
-                    snapshotId: crypto.randomUUID(),
-                    rebalance: {
-                      ...s.rebalance,
-                      policies,
-                      proposal: null,
-                      selectedLineIds: [],
-                      rejectedLineIds: [],
-                    },
-                  };
-                })
-              }
+              onPolicies={changePolicies}
             />
           )}
           {r.tab === 'results' && (
@@ -299,19 +323,23 @@ export function RebalancingPage() {
               <ResultsTable
                 proposal={r.proposal}
                 accepted={r.accepted}
-                selected={r.selectedLineIds}
-                rejected={r.rejectedLineIds}
+                selected={decisions.selectedLineIds}
+                rejected={decisions.rejectedLineIds}
                 registry={r.registry}
-                policies={r.policies}
-                query={r.query}
-                onQuery={(query) => edit({ query })}
-                onSelection={(selectedLineIds) => edit({ selectedLineIds })}
+                policies={policies}
+                query={query}
+                onQuery={changeQuery}
+                onSelection={(selectedLineIds) =>
+                  changeDecisions({ ...decisions, selectedLineIds })
+                }
                 onReject={(id) =>
-                  edit({
-                    rejectedLineIds: r.rejectedLineIds.includes(id)
-                      ? r.rejectedLineIds.filter((v) => v !== id)
-                      : [...r.rejectedLineIds, id],
-                    selectedLineIds: r.selectedLineIds.filter((v) => v !== id),
+                  changeDecisions({
+                    rejectedLineIds: decisions.rejectedLineIds.includes(id)
+                      ? decisions.rejectedLineIds.filter((v) => v !== id)
+                      : [...decisions.rejectedLineIds, id],
+                    selectedLineIds: decisions.selectedLineIds.filter(
+                      (v) => v !== id,
+                    ),
                   })
                 }
                 onRevoke={(id) => open('revoke', [id])}
@@ -324,7 +352,8 @@ export function RebalancingPage() {
                   )
                 }
                 stale={stale}
-                busy={Boolean(busy || saving)}
+                busy={busy}
+                acceptingDisabled={Boolean(saving)}
               />
               {issues.length > 0 && (
                 <details className="panel">

@@ -11,6 +11,7 @@ export function QuantityInput({
   value,
   onCommit,
   className = '',
+  step = 'any',
   ...props
 }: Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -63,7 +64,7 @@ export function QuantityInput({
         className={`input ${className}`}
         type="number"
         min="0"
-        step="any"
+        step={step}
         value={draft}
         aria-busy={saving > 0}
         aria-invalid={Boolean(error)}

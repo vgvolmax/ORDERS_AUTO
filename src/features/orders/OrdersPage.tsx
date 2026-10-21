@@ -310,9 +310,11 @@ export function OrdersPage() {
 
       <ThresholdControls
         settings={state.settings}
-        onChange={(settings) =>
-          set({ settings, toast: 'Порог закупки пересчитан.' })
-        }
+        onChange={async (settings) => {
+          const patch = { settings, toast: 'Порог закупки пересчитан.' };
+          if (commit) await commit(patch);
+          else set(patch);
+        }}
         showBelowThreshold={showBelowThreshold}
         onShowBelowThresholdChange={setShowBelowThreshold}
       />

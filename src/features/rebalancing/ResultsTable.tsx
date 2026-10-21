@@ -23,6 +23,7 @@ export function ResultsTable({
   onAccept,
   stale,
   busy,
+  acceptingDisabled = false,
 }: {
   proposal: RebalanceProposal | null;
   accepted: AcceptedTransfer[];
@@ -38,6 +39,7 @@ export function ResultsTable({
   onAccept: () => void;
   stale: boolean;
   busy: boolean;
+  acceptingDisabled?: boolean;
 }) {
   const units = new Map(policies.map((p) => [p.skuCode, p.unit]));
   const names = new Map(registry.map((b) => [b.id, b.name]));
@@ -97,7 +99,7 @@ export function ResultsTable({
         </label>
         <span>Отмечено: {selectedIds.length}</span>
         <Button
-          disabled={!selectedIds.length || stale || busy}
+          disabled={!selectedIds.length || stale || busy || acceptingDisabled}
           onClick={onAccept}
         >
           Принять выбранные ({selectedIds.length})
@@ -223,7 +225,7 @@ export function ResultsTable({
               render: (t) => (
                 <button
                   className="link"
-                  disabled={busy}
+                  disabled={busy || acceptingDisabled}
                   aria-label={`Отменить принятие ${t.skuCode} ${name(
                     t.fromBranchId,
                   )} → ${name(t.toBranchId)}`}
