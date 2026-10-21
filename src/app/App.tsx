@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { DemandPage } from '../features/demand/DemandPage';
+import { RebalancingPage } from '../features/rebalancing/RebalancingPage';
+import { Dialog } from '../components/Dialog';
+import { Button } from '../components/ui';
 import { ImportPage } from '../features/import/ImportPage';
 import { OrdersPage } from '../features/orders/OrdersPage';
 import { SuppliersPage } from '../features/suppliers/SuppliersPage';
@@ -15,6 +18,7 @@ export function App() {
   const [initializing, setInitializing] = useState(true);
   const [pending, setPending] = useState(0);
   const [retry, setRetry] = useState(0);
+  const [newImportOpen, setNewImportOpen] = useState(false);
   const session = useRef<ReturnType<typeof createWorkspaceSession> | null>(null);
   const commit = async (patch: StatePatch) => {
     if (!session.current) throw new Error('Локальное хранилище ещё не готово');
@@ -60,14 +64,6 @@ export function App() {
   if (!session.current) return <main><h1>Не удалось открыть сохранённый сеанс</h1><p role="alert">{state.storageError}</p><button onClick={() => setRetry((n) => n + 1)}>Повторить загрузку</button></main>;
   const imported = Boolean(state.minMax && state.suppliers);
   const resetImports = () => {
-    if (
-      state.edits.length > 0 &&
-      !window.confirm(
-        'Есть ручные изменения количества в заказах. Загрузить новые отчёты и сбросить эти изменения?',
-      )
-    ) {
-      return;
-    }
     set({ minMax: null, suppliers: null, minMaxFileName: null, supplierFileName: null, minMaxIssues: [], supplierIssues: [], rawImports: { minMax: null, suppliers: null }, page: 'import' });
   };
 
@@ -105,6 +101,7 @@ export function App() {
                 ))}
               </div>
 
+              <button className={state.page === 'rebalancing' ? 'active' : ''} onClick={() => set({ page: 'rebalancing' })}>Ребалансировка</button>
               <button
                 className={state.page === 'suppliers' ? 'active' : ''}
                 onClick={() => set({ page: 'suppliers' })}
@@ -117,7 +114,7 @@ export function App() {
               >
                 Заказы
               </button>
-              <button className="new-import" onClick={resetImports}>
+              <button className="new-import" onClick={() => setNewImportOpen(true)}>
                 Загрузить новые отчёты
               </button>
             </nav>
@@ -125,7 +122,7 @@ export function App() {
         </aside>
 
         <div className="content">
-          <div className="workspace-save-state" role="status">{pending ? 'Сохранение сеанса…' : 'Сеанс сохранён на этом компьютере'}</div>
+          <div className="workspace-save-state" role="status">{pending ? 'Сохранение сеанса…' : state.storageError ? 'Изменения не сохранены' : state.workspaceRevision < 0 ? 'Начните с загрузки отчётов' : 'Сеанс сохранён на этом компьютере'}</div>
           {state.storageError && <div className="alert danger" role="alert">Изменения не применены: {state.storageError}. Повторите действие. При конфликте другой вкладки откройте сохранённый сеанс заново.</div>}
           {state.page === 'import' ? (
             <ImportPage />
@@ -133,6 +130,8 @@ export function App() {
             <DemandPage />
           ) : state.page.startsWith('branch:') ? (
             <DemandPage branch={state.page.slice(7)} />
+          ) : state.page === 'rebalancing' ? (
+            <RebalancingPage />
           ) : state.page === 'suppliers' ? (
             <SuppliersPage />
           ) : (
@@ -140,6 +139,7 @@ export function App() {
           )}
         </div>
 
+        {newImportOpen && <Dialog title="Загрузить новые отчёты?" onClose={() => setNewImportOpen(false)} actions={<><Button className="secondary" onClick={() => setNewImportOpen(false)}>Отмена</Button><Button onClick={() => { resetImports(); setNewImportOpen(false); }}>Начать новый сеанс</Button></>}><p>Текущая работа останется в истории. В новом сеансе принятые перемещения, ручные количества и отметки заказов будут сброшены. Настройки маршрутов и условий сохранятся.</p></Dialog>}
         {state.toast && (
           <div className="toast" role="status">
             {state.toast}

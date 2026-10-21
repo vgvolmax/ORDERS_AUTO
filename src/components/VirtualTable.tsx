@@ -33,6 +33,7 @@ export function VirtualTable<T>({
     overscan: 10,
   });
   const template = columns.map((column) => column.width).join(' ');
+  const minimumWidth = columns.reduce((sum, column) => sum + Number(column.width.match(/(?:minmax\()?([0-9.]+)px/)?.[1] ?? 80), 0);
 
   if (rows.length === 0) {
     return <div className="empty">{emptyMessage}</div>;
@@ -40,6 +41,7 @@ export function VirtualTable<T>({
 
   return (
     <div className="virtual-table" role="table">
+      <div style={{ minWidth: minimumWidth }}>
       <TableHeader columns={columns} template={template} />
 
       {shouldVirtualize ? (
@@ -85,6 +87,7 @@ export function VirtualTable<T>({
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }

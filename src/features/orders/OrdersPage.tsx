@@ -228,7 +228,7 @@ export function OrdersPage() {
     <main>
       <header className="header-actions">
         <div>
-          <p className="eyebrow">Шаг 4 из 4</p>
+          <p className="eyebrow">Рабочая потребность</p>
           <h1>Заказы</h1>
           <p>
             Каждая ячейка — отдельный заказ подразделения конкретному поставщику.

@@ -187,7 +187,7 @@ export function SuppliersPage() {
   return (
     <main>
       <header>
-        <p className="eyebrow">Шаг 3 из 4</p>
+        <p className="eyebrow">Рабочая потребность</p>
         <h1>Поставщики</h1>
         <p>
           Кому, на какую сумму и в какие подразделения сейчас требуется заказ.
