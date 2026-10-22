@@ -1,4 +1,11 @@
-import { useRef, type CSSProperties, type ReactNode } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 const VIRTUALIZATION_THRESHOLD = 100;
@@ -27,12 +34,26 @@ export function VirtualTable<T>({
   emptyMessage?: string | undefined;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const hasRows = rows.length > 0;
+  useLayoutEffect(() => {
+    const node = headerRef.current;
+    if (!node) return;
+    const measure = () => setHeaderHeight(node.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasRows]);
   const shouldVirtualize = rows.length > VIRTUALIZATION_THRESHOLD;
   const virtualizer = useVirtualizer({
     count: shouldVirtualize ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 58,
     overscan: 10,
+    scrollMargin: headerHeight,
   });
   const template = columns.map((column) => column.width).join(' ');
   const minimumWidth = columns.reduce(
@@ -47,11 +68,23 @@ export function VirtualTable<T>({
 
   return (
     <div className="virtual-table" role="table">
-      <div style={{ minWidth: minimumWidth }}>
-        <TableHeader columns={columns} template={template} />
-
-        {shouldVirtualize ? (
-          <div className="virtual-scroll" ref={scrollRef} style={{ maxHeight }}>
+      <div
+        className="virtual-scroll"
+        ref={scrollRef}
+        tabIndex={0}
+        aria-label="Прокрутка таблицы"
+        style={{
+          height: shouldVirtualize ? undefined : 'auto',
+          maxHeight: maxHeight ?? 'min(68vh, 720px)',
+        }}
+      >
+        <div style={{ minWidth: minimumWidth }}>
+          <TableHeader
+            columns={columns}
+            template={template}
+            headerRef={headerRef}
+          />
+          {shouldVirtualize ? (
             <div
               className="virtual-spacer"
               style={{ height: virtualizer.getTotalSize() }}
@@ -67,35 +100,33 @@ export function VirtualTable<T>({
                     details={renderDetails?.(row)}
                     measureRef={virtualizer.measureElement}
                     dataIndex={virtualRow.index}
-                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    style={{
+                      transform: `translateY(${
+                        virtualRow.start - headerHeight
+                      }px)`,
+                    }}
                   />
                 );
               })}
             </div>
-          </div>
-        ) : (
-          // Small result sets are cheaper and more accessible as ordinary DOM
-          // rows. Large operational datasets still use virtualization.
-          <div
-            className="virtual-scroll"
-            style={{
-              height: 'auto',
-              maxHeight: maxHeight ?? 'min(68vh, 720px)',
-            }}
-          >
-            {rows.map((row, index) => (
-              <TableRow
-                key={getRowKey(row)}
-                row={row}
-                columns={columns}
-                template={template}
-                details={renderDetails?.(row)}
-                dataIndex={index}
-                style={{ position: 'relative', top: 'auto', left: 'auto' }}
-              />
-            ))}
-          </div>
-        )}
+          ) : (
+            // Small result sets are cheaper and more accessible as ordinary DOM
+            // rows. Large operational datasets still use virtualization.
+            <div>
+              {rows.map((row, index) => (
+                <TableRow
+                  key={getRowKey(row)}
+                  row={row}
+                  columns={columns}
+                  template={template}
+                  details={renderDetails?.(row)}
+                  dataIndex={index}
+                  style={{ position: 'relative', top: 'auto', left: 'auto' }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -104,12 +135,15 @@ export function VirtualTable<T>({
 function TableHeader<T>({
   columns,
   template,
+  headerRef,
 }: {
   columns: VirtualColumn<T>[];
   template: string;
+  headerRef: RefObject<HTMLDivElement | null>;
 }) {
   return (
     <div
+      ref={headerRef}
       className="virtual-header"
       role="row"
       style={{ gridTemplateColumns: template }}

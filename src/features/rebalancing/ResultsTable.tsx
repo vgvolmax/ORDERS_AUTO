@@ -4,6 +4,7 @@ import { Button, SearchInput } from '../../components/ui';
 import { fmtQty, money } from '../demand/DemandPage';
 import {
   buildTransferDocuments,
+  summarizeTransferDocuments,
   type TransferDocument,
   type TransferDocumentsInput,
 } from './transferDocuments';
@@ -132,9 +133,9 @@ export function ResultsTable({
           Поиск по коду, артикулу, товару и маршруту
           <SearchInput value={query} onValueChange={onQuery} />
         </label>
-        <span>Всего отмечено: {selectedIds.length}</span>
+        <span>Выбрано к принятию: {selectedIds.length}</span>
         <Button
-          disabled={!selectedIds.length || stale || busy || acceptingDisabled}
+          disabled={!selectedIds.length || stale || busy}
           onClick={() => onAccept(selectedIds)}
         >
           Принять выбранные ({selectedIds.length})
@@ -195,14 +196,14 @@ export function ResultsTable({
                 render: (from: string) => {
                   const doc = byId.get(JSON.stringify([from, to]));
                   if (!doc) return <span className="muted">—</span>;
-                  const acceptedCount = doc.lines.filter(
-                    (l) => l.decision === 'ACCEPTED',
-                  ).length;
+                  const summary = summarizeTransferDocuments([doc]);
+                  const acceptedCount = summary.acceptedCount;
                   return (
                     <button
                       className={
                         'order-cell ' +
-                        (acceptedCount === doc.lines.length
+                        (summary.activeCount > 0 &&
+                        acceptedCount === summary.activeCount
                           ? 'is-reviewed'
                           : '')
                       }
@@ -217,7 +218,7 @@ export function ResultsTable({
                       <strong>
                         {doc.totalAmount === null
                           ? 'Сумма неизвестна'
-                          : money(doc.totalAmount)}
+                          : 'Сумма: ' + money(doc.totalAmount)}
                       </strong>
                       <span>{doc.skuCount} SKU</span>
                       <span>
@@ -237,7 +238,13 @@ export function ResultsTable({
                           doc.lines.filter((l) => l.decision === 'PROPOSED')
                             .length
                         }{' '}
-                        · Принято: {acceptedCount}
+                        · Принято: {acceptedCount} из {summary.activeCount}
+                      </span>
+                      <span>
+                        Принято на сумму:{' '}
+                        {summary.acceptedAmount === null
+                          ? 'Сумма неизвестна'
+                          : money(summary.acceptedAmount)}
                       </span>
                       {doc.lines.some((l) => l.decision === 'REJECTED') && (
                         <span>
@@ -249,9 +256,7 @@ export function ResultsTable({
                         </span>
                       )}
                       {doc.lines.some((l) => l.selected) && (
-                        <span>
-                          Отмечено: {doc.lines.filter((l) => l.selected).length}
-                        </span>
+                        <span>Выбрано к принятию: {summary.selectedCount}</span>
                       )}
                     </button>
                   );
