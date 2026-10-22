@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { calculateDemand } from '../../domain/demand';
 import { resolveSuppliers } from '../../domain/suppliers';
+import { isSupplierInPool } from '../../domain/supplierPool';
 import type { ValidationIssue } from '../../domain/types';
 import { parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
@@ -12,6 +13,8 @@ export function ImportPage() {
   const reads = useRef({ min: 0, sup: 0 });
   const [failures, setFailures] = useState({ min: '', sup: '' });
   const anyLoading = state.minMaxLoading || state.supplierLoading;
+  const supplierPoolCount =
+    state.suppliers?.suppliers.filter(isSupplierInPool).length ?? 0;
 
   const supplierResolutionSummary = useMemo(() => {
     if (!state.minMax || !state.suppliers) {
@@ -24,7 +27,7 @@ export function ImportPage() {
         .map((line) => line.skuCode),
     );
     const resolutions = resolveSuppliers(
-      state.suppliers.history,
+      state.suppliers.history.filter((row) => isSupplierInPool(row.supplier)),
       state.overrides,
       [...neededSkuCodes],
     ).filter((resolution) => neededSkuCodes.has(resolution.skuCode));
@@ -157,7 +160,9 @@ export function ImportPage() {
           busy={state.supplierLoading}
           summary={
             state.suppliers
-              ? `${state.suppliers.suppliers.length} поставщиков · ${state.suppliers.history.length} связок поставщик–SKU`
+              ? `${supplierPoolCount} поставщиков в рабочем пуле · скрыто: ${
+                  state.suppliers.suppliers.length - supplierPoolCount
+                } · ${state.suppliers.history.length} связок в исходном отчёте`
               : null
           }
           issues={state.supplierIssues}

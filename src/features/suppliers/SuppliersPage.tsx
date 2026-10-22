@@ -3,6 +3,7 @@ import { useStore } from '../../app/appStore';
 import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
+import { SUPPLIER_POOL } from '../../domain/supplierPool';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import {
   Alert,
@@ -214,6 +215,10 @@ export function SuppliersPage() {
         <h1>Поставщики</h1>
         <p>
           Кому, на какую сумму и в какие подразделения сейчас требуется заказ.
+        </p>
+        <p>
+          Рабочий пул: {SUPPLIER_POOL.length} поставщика. Остальные скрыты из
+          выбора и заказов; исходная история закупок сохранена.
         </p>
       </header>
 
@@ -508,9 +513,9 @@ function SupplierDecisions({
                   <strong>Код {resolution.skuCode}</strong>
                   <p>
                     {resolution.status === 'STALE_OVERRIDE'
-                      ? 'Сохранённый поставщик отсутствует в свежем отчёте.'
+                      ? 'Сохранённый поставщик отсутствует в свежем отчёте или не входит в рабочий пул.'
                       : resolution.candidates.length === 0
-                      ? 'Нет истории поставщиков для автоматического выбора.'
+                      ? 'В рабочем пуле нет истории поставщиков для этой позиции.'
                       : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
                   </p>
                 </div>

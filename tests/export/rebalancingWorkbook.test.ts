@@ -64,7 +64,9 @@ it('supplier CSV/XLSX share the accepted projection; manual quantity remains the
     expect(order.lines[0]!.orderQty).toBe(qty);
     expect(orderToCsv(order)).toContain(`;${qty};`);
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(await buildSupplierWorkbook('Поставщик', [order]));
+    await wb.xlsx.load(
+      await buildSupplierWorkbook('ИП Баранов Роман Борисович', [order]),
+    );
     expect(wb.getWorksheet('Получатель')!.getCell('D2').value).toBe(qty);
   }
 });

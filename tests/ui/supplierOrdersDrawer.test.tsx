@@ -12,7 +12,7 @@ function line(skuCode: string, branch: string, qty: number, price = 100) {
     article: `ART-${skuCode}`,
     name: `Товар ${skuCode}`,
     branch,
-    supplier: 'Поставщик А',
+    supplier: 'ИП Баранов Роман Борисович',
     calculatedQty: qty,
     orderQty: qty,
     unit: 'шт',
@@ -29,9 +29,9 @@ function line(skuCode: string, branch: string, qty: number, price = 100) {
 function makeOrders(): WorkflowOrder[] {
   return [
     {
-      id: 'Ленина\0Поставщик А',
+      id: 'Ленина\0ИП Баранов Роман Борисович',
       branch: 'Ленина',
-      supplier: 'Поставщик А',
+      supplier: 'ИП Баранов Роман Борисович',
       lines: [line('SKU1', 'Ленина', 3), line('SKU2', 'Ленина', 2)],
       totalQty: 5,
       totalAmount: 500,
@@ -42,9 +42,9 @@ function makeOrders(): WorkflowOrder[] {
       manualEditCount: 1,
     },
     {
-      id: 'Ступино\0Поставщик А',
+      id: 'Ступино\0ИП Баранов Роман Борисович',
       branch: 'Ступино',
-      supplier: 'Поставщик А',
+      supplier: 'ИП Баранов Роман Борисович',
       lines: [line('SKU1', 'Ступино', 4)],
       totalQty: 4,
       totalAmount: 400,
@@ -65,7 +65,7 @@ describe('SupplierOrdersDrawer', () => {
   it('renders SKU rows with branch columns and cross-branch SKU totals', () => {
     render(
       <SupplierOrdersDrawer
-        supplier="Поставщик А"
+        supplier="ИП Баранов Роман Борисович"
         orders={makeOrders()}
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
@@ -97,7 +97,7 @@ describe('SupplierOrdersDrawer', () => {
     const orders = makeOrders();
     render(
       <SupplierOrdersDrawer
-        supplier="Поставщик А"
+        supplier="ИП Баранов Роман Борисович"
         orders={orders}
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
@@ -120,7 +120,7 @@ describe('SupplierOrdersDrawer', () => {
     const orders = makeOrders();
     render(
       <SupplierOrdersDrawer
-        supplier="Поставщик А"
+        supplier="ИП Баранов Роман Борисович"
         orders={orders}
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
@@ -155,7 +155,7 @@ describe('SupplierOrdersDrawer', () => {
   it('exposes resizable headers and compact two-line nomenclature cells', () => {
     render(
       <SupplierOrdersDrawer
-        supplier="Поставщик А"
+        supplier="ИП Баранов Роман Борисович"
         orders={makeOrders()}
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
@@ -188,7 +188,7 @@ describe('SupplierOrdersDrawer', () => {
   it('resizes a column from the keyboard and persists the preference', () => {
     render(
       <SupplierOrdersDrawer
-        supplier="Поставщик А"
+        supplier="ИП Баранов Роман Борисович"
         orders={makeOrders()}
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
@@ -217,7 +217,7 @@ describe('SupplierOrdersDrawer', () => {
   it('resets user column widths to the content-based defaults', () => {
     render(
       <SupplierOrdersDrawer
-        supplier="Поставщик А"
+        supplier="ИП Баранов Роман Борисович"
         orders={makeOrders()}
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
@@ -250,7 +250,7 @@ describe('SupplierOrdersDrawer', () => {
 it('waits for quantity persistence before review while allowing the operator to finish typing', () => {
   render(
     <SupplierOrdersDrawer
-      supplier="Поставщик А"
+      supplier="ИП Баранов Роман Борисович"
       orders={makeOrders()}
       branchOrder={['Ленина', 'Ступино']}
       saving

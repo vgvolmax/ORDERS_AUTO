@@ -13,6 +13,7 @@ import { calculateDemand, priceDemand } from '../domain/demand';
 import { getManualEditCount } from '../domain/orderWorkflow';
 import { buildOrderProjection } from '../domain/orders';
 import { resolveSuppliers } from '../domain/suppliers';
+import { isSupplierInPool } from '../domain/supplierPool';
 import type {
   Order,
   OrderProjection,
@@ -78,7 +79,7 @@ export function derive(state: AppState): DerivedState {
   }
 
   const resolutions = resolveSuppliers(
-    state.suppliers.history,
+    state.suppliers.history.filter((row) => isSupplierInPool(row.supplier)),
     state.overrides,
     state.minMax.skus.map((sku) => sku.code),
   );

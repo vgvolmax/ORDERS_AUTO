@@ -3,6 +3,7 @@ import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
 import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
+import { isSupplierInPool } from '../../domain/supplierPool';
 import { useStore } from '../../app/appStore';
 import {
   emptyDemandFilters,
@@ -46,10 +47,16 @@ const severity: Record<StockStatus, number> = {
 export function DemandPage({ branch }: { branch?: string | undefined }) {
   const { state } = useStore();
   const derived = useDerivedState(state);
-  const [filters, setFilters] = usePreference<DemandFilters>(
+  const [savedFilters, setFilters] = usePreference<DemandFilters>(
     `demand:${branch ?? 'all'}:filters`,
     emptyDemandFilters,
   );
+  const filters =
+    savedFilters.supplier &&
+    savedFilters.supplier !== '__UNASSIGNED__' &&
+    !isSupplierInPool(savedFilters.supplier)
+      ? { ...savedFilters, supplier: '' }
+      : savedFilters;
   const [showCovered, setShowCovered] = usePreference(
     `demand:${branch ?? 'all'}:covered`,
     false,
@@ -60,7 +67,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
   );
 
   const supplierOptions = useMemo(
-    () => state.suppliers?.suppliers ?? [],
+    () => state.suppliers?.suppliers.filter(isSupplierInPool) ?? [],
     [state.suppliers],
   );
   const orderLineKeys = useMemo(() => {

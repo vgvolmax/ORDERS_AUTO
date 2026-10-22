@@ -64,7 +64,7 @@ describe('OrdersPage', () => {
     renderWithStore(<OrdersPage />, baseState());
     expect(screen.queryByText('Итого поставщику')).not.toBeInTheDocument();
     const card = screen.getByRole('button', {
-      name: /все заказы поставщик а/i,
+      name: /все заказы ип баранов роман борисович/i,
     });
     expect(card).toHaveTextContent('1 100,00 ₽');
     expect(card).toHaveTextContent('2 подразделения · 1 SKU · 11 ед.');
@@ -84,10 +84,12 @@ describe('OrdersPage', () => {
 
     expect(screen.getByText('Скрыто порогом: 1')).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole('button', { name: /все заказы поставщик а/i }),
+      screen.getByRole('button', {
+        name: /все заказы ип баранов роман борисович/i,
+      }),
     );
     const dialog = screen.getByRole('dialog', {
-      name: /все заказы поставщик а/i,
+      name: /все заказы ип баранов роман борисович/i,
     });
     expect(within(dialog).getByText('Ленина')).toBeInTheDocument();
     expect(within(dialog).getByText('Ступино')).toBeInTheDocument();
@@ -98,8 +100,8 @@ describe('OrdersPage', () => {
     renderWithStore(
       <OrdersPage />,
       baseState({
-        reviewedOrderIds: ['Ленина\0Поставщик А'],
-        exportedOrderIds: ['Ленина\0Поставщик А'],
+        reviewedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
+        exportedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
       }),
       set,
     );
@@ -141,7 +143,7 @@ describe('OrdersPage', () => {
     await waitFor(() =>
       expect(set).toHaveBeenCalledWith({
         toast:
-          'Не удалось сформировать Excel для Поставщик А. Повторите выгрузку.',
+          'Не удалось сформировать Excel для ИП Баранов Роман Борисович. Повторите выгрузку.',
       }),
     );
   });
@@ -174,10 +176,13 @@ describe('OrdersPage', () => {
         branches: ['Ленина', 'Ступино'],
       },
       suppliers: {
-        suppliers: ['Поставщик А', 'Поставщик Б'],
+        suppliers: [
+          'ИП Баранов Роман Борисович',
+          'ИП Никишин Андрей Николаевич',
+        ],
         history: [
           {
-            supplier: 'Поставщик А',
+            supplier: 'ИП Баранов Роман Борисович',
             skuCode: 'SKU1',
             skuName: 'Товар 1',
             unit: 'шт',
@@ -186,7 +191,7 @@ describe('OrdersPage', () => {
             weightedUnitCost: 100,
           },
           {
-            supplier: 'Поставщик Б',
+            supplier: 'ИП Никишин Андрей Николаевич',
             skuCode: 'SKU2',
             skuName: 'Товар 2',
             unit: 'шт',
@@ -196,12 +201,15 @@ describe('OrdersPage', () => {
           },
         ],
       },
-      reviewedOrderIds: ['Ленина\0Поставщик А', 'Ступино\0Поставщик Б'],
+      reviewedOrderIds: [
+        'Ленина\0ИП Баранов Роман Борисович',
+        'Ступино\0ИП Никишин Андрей Николаевич',
+      ],
     });
     renderWithStore(<OrdersPage />, state);
 
     fireEvent.change(screen.getByLabelText(/поиск поставщика/i), {
-      target: { value: 'Поставщик А' },
+      target: { value: 'ИП Баранов Роман Борисович' },
     });
     expect(
       screen.getByRole('button', { name: /скачать все \(4\)/i }),
@@ -221,15 +229,20 @@ describe('OrdersPage', () => {
     render(
       <StatefulOrders
         initial={baseState({
-          reviewedOrderIds: ['Ленина\0Поставщик А', 'Ступино\0Поставщик А'],
+          reviewedOrderIds: [
+            'Ленина\0ИП Баранов Роман Борисович',
+            'Ступино\0ИП Баранов Роман Борисович',
+          ],
         })}
       />,
     );
     fireEvent.click(
-      screen.getByRole('button', { name: /все заказы поставщик а/i }),
+      screen.getByRole('button', {
+        name: /все заказы ип баранов роман борисович/i,
+      }),
     );
     const dialog = screen.getByRole('dialog', {
-      name: /все заказы поставщик а/i,
+      name: /все заказы ип баранов роман борисович/i,
     });
     fireEvent.change(within(dialog).getByLabelText('Количество SKU1 Ленина'), {
       target: { value: '10' },
@@ -249,7 +262,9 @@ describe('OrdersPage', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Закрыть' }));
     expect(
-      screen.getByRole('button', { name: /все заказы поставщик а/i }),
+      screen.getByRole('button', {
+        name: /все заказы ип баранов роман борисович/i,
+      }),
     ).toHaveTextContent('1 400,00 ₽');
     const editedCard = screen
       .getAllByRole('button')
@@ -273,7 +288,9 @@ describe('OrdersPage', () => {
     render(<StatefulOrders initial={baseState()} />);
     fireEvent.click(screen.getByRole('button', { name: /excel все/i }));
     fireEvent.click(
-      screen.getByRole('button', { name: /все заказы поставщик а/i }),
+      screen.getByRole('button', {
+        name: /все заказы ип баранов роман борисович/i,
+      }),
     );
     fireEvent.change(screen.getByLabelText('Количество SKU1 Ленина'), {
       target: { value: '10' },
@@ -357,7 +374,9 @@ describe('OrdersPage', () => {
     rerender(
       <StoreContext.Provider
         value={{
-          state: baseState({ reviewedOrderIds: ['Ленина\0Поставщик А'] }),
+          state: baseState({
+            reviewedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
+          }),
           set: () => undefined,
         }}
       >
@@ -369,13 +388,13 @@ describe('OrdersPage', () => {
     ).toHaveClass('is-reviewed');
 
     const blocked = baseState({
-      reviewedOrderIds: ['Ленина\0Поставщик А'],
+      reviewedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
       minMax: {
         ...baseState().minMax!,
         skus: [{ ...baseState().minMax!.skus[0]!, referencePrice: null }],
       },
       suppliers: {
-        suppliers: ['Поставщик А'],
+        suppliers: ['ИП Баранов Роман Борисович'],
         history: [
           {
             ...baseState().suppliers!.history[0]!,
@@ -400,7 +419,9 @@ describe('OrdersPage', () => {
       screen.getByRole('button', { name: /скачать проверенные \(0\)/i }),
     ).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: /все заказы поставщик а/i }),
+      screen.getByRole('button', {
+        name: /все заказы ип баранов роман борисович/i,
+      }),
     ).toHaveClass('has-blocker');
   });
 
@@ -409,8 +430,8 @@ describe('OrdersPage', () => {
       <OrdersPage />,
       baseState({
         edits: [{ skuCode: 'SKU1', branch: 'Ленина', qty: 8 }],
-        reviewedOrderIds: ['Ленина\0Поставщик А'],
-        exportedOrderIds: ['Ленина\0Поставщик А'],
+        reviewedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
+        exportedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
       }),
     );
 

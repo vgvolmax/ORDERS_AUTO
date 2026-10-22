@@ -22,12 +22,12 @@ export function rebalanceAppState() {
     })),
   };
   state.suppliers = {
-    suppliers: ['Поставщик'],
+    suppliers: ['ИП Баранов Роман Борисович'],
     history: [
       {
         skuCode: 'SKU1',
         skuName: 'Товар для перемещения',
-        supplier: 'Поставщик',
+        supplier: 'ИП Баранов Роман Борисович',
         unit: 'шт',
         purchaseQty: 1,
         purchaseAmount: 100,

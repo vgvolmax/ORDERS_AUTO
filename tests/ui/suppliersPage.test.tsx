@@ -30,10 +30,10 @@ function ambiguousState(): AppState {
       branches: ['Ленина'],
     },
     suppliers: {
-      suppliers: ['Дорогой', 'Дешёвый'],
+      suppliers: ['ИП Баранов Роман Борисович', 'ИП Никишин Андрей Николаевич'],
       history: [
         {
-          supplier: 'Дорогой',
+          supplier: 'ИП Баранов Роман Борисович',
           skuCode: 'SKU1',
           skuName: 'Товар 1',
           unit: 'шт',
@@ -42,7 +42,7 @@ function ambiguousState(): AppState {
           weightedUnitCost: 120,
         },
         {
-          supplier: 'Дешёвый',
+          supplier: 'ИП Никишин Андрей Николаевич',
           skuCode: 'SKU1',
           skuName: 'Товар 1',
           unit: 'шт',
@@ -51,7 +51,7 @@ function ambiguousState(): AppState {
           weightedUnitCost: 90,
         },
         {
-          supplier: 'Дорогой',
+          supplier: 'ИП Баранов Роман Борисович',
           skuCode: 'SKU2',
           skuName: 'Товар 2',
           unit: 'шт',
@@ -60,7 +60,7 @@ function ambiguousState(): AppState {
           weightedUnitCost: 100,
         },
         {
-          supplier: 'Дешёвый',
+          supplier: 'ИП Никишин Андрей Николаевич',
           skuCode: 'SKU2',
           skuName: 'Товар 2',
           unit: 'шт',
@@ -103,10 +103,10 @@ describe('SuppliersPage', () => {
         branches: ['Ленина'],
       },
       suppliers: {
-        suppliers: ['Поставщик А'],
+        suppliers: ['ИП Баранов Роман Борисович'],
         history: [
           {
-            supplier: 'Поставщик А',
+            supplier: 'ИП Баранов Роман Борисович',
             skuCode: 'SKU1',
             skuName: 'Товар 1',
             unit: 'шт',
@@ -169,7 +169,7 @@ describe('SuppliersPage', () => {
         overrides: [
           expect.objectContaining({
             skuCode: 'SKU1',
-            supplier: 'Дешёвый',
+            supplier: 'ИП Никишин Андрей Николаевич',
             source: 'AUTO',
           }),
         ],
@@ -193,7 +193,7 @@ describe('SuppliersPage', () => {
     state.overrides = [
       {
         skuCode: 'SKU1',
-        supplier: 'Дорогой',
+        supplier: 'ИП Баранов Роман Борисович',
         source: 'MANUAL',
         updatedAt: '2026-01-01',
       },
@@ -219,7 +219,7 @@ describe('SuppliersPage', () => {
           overrides: expect.arrayContaining([
             expect.objectContaining({
               skuCode: 'SKU1',
-              supplier: 'Дешёвый',
+              supplier: 'ИП Никишин Андрей Николаевич',
               source: 'AUTO',
             }),
           ]),
@@ -233,7 +233,7 @@ describe('SuppliersPage', () => {
     state.overrides = [
       {
         skuCode: 'SKU1',
-        supplier: 'Дорогой',
+        supplier: 'ИП Баранов Роман Борисович',
         source: 'MANUAL',
         updatedAt: '2026-01-01',
       },

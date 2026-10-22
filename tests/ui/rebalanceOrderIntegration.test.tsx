@@ -64,7 +64,9 @@ it('explains a manual quantity in both order views using the same accepted basis
   ).toHaveTextContent('Ручное количество к заказу: 40');
   fireEvent.keyDown(document, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: 'Закрыть' }));
-  fireEvent.click(screen.getByRole('button', { name: /Все заказы Поставщик/ }));
+  fireEvent.click(
+    screen.getByRole('button', { name: /Все заказы ИП Баранов/ }),
+  );
   fireEvent.click(screen.getByRole('button', { name: /Учтённые перемещения/ }));
   expect(
     screen.getByRole('dialog', { name: 'Учтённые перемещения' }),
