@@ -33,19 +33,36 @@ export function Harness() {
 }
 it('selection is independent; accept subset, cancel dialog, accept rest, recalculate and revoke', async () => {
   render(<Harness />);
-  const rows = screen.getAllByRole('checkbox', { name: /Выбрать перемещение/ });
-  fireEvent.click(rows[0]!);
-  expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('50');
+  const open = (from: string) => {
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Открыть перемещение ' + from + ' → Получатель',
+      }),
+    );
+    return screen.getByRole('dialog', { name: 'Состав перемещения' });
+  };
+  let drawer = open('Донор А');
   fireEvent.click(
-    screen.getByRole('button', { name: /Принять выбранные \(1\)/ }),
+    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение/ }),
   );
-  let dialog = screen.getByRole('dialog');
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
   expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('50');
+  const accept = () =>
+    fireEvent.click(
+      within(drawer).getByRole('button', {
+        name: /Принять выбранные в перемещении/,
+      }),
+    );
+  accept();
   fireEvent.click(
-    screen.getByRole('button', { name: /Принять выбранные \(1\)/ }),
+    within(
+      screen.getByRole('dialog', { name: 'Принять выбранные перемещения' }),
+    ).getByRole('button', { name: 'Отмена' }),
   );
-  dialog = screen.getByRole('dialog');
+  expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('50');
+  accept();
+  let dialog = screen.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+  });
   expect(dialog).toHaveTextContent('50 → 35');
   fireEvent.click(
     within(dialog).getByRole('button', { name: 'Принять перемещения' }),
@@ -53,36 +70,39 @@ it('selection is independent; accept subset, cancel dialog, accept rest, recalcu
   await waitFor(() =>
     expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('35'),
   );
+  fireEvent.keyDown(document, { key: 'Escape' });
+  drawer = open('Донор Б');
   fireEvent.click(
-    screen.getByRole('checkbox', { name: /Выбрать перемещение/ }),
+    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение/ }),
   );
+  accept();
+  dialog = screen.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+  });
   fireEvent.click(
-    screen.getByRole('button', { name: /Принять выбранные \(1\)/ }),
-  );
-  fireEvent.click(
-    within(screen.getByRole('dialog')).getByRole('button', {
-      name: 'Принять перемещения',
-    }),
+    within(dialog).getByRole('button', { name: 'Принять перемещения' }),
   );
   await waitFor(() =>
     expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('15'),
   );
+  fireEvent.keyDown(document, { key: 'Escape' });
   fireEvent.click(
     screen.getByRole('button', { name: 'Рассчитать перемещения' }),
   );
-  expect(screen.getAllByText('Принято')).toHaveLength(2);
   await waitFor(() =>
     expect(
       screen.getByRole('button', { name: 'Рассчитать перемещения' }),
     ).toBeEnabled(),
   );
+  drawer = open('Донор А');
+  expect(within(drawer).getByText('Принято')).toBeVisible();
   fireEvent.click(
-    screen.getAllByRole('button', { name: /Отменить принятие/ })[0]!,
+    within(drawer).getByRole('button', { name: /Отменить принятие/ }),
   );
   fireEvent.click(
-    within(screen.getByRole('dialog')).getByRole('button', {
-      name: 'Отменить принятие',
-    }),
+    within(
+      screen.getByRole('dialog', { name: 'Отменить принятие перемещения' }),
+    ).getByRole('button', { name: 'Отменить принятие' }),
   );
   await waitFor(() =>
     expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('30'),

@@ -230,6 +230,12 @@ details summary { cursor: pointer; }
 .movement-totals dl { display: grid; grid-template-columns: 1fr auto; gap: 7px 20px; margin: 10px 0 0; font-size: 14px; }
 .movement-totals dd { margin: 0; font-variant-numeric: tabular-nums; }
 .rebalance-header-actions, .history-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.transfer-matrix .transfer-identity { position: sticky; left: 0; background: #f7f8fa; z-index: 1; }
+.transfer-matrix .order-cell:hover { border-color: var(--blue); background: #edf3ff; }
+.transfer-matrix .order-cell:active { background: #e0eaff; }
+.transfer-product > span, .transfer-stock > small { display: block; margin-top: 5px; }
+.transfer-product > span:first-of-type, .transfer-stock > small, .transfer-stock-help { color: var(--muted); font-size: 12px; }
+.transfer-line-actions { display: grid; gap: 10px; justify-items: start; }
 .search-control { position: relative; display: flex; min-width: 200px; }
 .search-control .input { width: 100%; padding-right: 36px; }
 .search-clear { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 30px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }

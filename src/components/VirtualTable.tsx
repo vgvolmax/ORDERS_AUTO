@@ -16,12 +16,14 @@ export function VirtualTable<T>({
   columns,
   getRowKey,
   renderDetails,
+  maxHeight,
   emptyMessage = 'Нет данных по выбранным фильтрам.',
 }: {
   rows: T[];
   columns: VirtualColumn<T>[];
   getRowKey: (row: T) => string;
   renderDetails?: ((row: T) => ReactNode) | undefined;
+  maxHeight?: string | undefined;
   emptyMessage?: string | undefined;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -49,7 +51,7 @@ export function VirtualTable<T>({
         <TableHeader columns={columns} template={template} />
 
         {shouldVirtualize ? (
-          <div className="virtual-scroll" ref={scrollRef}>
+          <div className="virtual-scroll" ref={scrollRef} style={{ maxHeight }}>
             <div
               className="virtual-spacer"
               style={{ height: virtualizer.getTotalSize() }}
@@ -76,7 +78,10 @@ export function VirtualTable<T>({
           // rows. Large operational datasets still use virtualization.
           <div
             className="virtual-scroll"
-            style={{ height: 'auto', maxHeight: 'min(68vh, 720px)' }}
+            style={{
+              height: 'auto',
+              maxHeight: maxHeight ?? 'min(68vh, 720px)',
+            }}
           >
             {rows.map((row, index) => (
               <TableRow

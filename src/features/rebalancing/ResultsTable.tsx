@@ -1,23 +1,15 @@
+import { useMemo, useState } from 'react';
 import { VirtualTable } from '../../components/VirtualTable';
 import { Button, SearchInput } from '../../components/ui';
-import { fmtQty } from '../demand/DemandPage';
-import type { RebalanceResultScope } from '../../domain/workspace';
-import type {
-  AcceptedTransfer,
-  BranchRegistry,
-  RebalanceProposal,
-  RebalanceTransfer,
-  SkuQuantityPolicy,
-} from '../../domain/rebalancing';
+import { fmtQty, money } from '../demand/DemandPage';
+import {
+  buildTransferDocuments,
+  type TransferDocument,
+  type TransferDocumentsInput,
+} from './transferDocuments';
+import { TransferDrawer } from './TransferDrawer';
+
 export function ResultsTable({
-  proposal,
-  accepted,
-  selected,
-  rejected,
-  registry,
-  policies,
-  query,
-  scope,
   onQuery,
   onClearScope,
   onSelection,
@@ -27,78 +19,95 @@ export function ResultsTable({
   stale,
   busy,
   acceptingDisabled = false,
-}: {
-  proposal: RebalanceProposal | null;
-  accepted: AcceptedTransfer[];
-  selected: string[];
-  rejected: string[];
-  registry: BranchRegistry;
-  policies: SkuQuantityPolicy[];
-  query: string;
-  scope: RebalanceResultScope;
-  onQuery: (q: string) => void;
+  error = '',
+  ...input
+}: TransferDocumentsInput & {
+  onQuery: (query: string) => void;
   onClearScope: () => void;
   onSelection: (ids: string[]) => void;
   onReject: (id: string) => void;
   onRevoke: (id: string) => void;
-  onAccept: () => void;
+  onAccept: (ids: string[]) => void;
   stale: boolean;
   busy: boolean;
   acceptingDisabled?: boolean;
+  error?: string;
 }) {
-  const units = new Map(policies.map((p) => [p.skuCode, p.unit]));
+  const {
+    proposal,
+    accepted,
+    registry,
+    policies,
+    skus,
+    snapshot,
+    selected,
+    rejected,
+    query,
+    scope,
+  } = input;
+  const docs = useMemo(
+    () =>
+      buildTransferDocuments({
+        proposal,
+        accepted,
+        registry,
+        policies,
+        skus,
+        snapshot,
+        selected,
+        rejected,
+        query,
+        scope,
+      }),
+    [
+      proposal,
+      accepted,
+      registry,
+      policies,
+      skus,
+      snapshot,
+      selected,
+      rejected,
+      query,
+      scope,
+    ],
+  );
+  const [openedDocument, setOpenedDocument] = useState<TransferDocument | null>(
+    null,
+  );
+  // Keep the parent modal mounted when revoking the last line removes its route.
+  // The confirmation can then close before the operator closes the inspector.
+  const opened =
+    openedDocument &&
+    (docs.find((doc) => doc.id === openedDocument.id) ?? {
+      ...openedDocument,
+      lines: [],
+      skuCount: 0,
+      totalAmount: 0,
+      totalsByUnit: [],
+    });
   const names = new Map(registry.map((b) => [b.id, b.name]));
-  const name = (id: string) => names.get(id) ?? id;
+  const rows = [...new Set(docs.map((doc) => doc.fromBranchId))];
+  const recipients = [...new Set(docs.map((doc) => doc.toBranchId))];
+  const byId = new Map(docs.map((doc) => [doc.id, doc]));
+  const visibleLines = docs.flatMap((doc) => doc.lines);
+  const eligible = visibleLines.filter((l) => l.decision === 'PROPOSED');
+  const selectedSet = new Set(selected),
+    rejectedSet = new Set(rejected);
   const acceptedSources = new Set(
     accepted
       .filter((a) => a.sourceRunId === proposal?.runId)
       .map((a) => a.sourceLineId),
   );
-  const rejectedIds = new Set(rejected);
-  const match = (t: RebalanceTransfer | AcceptedTransfer) =>
-    (!scope.skuCode || t.skuCode === scope.skuCode) &&
-    (!scope.branchId ||
-      t.fromBranchId === scope.branchId ||
-      t.toBranchId === scope.branchId) &&
-    `${t.skuCode} ${name(t.fromBranchId)} ${name(t.toBranchId)}`
-      .toLocaleLowerCase('ru')
-      .includes(query.trim().toLocaleLowerCase('ru'));
-  const proposed = (proposal?.transfers ?? []).filter(
-    (t) => !acceptedSources.has(t.sourceLineId),
-  );
-  const proposalIds = new Set(proposed.map((t) => t.sourceLineId));
-  const visible = proposed.filter(match),
-    eligible = visible.filter((t) => !rejectedIds.has(t.sourceLineId));
-  const selectedIds = selected.filter(
-    (id) => proposalIds.has(id) && !rejectedIds.has(id),
-  );
-  const columns = <T extends RebalanceTransfer | AcceptedTransfer>() => [
-    {
-      key: 'sku',
-      header: 'Код 1С',
-      width: '145px',
-      render: (t: T) => <strong>{t.skuCode}</strong>,
-    },
-    {
-      key: 'from',
-      header: 'Отправитель',
-      width: 'minmax(180px, 1fr)',
-      render: (t: T) => name(t.fromBranchId),
-    },
-    {
-      key: 'to',
-      header: 'Получатель',
-      width: 'minmax(180px, 1fr)',
-      render: (t: T) => name(t.toBranchId),
-    },
-    {
-      key: 'qty',
-      header: 'Количество',
-      width: '140px',
-      className: 'num',
-      render: (t: T) => `${fmtQty(t.qty)} ${units.get(t.skuCode) ?? ''}`,
-    },
-  ];
+  const selectedIds = (proposal?.transfers ?? [])
+    .filter(
+      (t) =>
+        selectedSet.has(t.sourceLineId) &&
+        !acceptedSources.has(t.sourceLineId) &&
+        !rejectedSet.has(t.sourceLineId),
+    )
+    .map((t) => t.sourceLineId);
+  const eligibleIds = new Set(eligible.map((l) => l.sourceLineId));
   return (
     <>
       {(scope.skuCode || scope.branchId) && (
@@ -108,7 +117,11 @@ export function ResultsTable({
           aria-label="Фильтры перемещений"
         >
           {scope.skuCode && <span>Товар: {scope.skuCode}</span>}
-          {scope.branchId && <span>Подразделение: {name(scope.branchId)}</span>}
+          {scope.branchId && (
+            <span>
+              Подразделение: {names.get(scope.branchId) ?? scope.branchId}
+            </span>
+          )}
           <Button className="secondary" disabled={busy} onClick={onClearScope}>
             Сбросить фильтры
           </Button>
@@ -116,41 +129,31 @@ export function ResultsTable({
       )}
       <div className="filters">
         <label className="filter-search">
-          Поиск по коду и маршруту
+          Поиск по коду, артикулу, товару и маршруту
           <SearchInput value={query} onValueChange={onQuery} />
         </label>
-        <span>Отмечено: {selectedIds.length}</span>
+        <span>Всего отмечено: {selectedIds.length}</span>
         <Button
           disabled={!selectedIds.length || stale || busy || acceptingDisabled}
-          onClick={onAccept}
+          onClick={() => onAccept(selectedIds)}
         >
           Принять выбранные ({selectedIds.length})
         </Button>
       </div>
       <section className="rebalance-results">
         <div className="section-heading">
-          <h2>Предложения · {proposed.length}</h2>
+          <h2>Перемещения по направлениям · {docs.length}</h2>
           <label className="checkbox-control">
             <input
               type="checkbox"
               aria-label="Выбрать видимые предложения"
+              checked={eligible.length > 0 && eligible.every((l) => l.selected)}
               disabled={!eligible.length || stale || busy}
-              checked={
-                eligible.length > 0 &&
-                eligible.every((t) => selectedIds.includes(t.sourceLineId))
-              }
               onChange={(e) =>
                 onSelection(
                   e.target.checked
-                    ? [
-                        ...new Set([
-                          ...selectedIds,
-                          ...eligible.map((t) => t.sourceLineId),
-                        ]),
-                      ]
-                    : selectedIds.filter(
-                        (id) => !eligible.some((t) => t.sourceLineId === id),
-                      ),
+                    ? [...new Set([...selectedIds, ...eligibleIds])]
+                    : selectedIds.filter((id) => !eligibleIds.has(id)),
                 )
               }
             />
@@ -158,112 +161,121 @@ export function ResultsTable({
           </label>
         </div>
         <p>
-          Предложения и галочки не изменяют заказ. Отклонённые строки можно
-          вернуть до нового расчёта.
+          Предложено строк по фильтрам: {eligible.length}. Учтено строк по
+          фильтрам:{' '}
+          {visibleLines.filter((l) => l.decision === 'ACCEPTED').length}.
+          Отклонено:{' '}
+          {visibleLines.filter((l) => l.decision === 'REJECTED').length}.
         </p>
-        <VirtualTable
-          rows={visible}
-          getRowKey={(t) => t.sourceLineId}
-          emptyMessage={
-            proposal
-              ? 'Нет предложений по выбранным условиям и фильтру.'
-              : 'Настройте условия и рассчитайте перемещения.'
-          }
-          columns={[
-            {
-              key: 'check',
-              header: 'Выбор',
-              width: '75px',
-              render: (t) => (
-                <input
-                  type="checkbox"
-                  aria-label={`Выбрать перемещение ${t.skuCode} ${name(
-                    t.fromBranchId,
-                  )} → ${name(t.toBranchId)}`}
-                  checked={selectedIds.includes(t.sourceLineId)}
-                  disabled={rejected.includes(t.sourceLineId) || stale || busy}
-                  onChange={(e) =>
-                    onSelection(
-                      e.target.checked
-                        ? [...selectedIds, t.sourceLineId]
-                        : selectedIds.filter((id) => id !== t.sourceLineId),
-                    )
-                  }
-                />
-              ),
-            },
-            ...columns<RebalanceTransfer>(),
-            {
-              key: 'status',
-              header: 'Решение',
-              width: '150px',
-              render: (t) => (
-                <span>
-                  {rejected.includes(t.sourceLineId)
-                    ? 'Отклонено'
-                    : 'Предложено'}
-                </span>
-              ),
-            },
-            {
-              key: 'reject',
-              header: 'Действие',
-              width: '140px',
-              render: (t) => (
-                <button
-                  className="link"
-                  disabled={busy}
-                  onClick={() => onReject(t.sourceLineId)}
-                >
-                  {rejected.includes(t.sourceLineId) ? 'Вернуть' : 'Отклонить'}
-                </button>
-              ),
-            },
-          ]}
-        />
-      </section>
-      <section className="rebalance-results">
-        <h2>Учтённые перемещения · {accepted.length}</h2>
         <p>
-          Только эти строки уменьшают текущую потребность. Отмена возвращает
-          потребность к исходным нормативам.
+          Строки матрицы — отправители, столбцы — получатели. Нажмите на ячейку,
+          чтобы открыть состав. Предложения и галочки не изменяют заказы.
         </p>
-        <VirtualTable
-          rows={accepted.filter(match)}
-          getRowKey={(t) => t.transferId}
-          emptyMessage={
-            accepted.length
-              ? 'Нет принятых перемещений по выбранным фильтрам.'
-              : 'Принятых перемещений пока нет.'
-          }
-          columns={[
-            ...columns<AcceptedTransfer>(),
-            {
-              key: 'status',
-              header: 'Решение',
-              width: '150px',
-              render: () => <span className="success">Принято</span>,
-            },
-            {
-              key: 'revoke',
-              header: 'Действие',
-              width: '180px',
-              render: (t) => (
-                <button
-                  className="link"
-                  disabled={busy || acceptingDisabled}
-                  aria-label={`Отменить принятие ${t.skuCode} ${name(
-                    t.fromBranchId,
-                  )} → ${name(t.toBranchId)}`}
-                  onClick={() => onRevoke(t.transferId)}
-                >
-                  Отменить принятие
-                </button>
-              ),
-            },
-          ]}
-        />
+        <div className="transfer-matrix">
+          <VirtualTable
+            rows={rows}
+            getRowKey={(id) => id}
+            emptyMessage={
+              proposal
+                ? 'Нет перемещений по выбранным условиям и фильтрам.'
+                : 'Настройте условия и рассчитайте перемещения.'
+            }
+            columns={[
+              {
+                key: 'from',
+                header: 'Отправитель ↓ · получатель →',
+                width: '210px',
+                className: 'transfer-identity',
+                render: (id) => <strong>{names.get(id) ?? id}</strong>,
+              },
+              ...recipients.map((to) => ({
+                key: to,
+                header: names.get(to) ?? to,
+                width: 'minmax(190px, 1fr)',
+                render: (from: string) => {
+                  const doc = byId.get(JSON.stringify([from, to]));
+                  if (!doc) return <span className="muted">—</span>;
+                  const acceptedCount = doc.lines.filter(
+                    (l) => l.decision === 'ACCEPTED',
+                  ).length;
+                  return (
+                    <button
+                      className={
+                        'order-cell ' +
+                        (acceptedCount === doc.lines.length
+                          ? 'is-reviewed'
+                          : '')
+                      }
+                      aria-label={[
+                        'Открыть перемещение',
+                        doc.fromName,
+                        '→',
+                        doc.toName,
+                      ].join(' ')}
+                      onClick={() => setOpenedDocument(doc)}
+                    >
+                      <strong>
+                        {doc.totalAmount === null
+                          ? 'Сумма неизвестна'
+                          : money(doc.totalAmount)}
+                      </strong>
+                      <span>{doc.skuCount} SKU</span>
+                      <span>
+                        {doc.totalsByUnit
+                          .map(
+                            (g) =>
+                              fmtQty(g.qty) +
+                              ' ' +
+                              (g.unit ??
+                                '(' + g.skuCode + ', единица не задана)'),
+                          )
+                          .join(' · ') || 'Нет активных позиций'}
+                      </span>
+                      <span>
+                        Предложено:{' '}
+                        {
+                          doc.lines.filter((l) => l.decision === 'PROPOSED')
+                            .length
+                        }{' '}
+                        · Принято: {acceptedCount}
+                      </span>
+                      {doc.lines.some((l) => l.decision === 'REJECTED') && (
+                        <span>
+                          Отклонено:{' '}
+                          {
+                            doc.lines.filter((l) => l.decision === 'REJECTED')
+                              .length
+                          }
+                        </span>
+                      )}
+                      {doc.lines.some((l) => l.selected) && (
+                        <span>
+                          Отмечено: {doc.lines.filter((l) => l.selected).length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                },
+              })),
+            ]}
+          />
+        </div>
       </section>
+      {opened && (
+        <TransferDrawer
+          document={opened}
+          selected={selectedIds}
+          onSelection={onSelection}
+          onReject={onReject}
+          onRevoke={onRevoke}
+          onAccept={onAccept}
+          onClose={() => setOpenedDocument(null)}
+          stale={stale}
+          busy={busy}
+          saving={acceptingDisabled}
+          error={error}
+        />
+      )}
     </>
   );
 }
