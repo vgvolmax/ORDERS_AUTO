@@ -10,6 +10,7 @@ import {
   type MovementSummary,
 } from '../../domain/rebalancing';
 import { fmtQty } from '../demand/DemandPage';
+import { normalizeKey } from '../../domain/normalize';
 export function AcceptedMovementsPopover({
   summary,
   onOpenRebalancing,
@@ -132,14 +133,30 @@ export function MovementIndicator({
           onClose={() => setOpen(false)}
           onOpenRebalancing={() => {
             setOpen(false);
-            set((s) => ({
-              page: 'rebalancing',
-              rebalance: {
-                ...s.rebalance,
-                tab: 'results',
-                query: scope.skuCode ?? '',
-              },
-            }));
+            set((s) => {
+              const branchId =
+                scope.branchId ??
+                s.rebalance.registry.find(
+                  (branch) =>
+                    scope.branch &&
+                    [branch.name, ...branch.aliases].some(
+                      (name) =>
+                        normalizeKey(name) === normalizeKey(scope.branch!),
+                    ),
+                )?.id;
+              return {
+                page: 'rebalancing',
+                rebalance: {
+                  ...s.rebalance,
+                  tab: 'results',
+                  query: scope.skuCode ?? '',
+                  resultScope: {
+                    ...(scope.skuCode ? { skuCode: scope.skuCode } : {}),
+                    ...(branchId ? { branchId } : {}),
+                  },
+                },
+              };
+            });
           }}
         />
       )}

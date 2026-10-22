@@ -35,6 +35,7 @@ export function createInitialState(patch: Partial<AppState> = {}): AppState {
       rejectedLineIds: [],
       tab: 'conditions',
       query: '',
+      resultScope: {},
       config: {
         recipientTrigger: 'BELOW_MIN',
         receiverPct: 100,

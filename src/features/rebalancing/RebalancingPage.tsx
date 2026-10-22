@@ -52,10 +52,14 @@ export function RebalancingPage() {
     state.workspaceId,
     (value) => save((s) => ({ rebalance: { ...s.rebalance, config: value } })),
   );
-  const [query, changeQuery] = useDurableDraft(
-    r.query,
+  const persistedFilters = useMemo(
+    () => ({ query: r.query, resultScope: r.resultScope ?? {} }),
+    [r.query, r.resultScope],
+  );
+  const [filters, changeFilters] = useDurableDraft(
+    persistedFilters,
     state.workspaceId,
-    (value) => save((s) => ({ rebalance: { ...s.rebalance, query: value } })),
+    (value) => save((s) => ({ rebalance: { ...s.rebalance, ...value } })),
   );
   const persistedDecisions = useMemo(
     () => ({
@@ -331,8 +335,19 @@ export function RebalancingPage() {
                 rejected={decisions.rejectedLineIds}
                 registry={r.registry}
                 policies={policies}
-                query={query}
-                onQuery={changeQuery}
+                query={filters.query}
+                scope={filters.resultScope}
+                onQuery={(query) =>
+                  changeFilters({
+                    query,
+                    resultScope: filters.resultScope.branchId
+                      ? { branchId: filters.resultScope.branchId }
+                      : {},
+                  })
+                }
+                onClearScope={() =>
+                  changeFilters({ query: '', resultScope: {} })
+                }
                 onSelection={(selectedLineIds) =>
                   changeDecisions({ ...decisions, selectedLineIds })
                 }

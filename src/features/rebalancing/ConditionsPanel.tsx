@@ -71,6 +71,7 @@ export function ConditionsPanel({
             <Input
               aria-label="Цель получателя"
               type="range"
+              step={5}
               min="0"
               max="100"
               value={config.receiverPct}

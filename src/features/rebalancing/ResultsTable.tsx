@@ -1,6 +1,7 @@
 import { VirtualTable } from '../../components/VirtualTable';
 import { Button, SearchInput } from '../../components/ui';
 import { fmtQty } from '../demand/DemandPage';
+import type { RebalanceResultScope } from '../../domain/workspace';
 import type {
   AcceptedTransfer,
   BranchRegistry,
@@ -16,7 +17,9 @@ export function ResultsTable({
   registry,
   policies,
   query,
+  scope,
   onQuery,
+  onClearScope,
   onSelection,
   onReject,
   onRevoke,
@@ -32,7 +35,9 @@ export function ResultsTable({
   registry: BranchRegistry;
   policies: SkuQuantityPolicy[];
   query: string;
+  scope: RebalanceResultScope;
   onQuery: (q: string) => void;
+  onClearScope: () => void;
   onSelection: (ids: string[]) => void;
   onReject: (id: string) => void;
   onRevoke: (id: string) => void;
@@ -51,6 +56,10 @@ export function ResultsTable({
   );
   const rejectedIds = new Set(rejected);
   const match = (t: RebalanceTransfer | AcceptedTransfer) =>
+    (!scope.skuCode || t.skuCode === scope.skuCode) &&
+    (!scope.branchId ||
+      t.fromBranchId === scope.branchId ||
+      t.toBranchId === scope.branchId) &&
     `${t.skuCode} ${name(t.fromBranchId)} ${name(t.toBranchId)}`
       .toLocaleLowerCase('ru')
       .includes(query.trim().toLocaleLowerCase('ru'));
@@ -92,6 +101,19 @@ export function ResultsTable({
   ];
   return (
     <>
+      {(scope.skuCode || scope.branchId) && (
+        <div
+          className="filters compact-filters"
+          role="group"
+          aria-label="Фильтры перемещений"
+        >
+          {scope.skuCode && <span>Товар: {scope.skuCode}</span>}
+          {scope.branchId && <span>Подразделение: {name(scope.branchId)}</span>}
+          <Button className="secondary" disabled={busy} onClick={onClearScope}>
+            Сбросить фильтры
+          </Button>
+        </div>
+      )}
       <div className="filters">
         <label className="filter-search">
           Поиск по коду и маршруту
@@ -209,7 +231,11 @@ export function ResultsTable({
         <VirtualTable
           rows={accepted.filter(match)}
           getRowKey={(t) => t.transferId}
-          emptyMessage="Принятых перемещений пока нет."
+          emptyMessage={
+            accepted.length
+              ? 'Нет принятых перемещений по выбранным фильтрам.'
+              : 'Принятых перемещений пока нет.'
+          }
           columns={[
             ...columns<AcceptedTransfer>(),
             {

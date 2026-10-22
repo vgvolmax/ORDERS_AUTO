@@ -23,19 +23,28 @@ export function App() {
   const session = useRef<ReturnType<typeof createWorkspaceSession> | null>(
     null,
   );
+  const owner = session.current;
   const commit = async (patch: StatePatch) => {
-    if (!session.current) throw new Error('Локальное хранилище ещё не готово');
+    if (owner !== session.current) return;
+    if (!owner) throw new Error('Локальное хранилище ещё не готово');
     setPending((n) => n + 1);
     try {
-      await session.current.commit(patch);
+      await owner.commit((current) =>
+        owner !== session.current
+          ? {}
+          : typeof patch === 'function'
+          ? patch(current)
+          : patch,
+      );
     } catch (error) {
-      session.current.transient({
-        storageError:
-          error instanceof Error
-            ? error.message
-            : 'Ошибка локального хранилища',
-        toast: 'Изменения не сохранены. Предыдущая версия сеанса сохранена.',
-      });
+      if (owner === session.current)
+        owner.transient({
+          storageError:
+            error instanceof Error
+              ? error.message
+              : 'Ошибка локального хранилища',
+          toast: 'Изменения не сохранены. Предыдущая версия сеанса сохранена.',
+        });
       throw error;
     } finally {
       setPending((n) => n - 1);
@@ -46,23 +55,26 @@ export function App() {
       NonNullable<import('./appStore').Store['restore']>
     >[0],
   ) => {
-    if (!session.current) throw new Error('Локальное хранилище ещё не готово');
+    if (owner !== session.current) return;
+    if (!owner) throw new Error('Локальное хранилище ещё не готово');
     setPending((n) => n + 1);
     try {
-      await session.current.restore(workspace);
+      await owner.restore(workspace);
     } catch (error) {
-      session.current.transient({
-        storageError:
-          error instanceof Error
-            ? error.message
-            : 'Ошибка восстановления сеанса',
-      });
+      if (owner === session.current)
+        owner.transient({
+          storageError:
+            error instanceof Error
+              ? error.message
+              : 'Ошибка восстановления сеанса',
+        });
       throw error;
     } finally {
       setPending((n) => n - 1);
     }
   };
   const set = (patch: StatePatch) => {
+    if (owner !== session.current) return;
     if (
       typeof patch !== 'function' &&
       Object.keys(patch).every((key) =>
@@ -71,13 +83,18 @@ export function App() {
         ),
       )
     ) {
-      session.current?.transient(patch);
+      if (owner?.getState().importEpoch === state.importEpoch)
+        owner.transient(patch);
       return;
     }
     void commit(patch).catch(() => undefined);
   };
   useEffect(() => {
     let cancelled = false;
+    const importEpoch =
+      (session.current?.getState().importEpoch ?? state.importEpoch) + 1;
+    // Invalidate callbacks from the previous owner before reading storage.
+    session.current = null;
     setInitializing(true);
     void (async () => {
       try {
@@ -89,11 +106,16 @@ export function App() {
               settings: await getSettings(),
             });
         if (!cancelled) {
-          session.current = createWorkspaceSession({
-            initial,
-            save: saveWorkspace,
-            publish: setState,
-          });
+          initial.importEpoch = importEpoch;
+          const nextSession: ReturnType<typeof createWorkspaceSession> =
+            createWorkspaceSession({
+              initial,
+              save: saveWorkspace,
+              publish: (next) => {
+                if (session.current === nextSession) setState(next);
+              },
+            });
+          session.current = nextSession;
           setState(initial);
         }
       } catch (error) {
@@ -111,6 +133,7 @@ export function App() {
     })();
     return () => {
       cancelled = true;
+      session.current = null;
     };
   }, [retry]);
 

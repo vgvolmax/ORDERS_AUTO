@@ -172,6 +172,12 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     fullPage: true,
   });
   await page.getByRole('tab', { name: 'Условия' }).click();
+  const receiverTarget = page.getByRole('slider', { name: 'Цель получателя' });
+  await receiverTarget.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(receiverTarget).toHaveValue('95');
+  await page.keyboard.press('ArrowRight');
+  await expect(receiverTarget).toHaveValue('100');
   await page
     .getByLabel('Получатель', { exact: true })
     .selectOption('BELOW_MAX');
@@ -240,7 +246,21 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await page.screenshot({
     path: testInfo.outputPath('02-movement-popup-1280.png'),
   });
-  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Открыть ребалансировку' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Ребалансировка', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Подразделение: Получатель', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Отменить принятие SKU1/ }),
+  ).toHaveCount(1);
+  await page.screenshot({
+    path: testInfo.outputPath('06-scoped-results-1280.png'),
+    fullPage: true,
+  });
+  await page.getByRole('button', { name: 'Сбросить фильтры' }).click();
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Поставщики', exact: true }),

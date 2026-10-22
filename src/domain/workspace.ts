@@ -13,6 +13,10 @@ import type {
   RebalanceProposal,
   AcceptedTransfer,
 } from './rebalancing/types';
+export interface RebalanceResultScope {
+  skuCode?: string;
+  branchId?: string;
+}
 export interface RebalanceWorkspace {
   registry: BranchRegistry;
   policies: SkuQuantityPolicy[];
@@ -24,6 +28,7 @@ export interface RebalanceWorkspace {
   rejectedLineIds: string[];
   tab: 'routes' | 'conditions' | 'results';
   query: string;
+  resultScope?: RebalanceResultScope;
 }
 export interface ImportFileRef {
   fileId: string;
