@@ -175,6 +175,51 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   await expect(
     choice.locator('option').filter({ hasText: hidden }),
   ).toHaveCount(0);
+  const expectDecisionLayout = async () => {
+    const row = page.locator('.decision').filter({ hasText: 'Код SKU3' });
+    const check = await row.getByRole('checkbox').boundingBox();
+    const identity = await row.locator(':scope > div').first().boundingBox();
+    const select = await choice.boundingBox();
+    expect(check).not.toBeNull();
+    expect(identity).not.toBeNull();
+    expect(select).not.toBeNull();
+    expect(check!.x + check!.width).toBeLessThan(identity!.x);
+    expect(identity!.x + identity!.width).toBeLessThan(select!.x);
+    expect(
+      Math.abs(
+        check!.y + check!.height / 2 - identity!.y - identity!.height / 2,
+      ),
+    ).toBeLessThan(2);
+    expect(
+      Math.abs(
+        select!.y + select!.height / 2 - identity!.y - identity!.height / 2,
+      ),
+    ).toBeLessThan(2);
+    const labels = await page
+      .locator('.supplier-auto-toolbar > label')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const rect = node.getBoundingClientRect();
+          return { x: rect.x, right: rect.right };
+        }),
+      );
+    expect(labels).toHaveLength(3);
+    expect(labels[1]!.x - labels[0]!.right).toBeGreaterThanOrEqual(8);
+    expect(labels[2]!.x - labels[1]!.right).toBeGreaterThanOrEqual(8);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  };
+  await expectDecisionLayout();
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await expectDecisionLayout();
+  await page.screenshot({
+    path: testInfo.outputPath('12-supplier-decisions-1024.png'),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
   await choice.focus();
   await page.keyboard.press('Space');
   await page.screenshot({

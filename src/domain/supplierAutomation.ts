@@ -3,9 +3,29 @@ import type {
   SupplierOverride,
   SupplierResolution,
 } from './types';
+import type { PurchaseDemandLine } from './purchaseDemand';
 
 export type SupplierAutoStrategy = 'MIN_PRICE';
 export type SupplierAutoScope = 'ALL' | 'SELECTED' | 'EXCEPT_SELECTED';
+
+export function getSupplierDecisionPool(
+  resolutions: SupplierResolution[],
+  demand: Pick<PurchaseDemandLine, 'skuCode' | 'purchaseQty'>[],
+): SupplierResolution[] {
+  const needed = new Set(
+    demand.filter((line) => line.purchaseQty > 0).map((line) => line.skuCode),
+  );
+  return resolutions.filter(
+    (resolution) =>
+      needed.has(resolution.skuCode) &&
+      [
+        'MANUAL_REQUIRED',
+        'STALE_OVERRIDE',
+        'UNRESOLVED',
+        'MANUAL_SELECTED',
+      ].includes(resolution.status),
+  );
+}
 
 interface BuildAutoSupplierOverridesInput {
   resolutions: SupplierResolution[];
