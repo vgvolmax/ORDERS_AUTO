@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
+import { derive } from '../../app/selectors';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
 import { SUPPLIER_POOL } from '../../domain/supplierPool';
 import { ThresholdControls } from '../../components/ThresholdControls';
@@ -16,6 +17,7 @@ import {
 } from '../../components/ui';
 import {
   buildAutoSupplierOverrides,
+  getSupplierDecisionPool,
   type SupplierAutoScope,
   type SupplierAutoStrategy,
 } from '../../domain/supplierAutomation';
@@ -75,30 +77,15 @@ export function SuppliersPage() {
     false,
   );
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [manualBusyCode, setManualBusyCode] = useState<string | null>(null);
+  const supplierOperation = useRef(false);
 
-  const neededSkuCodes = useMemo(
-    () =>
-      new Set(
-        derived.purchaseDemand
-          .filter((line) => line.purchaseQty > 0)
-          .map((line) => line.skuCode),
-      ),
-    [derived.purchaseDemand],
+  const operationPool = getSupplierDecisionPool(
+    derived.resolutions,
+    derived.purchaseDemand,
   );
-
-  const problems = derived.resolutions.filter(
-    (resolution) =>
-      neededSkuCodes.has(resolution.skuCode) &&
-      ['MANUAL_REQUIRED', 'STALE_OVERRIDE', 'UNRESOLVED'].includes(
-        resolution.status,
-      ),
-  );
-
-  const operationPool = derived.resolutions.filter(
-    (resolution) =>
-      neededSkuCodes.has(resolution.skuCode) &&
-      (problems.includes(resolution) ||
-        resolution.status === 'MANUAL_SELECTED'),
+  const problems = operationPool.filter(
+    (resolution) => resolution.status !== 'MANUAL_SELECTED',
   );
   const problemSkuCodes = new Set(problems.map((problem) => problem.skuCode));
   const problemDemand = derived.purchaseDemand.filter(
@@ -166,6 +153,9 @@ export function SuppliersPage() {
     resolution: SupplierResolution,
     supplier: string,
   ): Promise<void> {
+    if (supplierOperation.current) return;
+    supplierOperation.current = true;
+    setManualBusyCode(resolution.skuCode);
     const override: SupplierOverride = {
       skuCode: resolution.skuCode,
       supplier,
@@ -184,17 +174,39 @@ export function SuppliersPage() {
         toast:
           'Не удалось сохранить выбор поставщика. Предыдущий выбор сохранён.',
       });
+    } finally {
+      supplierOperation.current = false;
+      setManualBusyCode(null);
     }
   }
 
   async function applyAutomation(): Promise<void> {
-    if (!autoOverrides.length || bulkBusy) return;
+    if (!autoOverrides.length || supplierOperation.current) return;
+    supplierOperation.current = true;
     setBulkBusy(true);
     try {
-      const patch = (s: typeof state) => ({
-        overrides: mergeOverrides(s.overrides, autoOverrides),
-        toast: `Автоматически назначено: ${autoOverrides.length}.`,
-      });
+      const patch = (s: typeof state) => {
+        // Earlier queued writes may have changed manual choices, prices or demand.
+        // The preview is advisory; permission to overwrite is checked at commit.
+        const current = derive(s);
+        const fresh = buildAutoSupplierOverrides({
+          resolutions: getSupplierDecisionPool(
+            current.resolutions,
+            current.purchaseDemand,
+          ),
+          currentOverrides: s.overrides,
+          selectedSkuCodes,
+          scope: autoScope,
+          strategy: autoStrategy,
+          overwriteManual,
+        });
+        return fresh.length
+          ? {
+              overrides: mergeOverrides(s.overrides, fresh),
+              toast: `Автоматически назначено: ${fresh.length}.`,
+            }
+          : { toast: 'Подходящих позиций для автовыбора не осталось.' };
+      };
       if (commit) await commit(patch);
       else set(patch(state));
       setSelectedSkuCodes(new Set());
@@ -204,6 +216,7 @@ export function SuppliersPage() {
           'Не удалось сохранить массовый выбор поставщиков. Повторите действие.',
       });
     } finally {
+      supplierOperation.current = false;
       setBulkBusy(false);
     }
   }
@@ -262,6 +275,7 @@ export function SuppliersPage() {
           onOverwriteManualChange={setOverwriteManual}
           previewCount={autoOverrides.length}
           bulkBusy={bulkBusy}
+          manualBusyCode={manualBusyCode}
           onApplyAutomation={applyAutomation}
           onChoose={choose}
         />
@@ -362,6 +376,7 @@ function SupplierDecisions({
   onOverwriteManualChange,
   previewCount,
   bulkBusy,
+  manualBusyCode,
   onApplyAutomation,
   onChoose,
 }: {
@@ -380,9 +395,11 @@ function SupplierDecisions({
   onOverwriteManualChange: (overwrite: boolean) => void;
   previewCount: number;
   bulkBusy: boolean;
+  manualBusyCode: string | null;
   onApplyAutomation: () => void;
   onChoose: (resolution: SupplierResolution, supplier: string) => void;
 }) {
+  const supplierBusy = bulkBusy || manualBusyCode !== null;
   const displayedProblems = overwriteManual ? operationPool : problems;
   const allSelected =
     displayedProblems.length > 0 &&
@@ -407,7 +424,10 @@ function SupplierDecisions({
   }
 
   return (
-    <section className="panel supplier-decisions-panel">
+    <section
+      className="panel supplier-decisions-panel"
+      aria-busy={supplierBusy}
+    >
       <div className="decision-panel-head">
         <div>
           <h2>
@@ -441,6 +461,7 @@ function SupplierDecisions({
               <Select
                 aria-label="Стратегия автовыбора"
                 value={strategy}
+                disabled={supplierBusy}
                 onChange={(event) =>
                   onStrategyChange(event.target.value as SupplierAutoStrategy)
                 }
@@ -452,6 +473,7 @@ function SupplierDecisions({
               <input
                 type="checkbox"
                 checked={overwriteManual}
+                disabled={supplierBusy}
                 onChange={(event) =>
                   onOverwriteManualChange(event.target.checked)
                 }
@@ -463,6 +485,7 @@ function SupplierDecisions({
               <Select
                 aria-label="Область применения"
                 value={scope}
+                disabled={supplierBusy}
                 onChange={(event) =>
                   onScopeChange(event.target.value as SupplierAutoScope)
                 }
@@ -476,7 +499,7 @@ function SupplierDecisions({
               Будет назначено: <strong>{previewCount}</strong>
             </div>
             <Button
-              disabled={previewCount === 0 || bulkBusy}
+              disabled={previewCount === 0 || supplierBusy}
               onClick={onApplyAutomation}
             >
               {bulkBusy ? 'Сохраняем…' : 'Применить автовыбор'}
@@ -489,6 +512,7 @@ function SupplierDecisions({
                 type="checkbox"
                 aria-label="Выбрать все позиции"
                 checked={allSelected}
+                disabled={supplierBusy}
                 onChange={(event) => toggleAll(event.target.checked)}
               />
               Отметить все
@@ -504,6 +528,7 @@ function SupplierDecisions({
                     type="checkbox"
                     aria-label={`Выбрать ${resolution.skuCode}`}
                     checked={selectedSkuCodes.has(resolution.skuCode)}
+                    disabled={supplierBusy}
                     onChange={(event) =>
                       toggleOne(resolution.skuCode, event.target.checked)
                     }
@@ -521,32 +546,38 @@ function SupplierDecisions({
                 </div>
 
                 {resolution.candidates.length > 0 ? (
-                  <Select
-                    aria-label={`Поставщик ${resolution.skuCode}`}
-                    value=""
-                    onChange={(event) =>
-                      onChoose(resolution, event.target.value)
-                    }
-                  >
-                    <option value="">Выберите поставщика…</option>
-                    {resolution.candidates.map((candidate) => (
-                      <option
-                        key={candidate.supplier}
-                        value={candidate.supplier}
-                      >
-                        {candidate.supplier}
-                        {candidate.supplier === resolution.recommendedSupplier
-                          ? ' — рекомендуемый'
-                          : ''}
-                        {' · '}
-                        {fmtQty(candidate.purchaseQty)} ед. ·{' '}
-                        {money(candidate.purchaseAmount)} ·{' '}
-                        {candidate.weightedUnitCost == null
-                          ? 'нет цены'
-                          : money(candidate.weightedUnitCost)}
-                      </option>
-                    ))}
-                  </Select>
+                  <div className="decision-supplier">
+                    <Select
+                      aria-label={`Поставщик ${resolution.skuCode}`}
+                      value=""
+                      disabled={supplierBusy}
+                      onChange={(event) =>
+                        onChoose(resolution, event.target.value)
+                      }
+                    >
+                      <option value="">Выберите поставщика…</option>
+                      {resolution.candidates.map((candidate) => (
+                        <option
+                          key={candidate.supplier}
+                          value={candidate.supplier}
+                        >
+                          {candidate.supplier}
+                          {candidate.supplier === resolution.recommendedSupplier
+                            ? ' — рекомендуемый'
+                            : ''}
+                          {' · '}
+                          {fmtQty(candidate.purchaseQty)} ед. ·{' '}
+                          {money(candidate.purchaseAmount)} ·{' '}
+                          {candidate.weightedUnitCost == null
+                            ? 'нет цены'
+                            : money(candidate.weightedUnitCost)}
+                        </option>
+                      ))}
+                    </Select>
+                    {manualBusyCode === resolution.skuCode && (
+                      <small role="status">Сохраняем выбор…</small>
+                    )}
+                  </div>
                 ) : (
                   <span className="danger-text">Только ручное уточнение</span>
                 )}
