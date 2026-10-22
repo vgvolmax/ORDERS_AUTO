@@ -200,8 +200,28 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     .click();
   await page.getByRole('button', { name: 'Рассчитать перемещения' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Предложения · 2' }),
+    page.getByRole('heading', { name: 'Перемещения по направлениям · 2' }),
   ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('07-transfer-matrix-1280.png'),
+    fullPage: true,
+  });
+  const routeA = page.getByRole('button', {
+    name: 'Открыть перемещение Донор А → Получатель',
+  });
+  await routeA.focus();
+  await page.keyboard.press('Enter');
+  const transferDrawer = page.getByRole('dialog', {
+    name: 'Состав перемещения',
+  });
+  await expect(transferDrawer).toContainText('Товар для перемещения');
+  await expect(transferDrawer).toContainText('A1');
+  await expect(transferDrawer).toContainText('75 → 60');
+  await expect(transferDrawer).toContainText('10 → 25');
+  await expect(transferDrawer.getByRole('spinbutton')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(routeA).toBeFocused();
+  await routeA.click();
   await page
     .getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор А/ })
     .click();
@@ -212,8 +232,12 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     path: testInfo.outputPath('01-selected-1280.png'),
     fullPage: true,
   });
-  await page.getByRole('button', { name: 'Принять выбранные (1)' }).click();
-  await expect(page.getByRole('dialog')).toContainText('50 → 35');
+  await transferDrawer
+    .getByRole('button', { name: 'Принять выбранные в перемещении (1)' })
+    .click();
+  await expect(
+    page.getByRole('dialog', { name: 'Принять выбранные перемещения' }),
+  ).toContainText('50 → 35');
   await page.screenshot({
     path: testInfo.outputPath('05-acceptance-1280.png'),
     fullPage: true,
@@ -222,8 +246,16 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     .getByRole('button', { name: 'Принять перемещения', exact: true })
     .click();
   await expect(
-    page.getByRole('heading', { name: 'Учтённые перемещения · 1' }),
+    transferDrawer.getByText('Принято', { exact: true }),
   ).toBeVisible();
+  await expect(transferDrawer).toContainText('75 → 60');
+  await page.screenshot({
+    path: testInfo.outputPath('08-accepted-transfer-1280.png'),
+  });
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', { name: 'Открыть перемещение Донор Б → Получатель' })
+    .click();
   // An additional selected proposal remains unapplied across navigation and reload.
   await page
     .getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор Б/ })
@@ -231,6 +263,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await expect(
     page.getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор Б/ }),
   ).toBeChecked();
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Получатель', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Получатель', exact: true }),
@@ -253,9 +286,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await expect(
     page.getByText('Подразделение: Получатель', { exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: /Отменить принятие SKU1/ }),
-  ).toHaveCount(1);
+  await expect(page.getByText(/Учтено строк по фильтрам: 1/)).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath('06-scoped-results-1280.png'),
     fullPage: true,
@@ -317,9 +348,23 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await page
     .getByRole('button', { name: 'Ребалансировка', exact: true })
     .click();
+  await page
+    .getByRole('button', { name: 'Открыть перемещение Донор Б → Получатель' })
+    .click();
   await expect(
     page.getByRole('checkbox', { name: /Выбрать перемещение SKU1 Донор Б/ }),
   ).toBeChecked();
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await expect(transferDrawer).toBeVisible();
+  await expect(
+    transferDrawer.getByRole('button', { name: 'Закрыть карточку' }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('09-transfer-narrow-1024.png'),
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.keyboard.press('Escape');
+
   const rebalanceDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Excel ребалансировки' }).click();
   const exported = await rebalanceDownload,
@@ -341,14 +386,28 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     .getByRole('button', { name: 'Восстановить', exact: true })
     .click();
   await page.getByRole('button', { name: 'Восстановить копию' }).click();
+  await expect(page.getByText(/Учтено строк по фильтрам: 1/)).toBeVisible();
+  await page.getByRole('button', { name: 'Рассчитать перемещения' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Учтённые перемещения · 1' }),
-  ).toBeVisible();
+    page.getByRole('button', { name: 'Рассчитать перемещения' }),
+  ).toBeEnabled();
+  await page
+    .getByRole('button', { name: 'Открыть перемещение Донор А → Получатель' })
+    .click();
   await page.getByRole('button', { name: /Отменить принятие SKU1/ }).click();
-  await expect(page.getByRole('dialog')).toContainText('ручные количества');
+  await expect(
+    page.getByRole('dialog', { name: 'Отменить принятие перемещения' }),
+  ).toContainText('ручные количества');
   await page
     .getByRole('button', { name: 'Отменить принятие', exact: true })
     .click();
+  await expect(
+    page.getByRole('dialog', { name: 'Отменить принятие перемещения' }),
+  ).toHaveCount(0);
+  await expect(transferDrawer).toContainText(
+    'В этом направлении больше нет позиций.',
+  );
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Получатель', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Получатель', exact: true }),

@@ -31,6 +31,18 @@ export function RebalancingPage() {
     { state, set, saving } = store,
     d = useDerivedState(state),
     r = state.rebalance;
+  const proposedCount = useMemo(() => {
+    const acceptedSources = new Set(
+      r.accepted
+        .filter((line) => line.sourceRunId === r.proposal?.runId)
+        .map((line) => line.sourceLineId),
+    );
+    return (
+      r.proposal?.transfers.filter(
+        (line) => !acceptedSources.has(line.sourceLineId),
+      ).length ?? 0
+    );
+  }, [r.accepted, r.proposal]);
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<{
@@ -241,10 +253,7 @@ export function RebalancingPage() {
         </div>
       </header>
       <div className="metrics metrics-three">
-        <MetricCard
-          label="Предложено строк"
-          value={r.proposal?.transfers.length ?? 0}
-        />
+        <MetricCard label="Предложено строк" value={proposedCount} />
         <MetricCard label="Принято строк" value={r.accepted.length} />
         <MetricCard
           label="Отмечено строк"
@@ -329,12 +338,17 @@ export function RebalancingPage() {
           {r.tab === 'results' && (
             <>
               <ResultsTable
+                key={`${state.workspaceId}:${state.snapshotId}:${
+                  r.proposal?.runId ?? ''
+                }`}
                 proposal={r.proposal}
                 accepted={r.accepted}
                 selected={decisions.selectedLineIds}
                 rejected={decisions.rejectedLineIds}
                 registry={r.registry}
                 policies={policies}
+                skus={state.minMax?.skus ?? []}
+                snapshot={d.snapshot?.snapshot ?? null}
                 query={filters.query}
                 scope={filters.resultScope}
                 onQuery={(query) =>
@@ -362,17 +376,16 @@ export function RebalancingPage() {
                   })
                 }
                 onRevoke={(id) => open('revoke', [id])}
-                onAccept={() =>
+                onAccept={(ids) =>
                   open(
                     'accept',
-                    r.selectedLineIds.filter(
-                      (id) => !r.rejectedLineIds.includes(id),
-                    ),
+                    ids.filter((id) => !r.rejectedLineIds.includes(id)),
                   )
                 }
                 stale={stale}
                 busy={busy}
                 acceptingDisabled={Boolean(saving)}
+                error={confirmation ? '' : error}
               />
               {issues.length > 0 && (
                 <details className="panel">

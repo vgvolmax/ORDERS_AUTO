@@ -12,7 +12,7 @@ ORDERS_AUTO — русский локальный инструмент заку�
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
-| Table Selection | ResultsTable / SupplierDecisions | persisted selectedLineIds / uiPreferences | Видимые предложения; supplier scope явно выбирается | acceptTransfers.test.tsx; offline.spec.ts |
+| Table Selection | ResultsTable / TransferDrawer / SupplierDecisions | persisted selectedLineIds / uiPreferences | Видимые предложения; действие карточки ограничено её видимыми отмеченными позициями; общий счётчик включает скрытый выбор | transferInspector.test.tsx; acceptTransfers.test.tsx; offline.spec.ts |
 | Select/Listbox | components/ui.tsx Select | native HTML select | OS popup принят для компактных настроек и русских option labels; без авторского popup | rebalancingPage.test.tsx; browser keyboard |
 | Form | ConditionsPanel / PolicyEditor / QuantityInput | domain validation + app commit | inline settings; explicit save for unit/step; noValidate | rebalancingPage.test.tsx |
 | Scrollbar | styles/app.css | глобальные scrollbar-color/width | Таблицы имеют собственный горизонтальный/вертикальный scroll | offline screenshots |
@@ -30,6 +30,10 @@ ORDERS_AUTO — русский локальный инструмент заку�
 Переход из пояснения в результаты сохраняет точный SKU и стабильный ID подразделения (любой конец маршрута). Оба ограничения видимы, сохраняются в сеансе и снимаются кнопкой «Сбросить фильтры». Очистка/изменение поиска снимает точное ограничение SKU, сохраняя подразделение. Фильтры не меняют решения по перемещениям и экспортируемые заказы.
 
 ## Flow ledger
+
+Результаты ребалансировки представлены матрицей направлений: отправители по строкам, получатели по столбцам. Ячейка открывает «Состав перемещения» с теми же drawer styles, portal и useModalLayer, что состав заказа. Количество только для просмотра. Карточка показывает Код1С, артикул, название, единицу, справочную цену MIN/MAX и сумму, остатки/MIN/MAX обеих сторон. Для предложения показано «с принятыми → после принятия только этой строки»; для принятой строки — «по отчёту → со всеми принятыми». Другие непринятые предложения в остатки не подмешиваются. Неизвестная цена остаётся неизвестной; количества разных единиц не суммируются вместе; отклонённые строки не входят в итоги количества и суммы.
+
+Поиск основной матрицы учитывает код, артикул, название и маршрут, включая сохранённый точный SKU/подразделение из поп-апа. Локальный поиск карточки временный, как открытый drawer заказа. Выбор скрытых позиций сохраняется; «Принять выбранные в перемещении» принимает только видимые отмеченные строки этой карточки. Общая кнопка с общим счётчиком продолжает принимать весь отмеченный набор. Подтверждение и ошибки остаются над карточкой. Изменение рабочего снимка или новый расчёт закрывают старую карточку; частичное принятие и отмена обновляют её без двойного учёта. Источник сценария — запрос оператора22.10.2026; физические ограничения и закупка по integration spec20.10 остаются прежними.
 
 | Operation | Trigger | Pending | Success destination | Failure recovery | Focus outcome | Source ref |
 |---|---|---|---|---|---|---|

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { App } from '../../src/app/App';
@@ -80,9 +86,26 @@ it.each([
       screen.getByRole('button', { name: 'Открыть ребалансировку' }),
     );
     await screen.findByRole('heading', { name: 'Ребалансировка' });
-    const movements = () =>
-      screen.getAllByRole('button', { name: /Отменить принятие SKU/ });
-    expect(movements()).toHaveLength(count);
+    const movementCount = () => {
+      let count = 0;
+      const triggers = screen.getAllByRole('button', {
+        name: /Открыть перемещение/,
+      });
+      for (const trigger of triggers) {
+        fireEvent.click(trigger);
+        const drawer = screen.getByRole('dialog', {
+          name: 'Состав перемещения',
+        });
+        count += within(drawer).queryAllByRole('button', {
+          name: /Отменить принятие SKU/,
+        }).length;
+        fireEvent.click(
+          within(drawer).getByRole('button', { name: 'Закрыть' }),
+        );
+      }
+      return count;
+    };
+    expect(movementCount()).toBe(count);
     expect(screen.getByText(`Подразделение: ${branch}`)).toBeVisible();
     const saved = (await loadActiveWorkspace())!;
     expect(saved.data.rebalance.resultScope).toEqual({
@@ -92,12 +115,12 @@ it.each([
     view.unmount();
     render(<App />);
     await screen.findByRole('heading', { name: 'Ребалансировка' });
-    expect(movements()).toHaveLength(count);
+    expect(movementCount()).toBe(count);
     fireEvent.click(screen.getByRole('button', { name: 'Очистить поиск' }));
-    expect(movements()).toHaveLength(count * 2);
+    expect(movementCount()).toBe(count * 2);
     expect(screen.getByText(`Подразделение: ${branch}`)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Сбросить фильтры' }));
-    expect(movements()).toHaveLength(4);
+    expect(movementCount()).toBe(4);
     await waitFor(() =>
       expect(screen.queryByText('Сохранение сеанса…')).not.toBeInTheDocument(),
     );
