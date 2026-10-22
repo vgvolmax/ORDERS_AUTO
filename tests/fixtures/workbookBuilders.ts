@@ -30,15 +30,24 @@ export function buildMinMaxFixture(): ArrayBuffer {
   ]);
 }
 
-export function buildSupplierFixture(bookType: 'xls' | 'xlsx' = 'xlsx'): ArrayBuffer {
+export function buildSupplierFixture(
+  bookType: 'xls' | 'xlsx' = 'xlsx',
+): ArrayBuffer {
   return buildWorkbook(
     [
-      ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
-      ['Поставщик А', null, null, null, null, null],
+      [
+        'Контрагент',
+        'Код',
+        'Номенклатура',
+        'Количество',
+        'Стоимость',
+        'Ед. изм.',
+      ],
+      ['ИП Баранов Роман Борисович', null, null, null, null, null],
       [null, 'SKU1', 'Товар 1', 2, 220, 'шт'],
       [null, 'SKU1', 'Товар 1', 3, 330, 'шт'],
       ['Итого', null, null, 5, 550, null],
-      ['Поставщик Б', 'SKU2', 'Товар 2', 4, 800, 'шт'],
+      ['ИП Никишин Андрей Николаевич', 'SKU2', 'Товар 2', 4, 800, 'шт'],
     ],
     bookType,
   );

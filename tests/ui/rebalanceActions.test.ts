@@ -30,11 +30,11 @@ function state() {
     })),
   };
   s.suppliers = {
-    suppliers: ['S'],
+    suppliers: ['ИП Баранов Роман Борисович'],
     history: [
       {
         skuCode: '00001',
-        supplier: 'S',
+        supplier: 'ИП Баранов Роман Борисович',
         skuName: 'Товар',
         unit: 'шт',
         purchaseQty: 1,

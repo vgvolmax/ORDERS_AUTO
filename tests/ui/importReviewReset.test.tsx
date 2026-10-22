@@ -14,8 +14,8 @@ describe('report import review invalidation', () => {
     renderWithStore(
       <ImportPage />,
       baseState({
-        reviewedOrderIds: ['Ленина\0Поставщик А'],
-        exportedOrderIds: ['Ленина\0Поставщик А'],
+        reviewedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
+        exportedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
       }),
       set,
     );
@@ -45,8 +45,8 @@ describe('report import review invalidation', () => {
     renderWithStore(
       <ImportPage />,
       baseState({
-        reviewedOrderIds: ['Ленина\0Поставщик А'],
-        exportedOrderIds: ['Ленина\0Поставщик А'],
+        reviewedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
+        exportedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
       }),
       set,
     );

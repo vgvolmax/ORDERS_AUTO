@@ -98,6 +98,135 @@ test('E2E-06 package remains portable across a path with spaces and Cyrillic', a
   }
 });
 
+test('E2E-08 only approved suppliers are selectable and exported after offline reload', async ({
+  page,
+}, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const { readFile } = await import('node:fs/promises');
+  const { default: JSZip } = await import('jszip');
+  const evidence = observeRuntime(page);
+  const allowed = 'ИП Баранов Роман Борисович';
+  const secondAllowed = 'ИП Никишин Андрей Николаевич';
+  const hidden = 'ООО Скрытый поставщик';
+  await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  const min = buildWorkbook([
+    [
+      'Код',
+      'Артикул',
+      'Номенклатура',
+      'Количество',
+      'Минимальный остаток',
+      'Максимальный остаток',
+      'Цена',
+    ],
+    ...['SKU1', 'SKU2', 'SKU3'].flatMap((code) => [
+      [code, code, `Товар ${code}`, 0, 2, 10, 100],
+      [null, null, 'Ленина', 0, 2, 10, null],
+    ]),
+  ]);
+  const suppliers = buildWorkbook([
+    [
+      'Контрагент',
+      'Код',
+      'Номенклатура',
+      'Количество',
+      'Стоимость',
+      'Ед. изм.',
+    ],
+    [allowed, 'SKU1', 'Товар SKU1', 10, 1000, 'шт'],
+    [hidden, 'SKU1', 'Товар SKU1', 100, 1, 'шт'],
+    [hidden, 'SKU2', 'Товар SKU2', 10, 1, 'шт'],
+    [allowed, 'SKU3', 'Товар SKU3', 10, 1000, 'шт'],
+    [secondAllowed, 'SKU3', 'Товар SKU3', 10, 900, 'шт'],
+    [hidden, 'SKU3', 'Товар SKU3', 100, 1, 'шт'],
+  ]);
+  for (const [label, name, bytes] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'sup.xlsx', suppliers],
+  ] as const) {
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: Buffer.from(bytes),
+    });
+  }
+  await expect(
+    page.getByText(/2 поставщиков в рабочем пуле · скрыто: 1/),
+  ).toBeVisible();
+  await expect(page.getByText(/Нет поставщика:/)).toContainText('1');
+  await expect(page.getByText(/Несколько поставщиков:/)).toContainText('1');
+  await page.getByRole('button', { name: 'Перейти к потребности' }).click();
+  const filter = page.getByRole('combobox', { name: 'Поставщик', exact: true });
+  await expect(filter.locator('option')).toHaveText([
+    'Все поставщики',
+    'Не выбран поставщик',
+    allowed,
+    secondAllowed,
+  ]);
+  await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  await expect(page.getByText(/Рабочий пул: 32 поставщика/)).toBeVisible();
+  await expect(page.getByText('Код SKU2', { exact: true })).toBeVisible();
+  await expect(page.getByText(/В рабочем пуле нет истории/)).toBeVisible();
+  const choice = page.getByRole('combobox', { name: 'Поставщик SKU3' });
+  await expect(choice.locator('option')).toHaveCount(3);
+  await expect(
+    choice.locator('option').filter({ hasText: hidden }),
+  ).toHaveCount(0);
+  await choice.focus();
+  await page.keyboard.press('Space');
+  await page.screenshot({
+    path: testInfo.outputPath('10-approved-supplier-select-1280.png'),
+    fullPage: true,
+  });
+  await page.keyboard.press('Escape');
+  await choice.selectOption(secondAllowed);
+  await expect(choice).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Поставщики', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('Код SKU2', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('combobox', { name: 'Поставщик SKU3' }),
+  ).toHaveCount(0);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.screenshot({
+    path: testInfo.outputPath('11-approved-suppliers-narrow-1024.png'),
+    fullPage: true,
+  });
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: `Все заказы ${allowed}`, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: `Все заказы ${secondAllowed}`,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText(hidden, { exact: true })).toHaveCount(0);
+  const downloadPromise = page.waitForEvent('download');
+  await page
+    .getByRole('button', { name: 'Скачать все (2)', exact: true })
+    .click();
+  const download = await downloadPromise;
+  const zip = await JSZip.loadAsync(await readFile((await download.path())!));
+  const csvFiles = Object.values(zip.files).filter((entry) => !entry.dir);
+  expect(csvFiles).toHaveLength(2);
+  for (const entry of csvFiles) {
+    const csv = await entry.async('string');
+    expect(entry.name).not.toContain(hidden);
+    expect(csv).not.toContain(hidden);
+    expect(csv).not.toContain('SKU2');
+  }
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
 test('E2E-07 accepted movements drive orders, export and survive reload offline', async ({
   page,
 }, testInfo) => {
@@ -135,7 +264,14 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
       'Стоимость',
       'Ед. изм.',
     ],
-    ['Поставщик', 'SKU1', 'Товар для перемещения', 1, 100, 'шт'],
+    [
+      'ИП Баранов Роман Борисович',
+      'SKU1',
+      'Товар для перемещения',
+      1,
+      100,
+      'шт',
+    ],
   ]);
   await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles({
     name: 'min.xlsx',
@@ -323,7 +459,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await readWorkbook((await xlsx.path())!));
   expect(workbook.getWorksheet('Получатель')!.getCell('D2').value).toBe(40);
-  await page.getByRole('button', { name: /Все заказы Поставщик/ }).click();
+  await page.getByRole('button', { name: /Все заказы ИП Баранов/ }).click();
   await expect(page.getByLabel('Количество SKU1 Получатель')).toHaveValue('40');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({

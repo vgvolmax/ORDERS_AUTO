@@ -27,8 +27,8 @@ function state(): AppState {
   ];
   s.settings.minimumOrderAmount = 1000;
   s.reviewedOrderIds = s.exportedOrderIds = [
-    'Ленина\0Поставщик А',
-    'Ступино\0Поставщик А',
+    'Ленина\0ИП Баранов Роман Борисович',
+    'Ступино\0ИП Баранов Роман Борисович',
     'unrelated',
   ];
   return s;
@@ -79,8 +79,8 @@ describe('accepted transfer purchasing invalidation', () => {
     ]);
     expect(result.clearedEditCount).toBe(1);
     expect(result.affectedOrderIds).toEqual([
-      'Ленина\0Поставщик А',
-      'Ступино\0Поставщик А',
+      'Ленина\0ИП Баранов Роман Борисович',
+      'Ступино\0ИП Баранов Роман Борисович',
     ]);
     expect(result.reviewedOrderIds).toEqual(['unrelated']);
     expect(result.exportedOrderIds).toEqual(['unrelated']);
@@ -90,13 +90,17 @@ describe('accepted transfer purchasing invalidation', () => {
     const before = state(),
       covered = changed(before, 7),
       result = patch(before, covered);
-    expect(result.affectedOrderIds).toContain('Ленина\0Поставщик А');
+    expect(result.affectedOrderIds).toContain(
+      'Ленина\0ИП Баранов Роман Борисович',
+    );
     const committed = { ...covered, ...result };
     const returning = patch(committed, {
       ...committed,
       rebalance: { ...committed.rebalance, accepted: [] },
     });
-    expect(returning.affectedOrderIds).toContain('Ленина\0Поставщик А');
+    expect(returning.affectedOrderIds).toContain(
+      'Ленина\0ИП Баранов Роман Борисович',
+    );
     expect(patch(before, before)).toMatchObject({
       edits: before.edits,
       reviewedOrderIds: before.reviewedOrderIds,
@@ -119,7 +123,9 @@ describe('accepted transfer purchasing invalidation', () => {
       };
     const result = patch(before, after);
     expect(result.clearedEditCount).toBe(0);
-    expect(result.affectedOrderIds).toContain('Ленина\0Поставщик А');
+    expect(result.affectedOrderIds).toContain(
+      'Ленина\0ИП Баранов Роман Борисович',
+    );
     expect(after.rebalance.accepted).toBe(before.rebalance.accepted);
   });
 });

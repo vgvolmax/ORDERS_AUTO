@@ -37,10 +37,10 @@ export function baseState(overrides: Partial<AppState> = {}): AppState {
       branches: ['Ленина', 'Ступино'],
     },
     suppliers: {
-      suppliers: ['Поставщик А'],
+      suppliers: ['ИП Баранов Роман Борисович'],
       history: [
         {
-          supplier: 'Поставщик А',
+          supplier: 'ИП Баранов Роман Борисович',
           skuCode: 'SKU1',
           skuName: 'Товар 1',
           unit: 'шт',
