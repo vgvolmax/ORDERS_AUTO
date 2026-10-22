@@ -1,14 +1,28 @@
 import { useMemo, useState } from 'react';
+import { orderToCsv } from '../../export/csv';
 import { useStore } from '../../app/appStore';
 import { derive, type WorkflowOrder } from '../../app/selectors';
+import { useDerivedState } from '../../app/useDerivedState';
+import { usePreference } from '../../app/usePreference';
+import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
 import { ThresholdControls } from '../../components/ThresholdControls';
-import { Alert, Button, EmptyState, Input, MetricCard } from '../../components/ui';
+import {
+  Alert,
+  Button,
+  EmptyState,
+  SearchInput,
+  MetricCard,
+} from '../../components/ui';
 import {
   applyOrderQtyChange,
   setOrderReviewed,
   setOrdersReviewed,
 } from '../../domain/orderWorkflow';
-import { downloadCsv, downloadReadyOrdersZip, save } from '../../export/download';
+import {
+  downloadCsv,
+  downloadReadyOrdersZip,
+  save,
+} from '../../export/download';
 import { supplierWorkbookFilename } from '../../export/orderFilenames';
 import { buildSupplierWorkbook } from '../../export/supplierWorkbook';
 import { fmtQty, money } from '../demand/DemandPage';
@@ -18,22 +32,22 @@ import { SupplierOrdersDrawer } from './SupplierOrdersDrawer';
 type ExportMode = 'ALL' | 'REVIEWED';
 
 export function OrdersPage() {
-  const { state, set } = useStore();
-  const derived = derive(state);
+  const { state, set, commit, saving } = useStore();
+  const derived = useDerivedState(state);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
-  const [supplierQuery, setSupplierQuery] = useState('');
-  const [showBelowThreshold, setShowBelowThreshold] = useState(false);
+  const [supplierQuery, setSupplierQuery] = usePreference('orders:query', '');
+  const [showBelowThreshold, setShowBelowThreshold] = usePreference(
+    'orders:belowThreshold',
+    false,
+  );
 
   const orders = derived.projection.orders;
   const visibleOrders = useMemo(() => {
     const query = supplierQuery.trim().toLocaleLowerCase('ru-RU');
     return orders.filter((order) => {
-      if (
-        query &&
-        !order.supplier.toLocaleLowerCase('ru-RU').includes(query)
-      ) {
+      if (query && !order.supplier.toLocaleLowerCase('ru-RU').includes(query)) {
         return false;
       }
       if (
@@ -84,12 +98,32 @@ export function OrdersPage() {
     ? ordersBySupplier.get(selectedSupplier) ?? []
     : [];
 
-  const markExported = (ids: string[]) => {
-    set({
-      exportedOrderIds: [
-        ...new Set([...(state.exportedOrderIds ?? []), ...ids]),
-      ],
-    });
+  const markExported = async (
+    exported: WorkflowOrder[],
+    allowBelowThreshold = false,
+  ) => {
+    const payloads = new Map(exported.map((o) => [o.id, orderToCsv(o)]));
+    const patch = (current: typeof state) => {
+      if (
+        current.workspaceId !== state.workspaceId ||
+        current.snapshotId !== state.snapshotId
+      )
+        return {};
+      const ids = derive(current)
+        .projection.orders.filter(
+          (o) =>
+            payloads.has(o.id) &&
+            !hasHardBlocker(o) &&
+            (!o.belowThreshold || allowBelowThreshold) &&
+            payloads.get(o.id) === orderToCsv(o),
+        )
+        .map((o) => o.id);
+      return {
+        exportedOrderIds: [...new Set([...current.exportedOrderIds, ...ids])],
+      };
+    };
+    if (commit) await commit(patch);
+    else set(patch);
   };
 
   async function zip(mode: ExportMode) {
@@ -98,7 +132,7 @@ export function OrdersPage() {
     setBusy(`Формирование ${target.length} CSV…`);
     try {
       await downloadReadyOrdersZip(target);
-      markExported(target.map((order) => order.id));
+      await markExported(target);
       set({
         toast:
           mode === 'REVIEWED'
@@ -132,7 +166,7 @@ export function OrdersPage() {
         }),
         supplierWorkbookFilename(supplier),
       );
-      markExported(supplierOrders.map((order) => order.id));
+      await markExported(supplierOrders);
       set({
         toast:
           mode === 'REVIEWED'
@@ -140,7 +174,10 @@ export function OrdersPage() {
             : `Excel для ${supplier} сформирован.`,
       });
     } catch (error) {
-      console.error(`Failed to export supplier workbook for ${supplier}`, error);
+      console.error(
+        `Failed to export supplier workbook for ${supplier}`,
+        error,
+      );
       set({
         toast: `Не удалось сформировать Excel для ${supplier}. Повторите выгрузку.`,
       });
@@ -149,60 +186,77 @@ export function OrdersPage() {
     }
   }
 
-  function editOrder(
+  async function editOrder(
     order: WorkflowOrder,
     skuCode: string,
     qty: number,
-  ): void {
+  ): Promise<void> {
     try {
       const currentLine = order.lines.find((line) => line.skuCode === skuCode);
-      if (currentLine?.orderQty === qty) {
+      if (!commit && currentLine?.orderQty === qty) {
         set({ toast: 'Количество не изменилось.' });
         return;
       }
-      const next = applyOrderQtyChange({
-        edits: state.edits,
-        reviewedOrderIds: state.reviewedOrderIds,
-        exportedOrderIds: state.exportedOrderIds,
-        order,
-        skuCode,
-        qty,
-      });
-      set({
-        ...next,
-        toast: 'Количество и сумма заказа пересчитаны. Проверка заказа снята.',
-      });
+      const patch = (s: typeof state) => {
+        const current = derive(s).projection.orders.find(
+          (o) => o.id === order.id,
+        );
+        if (!current) throw new Error('Заказ изменился. Откройте его заново.');
+        if (
+          current.lines.find((line) => line.skuCode === skuCode)?.orderQty ===
+          qty
+        )
+          return { toast: 'Количество не изменилось.' };
+        return {
+          ...applyOrderQtyChange({
+            edits: s.edits,
+            reviewedOrderIds: s.reviewedOrderIds,
+            exportedOrderIds: s.exportedOrderIds,
+            order: current,
+            skuCode,
+            qty,
+          }),
+          toast:
+            'Количество и сумма заказа пересчитаны. Проверка заказа снята.',
+        };
+      };
+      if (commit) await commit(patch);
+      else set(patch);
     } catch (error) {
       console.error('Failed to edit order quantity', error);
       set({ toast: 'Не удалось изменить количество в заказе.' });
+      throw error;
     }
   }
 
   function setReviewed(orderId: string, reviewed: boolean): void {
-    set({
+    set((current) => ({
       reviewedOrderIds: setOrderReviewed(
-        state.reviewedOrderIds,
+        current.reviewedOrderIds,
         orderId,
         reviewed,
       ),
       toast: reviewed ? 'Заказ отмечен проверенным.' : 'Проверка заказа снята.',
-    });
+    }));
   }
 
   function setAllReviewed(orderIds: string[], reviewed: boolean): void {
-    set({
+    set((current) => ({
       reviewedOrderIds: setOrdersReviewed(
-        state.reviewedOrderIds,
+        current.reviewedOrderIds,
         orderIds,
         reviewed,
       ),
       toast: reviewed
         ? `Проверены заказы: ${orderIds.length}.`
         : `Проверка снята: ${orderIds.length}.`,
-    });
+    }));
   }
 
-  function exportSingle(order: WorkflowOrder, allowBelowThreshold: boolean) {
+  async function exportSingle(
+    order: WorkflowOrder,
+    allowBelowThreshold: boolean,
+  ) {
     const hardBlockers = order.blockers.filter(
       (blocker) => blocker !== 'Ниже минимальной суммы',
     );
@@ -214,7 +268,7 @@ export function OrdersPage() {
 
     try {
       downloadCsv(order);
-      markExported([order.id]);
+      await markExported([order], allowBelowThreshold);
       set({
         toast: `CSV заказа ${order.branch} → ${order.supplier} сформирован.`,
       });
@@ -228,22 +282,25 @@ export function OrdersPage() {
     <main>
       <header className="header-actions">
         <div>
-          <p className="eyebrow">Шаг 4 из 4</p>
+          <p className="eyebrow">Рабочая потребность</p>
           <h1>Заказы</h1>
           <p>
-            Каждая ячейка — отдельный заказ подразделения конкретному поставщику.
+            Каждая ячейка — отдельный заказ подразделения конкретному
+            поставщику.
           </p>
         </div>
         <div className="export-actions">
           <Button
-            disabled={exportable.length === 0 || Boolean(busy)}
+            disabled={exportable.length === 0 || Boolean(busy || saving)}
             onClick={() => zip('ALL')}
           >
             {busy || `Скачать все (${exportable.length})`}
           </Button>
           <Button
             className="secondary"
-            disabled={reviewedExportable.length === 0 || Boolean(busy)}
+            disabled={
+              reviewedExportable.length === 0 || Boolean(busy || saving)
+            }
             onClick={() => zip('REVIEWED')}
           >
             Скачать проверенные ({reviewedExportable.length})
@@ -253,9 +310,11 @@ export function OrdersPage() {
 
       <ThresholdControls
         settings={state.settings}
-        onChange={(settings) =>
-          set({ settings, toast: 'Порог закупки пересчитан.' })
-        }
+        onChange={async (settings) => {
+          const patch = { settings, toast: 'Порог закупки пересчитан.' };
+          if (commit) await commit(patch);
+          else set(patch);
+        }}
         showBelowThreshold={showBelowThreshold}
         onShowBelowThresholdChange={setShowBelowThreshold}
       />
@@ -263,9 +322,9 @@ export function OrdersPage() {
       <section className="filters compact-filters">
         <label>
           Поиск поставщика
-          <Input
+          <SearchInput
             value={supplierQuery}
-            onChange={(event) => setSupplierQuery(event.target.value)}
+            onValueChange={setSupplierQuery}
             placeholder="Название поставщика"
           />
         </label>
@@ -330,8 +389,7 @@ export function OrdersPage() {
                   0,
                 );
                 const hidden = allSupplierOrders.filter(
-                  (order) =>
-                    !visibleOrderIds.has(order.id),
+                  (order) => !visibleOrderIds.has(order.id),
                 ).length;
                 const supplierExportable = allSupplierOrders.filter(
                   (order) => order.supplier === supplier && isExportable(order),
@@ -346,7 +404,8 @@ export function OrdersPage() {
                       .map((line) => line.skuCode),
                   ),
                 ).size;
-                const supplierHasBlocker = allSupplierOrders.some(hasHardBlocker);
+                const supplierHasBlocker =
+                  allSupplierOrders.some(hasHardBlocker);
                 const supplierReviewed =
                   allSupplierOrders.length > 0 &&
                   reviewedCount === allSupplierOrders.length &&
@@ -356,7 +415,9 @@ export function OrdersPage() {
                   <tr key={supplier}>
                     <th className="supplier-card-cell">
                       <button
-                        className={`supplier-card ${supplierReviewed ? 'is-reviewed' : ''} ${supplierHasBlocker ? 'has-blocker' : ''}`}
+                        className={`supplier-card ${
+                          supplierReviewed ? 'is-reviewed' : ''
+                        } ${supplierHasBlocker ? 'has-blocker' : ''}`}
                         aria-label={`Все заказы ${supplier}`}
                         onClick={() => setSelectedSupplier(supplier)}
                       >
@@ -368,17 +429,31 @@ export function OrdersPage() {
                         </strong>
                         <small>
                           {allSupplierOrders.length}{' '}
-                          {pluralize(allSupplierOrders.length, ['подразделение', 'подразделения', 'подразделений'])} ·{' '}
-                          {supplierSkuCount} SKU · {fmtQty(supplierTotal.qty)} ед.
+                          {pluralize(allSupplierOrders.length, [
+                            'подразделение',
+                            'подразделения',
+                            'подразделений',
+                          ])}{' '}
+                          · {supplierSkuCount} SKU · {fmtQty(supplierTotal.qty)}{' '}
+                          ед.
                         </small>
                         <span className="order-status-line">
                           <small>
                             {supplierReviewed
-                              ? `✓ Все ${allSupplierOrders.length} ${pluralize(allSupplierOrders.length, ['заказ проверен', 'заказа проверены', 'заказов проверены'])}`
+                              ? `✓ Все ${allSupplierOrders.length} ${pluralize(
+                                  allSupplierOrders.length,
+                                  [
+                                    'заказ проверен',
+                                    'заказа проверены',
+                                    'заказов проверены',
+                                  ],
+                                )}`
                               : `✓ ${reviewedCount} из ${allSupplierOrders.length} проверено`}
                           </small>
                           {manualEditCount > 0 && (
-                            <small className="manual-indicator">✋ {manualEditCount}</small>
+                            <small className="manual-indicator">
+                              ✋ {manualEditCount}
+                            </small>
                           )}
                         </span>
                         {hidden > 0 && <small>Скрыто порогом: {hidden}</small>}
@@ -395,7 +470,15 @@ export function OrdersPage() {
                       return (
                         <td key={branch}>
                           <button
-                            className={`order-cell ${order.status} ${order.belowThreshold ? 'below-threshold' : ''} ${order.reviewed && !hardBlocked ? 'reviewed is-reviewed' : ''} ${hardBlocked ? 'has-blocker' : ''} ${order.manualEditCount > 0 ? 'manual-edited' : ''}`}
+                            className={`order-cell ${order.status} ${
+                              order.belowThreshold ? 'below-threshold' : ''
+                            } ${
+                              order.reviewed && !hardBlocked
+                                ? 'reviewed is-reviewed'
+                                : ''
+                            } ${hardBlocked ? 'has-blocker' : ''} ${
+                              order.manualEditCount > 0 ? 'manual-edited' : ''
+                            }`}
                             onClick={() => setSelectedId(order.id)}
                           >
                             <span className="order-status-line">
@@ -427,8 +510,8 @@ export function OrdersPage() {
                               {order.status === 'READY'
                                 ? 'Готов'
                                 : order.status === 'EXPORTED'
-                                  ? 'Выгружен'
-                                  : 'Заблокирован'}
+                                ? 'Выгружен'
+                                : 'Заблокирован'}
                             </span>
                             {order.blockers.map((blocker) => (
                               <small key={blocker}>{blocker}</small>
@@ -442,7 +525,8 @@ export function OrdersPage() {
                         <Button
                           className="secondary"
                           disabled={
-                            supplierExportable.length === 0 || Boolean(busy)
+                            supplierExportable.length === 0 ||
+                            Boolean(busy || saving)
                           }
                           onClick={() => excel(supplier, 'ALL')}
                         >
@@ -452,7 +536,7 @@ export function OrdersPage() {
                           className="secondary"
                           disabled={
                             supplierReviewedExportable.length === 0 ||
-                            Boolean(busy)
+                            Boolean(busy || saving)
                           }
                           onClick={() => excel(supplier, 'REVIEWED')}
                         >
@@ -476,6 +560,15 @@ export function OrdersPage() {
       {selected && (
         <OrderDrawer
           order={selected}
+          saving={Boolean(busy || saving)}
+          renderMovement={(line) => (
+            <MovementIndicator
+              scope={{ skuCode: line.skuCode, branch: line.branch }}
+              manualOrderQty={
+                line.orderQty !== line.calculatedQty ? line.orderQty : undefined
+              }
+            />
+          )}
           onClose={() => setSelectedId(null)}
           onEdit={(skuCode, _branch, qty) => editOrder(selected, skuCode, qty)}
           onReviewedChange={(reviewed) => setReviewed(selected.id, reviewed)}
@@ -488,8 +581,27 @@ export function OrdersPage() {
       {selectedSupplier && selectedSupplierOrders.length > 0 && (
         <SupplierOrdersDrawer
           supplier={selectedSupplier}
+          saving={Boolean(busy || saving)}
+          renderMovement={(line) => (
+            <MovementIndicator
+              scope={{ skuCode: line.skuCode, branch: line.branch }}
+              manualOrderQty={
+                line.orderQty !== line.calculatedQty ? line.orderQty : undefined
+              }
+            />
+          )}
           orders={selectedSupplierOrders}
           branchOrder={branches}
+          widthPreferences={
+            state.uiPreferences.supplierMatrixWidths as
+              | Record<string, number>
+              | undefined
+          }
+          onWidthsChange={(supplierMatrixWidths) =>
+            set((s) => ({
+              uiPreferences: { ...s.uiPreferences, supplierMatrixWidths },
+            }))
+          }
           onClose={() => setSelectedSupplier(null)}
           onEdit={editOrder}
           onSetReviewed={setReviewed}
@@ -505,9 +617,7 @@ function isExportable(order: WorkflowOrder): boolean {
 }
 
 function hasHardBlocker(order: WorkflowOrder): boolean {
-  return order.blockers.some(
-    (blocker) => blocker !== 'Ниже минимальной суммы',
-  );
+  return order.blockers.some((blocker) => blocker !== 'Ниже минимальной суммы');
 }
 
 function summarizeOrders(orders: WorkflowOrder[]) {

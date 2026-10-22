@@ -1,15 +1,19 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useModalLayer } from '../../components/Dialog';
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { WorkflowOrder } from '../../app/selectors';
-import { Button, Input } from '../../components/ui';
+import { QuantityInput } from '../../components/QuantityInput';
+import { Button } from '../../components/ui';
 import type { OrderLine } from '../../domain/types';
 import { fmtQty, money } from '../demand/DemandPage';
 
-const COLUMN_WIDTHS_STORAGE_KEY = 'orders-auto:supplier-matrix-column-widths:v1';
+const COLUMN_WIDTHS_STORAGE_KEY =
+  'orders-auto:supplier-matrix-column-widths:v1';
 const RESIZE_KEYBOARD_STEP = 12;
 
 interface MatrixCell {
@@ -48,22 +52,36 @@ export function SupplierOrdersDrawer({
   onEdit,
   onSetReviewed,
   onSetAllReviewed,
+  renderMovement,
+  widthPreferences,
+  onWidthsChange,
+  saving = false,
 }: {
   supplier: string;
+  saving?: boolean | undefined;
+  widthPreferences?: Record<string, number> | undefined;
+  onWidthsChange?: ((value: Record<string, number>) => void) | undefined;
+  renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   orders: WorkflowOrder[];
   branchOrder: string[];
   onClose: () => void;
-  onEdit: (order: WorkflowOrder, skuCode: string, qty: number) => void;
+  onEdit: (
+    order: WorkflowOrder,
+    skuCode: string,
+    qty: number,
+  ) => void | Promise<void>;
   onSetReviewed: (orderId: string, reviewed: boolean) => void;
   onSetAllReviewed: (orderIds: string[], reviewed: boolean) => void;
 }) {
+  const modalRef = useRef<HTMLElement>(null);
+  useModalLayer(modalRef, onClose);
   const model = useMemo(
     () => buildMatrixModel(orders, branchOrder),
     [orders, branchOrder],
   );
   const defaultWidths = useMemo(() => buildDefaultColumnWidths(model), [model]);
   const [widthOverrides, setWidthOverrides] = useState<Record<string, number>>(
-    readStoredColumnWidths,
+    () => widthPreferences ?? readStoredColumnWidths(),
   );
   const resizeSession = useRef<ResizeSession | null>(null);
 
@@ -83,6 +101,7 @@ export function SupplierOrdersDrawer({
     setWidthOverrides((current) => {
       const next = { ...current, [key]: nextWidth };
       persistColumnWidths(next);
+      onWidthsChange?.(next);
       return next;
     });
   };
@@ -95,6 +114,7 @@ export function SupplierOrdersDrawer({
       const next = { ...current };
       delete next[key];
       persistColumnWidths(next);
+      onWidthsChange?.(next);
       return next;
     });
   };
@@ -102,6 +122,7 @@ export function SupplierOrdersDrawer({
   const resetAllColumnWidths = () => {
     setWidthOverrides({});
     persistColumnWidths({});
+    onWidthsChange?.({});
   };
 
   const startResize = (
@@ -161,6 +182,7 @@ export function SupplierOrdersDrawer({
     <button
       type="button"
       className="column-resizer"
+      disabled={model.rows.length === 0}
       aria-label={`Изменить ширину столбца ${label}`}
       title="Потяните для изменения ширины. Двойной клик — сбросить."
       onPointerDown={(event) => startResize(key, width, event)}
@@ -188,9 +210,11 @@ export function SupplierOrdersDrawer({
     ...extra,
   });
 
-  return (
+  return createPortal(
     <div className="drawer-back" role="presentation">
       <section
+        ref={modalRef}
+        tabIndex={-1}
         className="drawer supplier-orders-drawer"
         role="dialog"
         aria-modal="true"
@@ -202,7 +226,9 @@ export function SupplierOrdersDrawer({
             <h2>{supplier}</h2>
             <div className="supplier-matrix-summary">
               <strong>
-                {supplierTotal == null ? 'Сумма неизвестна' : money(supplierTotal)}
+                {supplierTotal == null
+                  ? 'Сумма неизвестна'
+                  : money(supplierTotal)}
               </strong>
               <span>{orders.length} подразделений</span>
               <span>{model.rows.length} SKU</span>
@@ -220,6 +246,7 @@ export function SupplierOrdersDrawer({
 
         <div className="supplier-review-actions">
           <Button
+            disabled={saving}
             className="secondary"
             onClick={() =>
               onSetAllReviewed(
@@ -231,6 +258,7 @@ export function SupplierOrdersDrawer({
             Отметить все проверенными
           </Button>
           <Button
+            disabled={saving}
             className="secondary"
             onClick={() =>
               onSetAllReviewed(
@@ -300,7 +328,9 @@ export function SupplierOrdersDrawer({
                   return (
                     <th
                       key={branch}
-                      className={`supplier-branch-column resizable-column ${order.reviewed && !blocker ? 'is-reviewed' : ''} ${blocker ? 'has-blocker' : ''}`}
+                      className={`supplier-branch-column resizable-column ${
+                        order.reviewed && !blocker ? 'is-reviewed' : ''
+                      } ${blocker ? 'has-blocker' : ''}`}
                       style={sizedStyle(branchWidth)}
                     >
                       <div className="supplier-branch-head">
@@ -318,11 +348,14 @@ export function SupplierOrdersDrawer({
                               type="checkbox"
                               aria-label={`Проверен ${branch}`}
                               checked={order.reviewed}
+                              disabled={saving}
                               onChange={(event) =>
                                 onSetReviewed(order.id, event.target.checked)
                               }
                             />
-                            <span>{order.reviewed ? 'Проверен' : 'Не проверен'}</span>
+                            <span>
+                              {order.reviewed ? 'Проверен' : 'Не проверен'}
+                            </span>
                           </label>
                           {order.manualEditCount > 0 && (
                             <small
@@ -354,8 +387,7 @@ export function SupplierOrdersDrawer({
                   className="num total-column sticky-total sticky-total-amount resizable-column"
                   style={sizedStyle(totalAmountWidth, { right: 0 })}
                 >
-                  Всего, ₽
-                  {resizer('totalAmount', 'Всего, ₽', totalAmountWidth)}
+                  Всего, ₽{resizer('totalAmount', 'Всего, ₽', totalAmountWidth)}
                 </th>
               </tr>
             </thead>
@@ -395,27 +427,21 @@ export function SupplierOrdersDrawer({
                         style={sizedStyle(branchWidth)}
                       >
                         {cell ? (
-                          <Input
-                            className={
-                              cell.line.orderQty !== cell.line.calculatedQty
-                                ? 'matrix-qty-input manual'
-                                : 'matrix-qty-input'
-                            }
-                            aria-label={`Количество ${row.skuCode} ${branch}`}
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={cell.line.orderQty}
-                            onChange={(event) => {
-                              if (event.target.value === '') {
-                                return;
+                          <>
+                            <QuantityInput
+                              className={
+                                cell.line.orderQty !== cell.line.calculatedQty
+                                  ? 'matrix-qty-input manual'
+                                  : 'matrix-qty-input'
                               }
-                              const qty = Number(event.target.value);
-                              if (Number.isFinite(qty) && qty >= 0) {
-                                onEdit(cell.order, row.skuCode, qty);
+                              aria-label={`Количество ${row.skuCode} ${branch}`}
+                              value={cell.line.orderQty}
+                              onCommit={(qty) =>
+                                onEdit(cell.order, row.skuCode, qty)
                               }
-                            }}
-                          />
+                            />
+                            {renderMovement?.(cell.line)}
+                          </>
                         ) : (
                           <span className="matrix-empty">—</span>
                         )}
@@ -424,7 +450,9 @@ export function SupplierOrdersDrawer({
                   })}
                   <td
                     className="num total-column sticky-total sticky-total-qty"
-                    style={sizedStyle(totalQtyWidth, { right: totalAmountWidth })}
+                    style={sizedStyle(totalQtyWidth, {
+                      right: totalAmountWidth,
+                    })}
                   >
                     <strong>{fmtQty(row.totalQty)}</strong>
                   </td>
@@ -433,9 +461,7 @@ export function SupplierOrdersDrawer({
                     style={sizedStyle(totalAmountWidth, { right: 0 })}
                   >
                     <strong>
-                      {row.totalAmount == null
-                        ? '—'
-                        : money(row.totalAmount)}
+                      {row.totalAmount == null ? '—' : money(row.totalAmount)}
                     </strong>
                   </td>
                 </tr>
@@ -444,7 +470,8 @@ export function SupplierOrdersDrawer({
           </table>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -628,7 +655,10 @@ function persistColumnWidths(widths: Record<string, number>): void {
       window.localStorage.removeItem(COLUMN_WIDTHS_STORAGE_KEY);
       return;
     }
-    window.localStorage.setItem(COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(widths));
+    window.localStorage.setItem(
+      COLUMN_WIDTHS_STORAGE_KEY,
+      JSON.stringify(widths),
+    );
   } catch {
     // UI preferences are optional; storage failures must not block ordering work.
   }
@@ -642,7 +672,5 @@ function completeOrderTotal(orders: WorkflowOrder[]): number | null {
 }
 
 function hasHardBlocker(order: WorkflowOrder): boolean {
-  return order.blockers.some(
-    (blocker) => blocker !== 'Ниже минимальной суммы',
-  );
+  return order.blockers.some((blocker) => blocker !== 'Ниже минимальной суммы');
 }

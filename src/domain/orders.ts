@@ -51,8 +51,8 @@ export function buildOrderProjection(
           fallbackResolution.status === 'MANUAL_REQUIRED'
             ? 'MULTIPLE_SUPPLIERS_REQUIRE_CHOICE'
             : fallbackResolution.status === 'STALE_OVERRIDE'
-              ? 'STALE_SUPPLIER_OVERRIDE'
-              : 'NO_SUPPLIER',
+            ? 'STALE_SUPPLIER_OVERRIDE'
+            : 'NO_SUPPLIER',
       });
       continue;
     }
@@ -77,12 +77,25 @@ export function buildOrderProjection(
     }
 
     order.lines.push({
-      ...(purchase ? { purchaseContext: {
-        originalNeed: purchase.originalNeed, acceptedIncomingQty: purchase.acceptedIncomingQty, acceptedOutgoingQty: purchase.acceptedOutgoingQty,
-        projectedStock: purchase.projectedStock, purchaseQty: purchase.purchaseQty, purchaseAmount: purchase.purchaseAmount, purchaseStatus: purchase.purchaseStatus,
-        acceptedTransferIds: [...purchase.acceptedTransferIds], networkPurchaseQty: purchase.networkPurchaseQty,
-        networkPurchaseAmount: purchase.networkPurchaseAmount, networkPurchaseMissingPriceCount: purchase.networkPurchaseMissingPriceCount,
-      } } : {}),
+      ...(purchase
+        ? {
+            purchaseContext: {
+              originalNeed: purchase.originalNeed,
+              acceptedIncomingQty: purchase.acceptedIncomingQty,
+              acceptedOutgoingQty: purchase.acceptedOutgoingQty,
+              projectedStock: purchase.projectedStock,
+              purchaseQty: purchase.purchaseQty,
+              purchaseAmount: purchase.purchaseAmount,
+              purchaseStatus: purchase.purchaseStatus,
+              purchaseDeficitPct: purchase.purchaseDeficitPct,
+              acceptedTransferIds: [...purchase.acceptedTransferIds],
+              networkPurchaseQty: purchase.networkPurchaseQty,
+              networkPurchaseAmount: purchase.networkPurchaseAmount,
+              networkPurchaseMissingPriceCount:
+                purchase.networkPurchaseMissingPriceCount,
+            },
+          }
+        : {}),
       skuCode: line.skuCode,
       article: line.article,
       name: line.name,
@@ -94,8 +107,7 @@ export function buildOrderProjection(
       unitPrice: line.unitPrice,
       priceSource: line.priceSource,
       amount: line.unitPrice == null ? null : orderQty * line.unitPrice,
-      warnings:
-        orderQty > calculatedQty ? ['Количество выше расчётного'] : [],
+      warnings: orderQty > calculatedQty ? ['Количество выше расчётного'] : [],
       stock: line.stock,
       min: line.min,
       max: line.max,
@@ -107,7 +119,10 @@ export function buildOrderProjection(
   const orders = [...groups.values()];
   for (const order of orders) {
     const positiveLines = order.lines.filter((line) => line.orderQty > 0);
-    order.totalQty = positiveLines.reduce((sum, line) => sum + line.orderQty, 0);
+    order.totalQty = positiveLines.reduce(
+      (sum, line) => sum + line.orderQty,
+      0,
+    );
 
     if (positiveLines.length === 0) {
       order.totalAmount = 0;

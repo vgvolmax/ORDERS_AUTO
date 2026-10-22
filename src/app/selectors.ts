@@ -1,3 +1,14 @@
+import {
+  buildPurchaseDemand,
+  type PurchaseDemandLine,
+} from '../domain/purchaseDemand';
+import { createRebalanceSnapshot } from '../import/rebalanceSnapshot';
+import { acceptedEconomicDiagnostics } from '../domain/rebalancing';
+import type {
+  RebalanceIssue,
+  SnapshotBuildResult,
+  RebalanceProposal,
+} from '../domain/rebalancing/types';
 import { calculateDemand, priceDemand } from '../domain/demand';
 import { getManualEditCount } from '../domain/orderWorkflow';
 import { buildOrderProjection } from '../domain/orders';
@@ -23,12 +34,22 @@ export interface WorkflowOrderProjection
 export interface DerivedState {
   resolutions: SupplierResolution[];
   demand: PricedDemandLine[];
+  originalDemand: PricedDemandLine[];
+  purchaseDemand: PurchaseDemandLine[];
+  snapshot: SnapshotBuildResult | null;
+  proposal: RebalanceProposal | null;
+  acceptedSummary: { transferCount: number; diagnostics: RebalanceIssue[] };
   projection: WorkflowOrderProjection;
 }
 
 const EMPTY_DERIVED_STATE: DerivedState = {
   resolutions: [],
   demand: [],
+  originalDemand: [],
+  purchaseDemand: [],
+  snapshot: null,
+  proposal: null,
+  acceptedSummary: { transferCount: 0, diagnostics: [] },
   projection: { orders: [], unassigned: [] },
 };
 
@@ -66,8 +87,25 @@ export function derive(state: AppState): DerivedState {
     state.minMax.skus,
     resolutions,
   );
-  const baseProjection = buildOrderProjection(
+  const registry = state.rebalance.registry.length
+    ? state.rebalance.registry
+    : [...new Set(state.minMax.branchStocks.map((s) => s.branch))].map(
+        (name) => ({ id: name, name, active: true, aliases: [] }),
+      );
+  const snapshot = createRebalanceSnapshot({
+    snapshotId: state.snapshotId,
+    dataset: state.minMax,
+    branchRegistry: registry,
+    skuPolicies: state.rebalance.policies,
+    sourceIssues: state.minMaxIssues,
+  });
+  const purchaseDemand = buildPurchaseDemand(
     demand,
+    state.rebalance.accepted,
+    registry,
+  );
+  const baseProjection = buildOrderProjection(
+    purchaseDemand,
     resolutions,
     state.edits,
     state.settings,
@@ -90,6 +128,17 @@ export function derive(state: AppState): DerivedState {
   const result: DerivedState = {
     resolutions,
     demand,
+    originalDemand: demand,
+    purchaseDemand,
+    snapshot,
+    proposal: state.rebalance.proposal,
+    acceptedSummary: {
+      transferCount: state.rebalance.accepted.length,
+      diagnostics: acceptedEconomicDiagnostics(
+        snapshot.snapshot,
+        state.rebalance.accepted,
+      ),
+    },
     projection: { ...baseProjection, orders },
   };
   derivedCache.set(state, result);

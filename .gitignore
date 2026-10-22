@@ -9,3 +9,6 @@ coverage/
 samples/private/*
 !samples/private/README.md
 !samples/private/.gitignore
+
+test-results/
+playwright-report/

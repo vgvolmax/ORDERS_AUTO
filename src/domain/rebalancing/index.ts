@@ -5,3 +5,9 @@ export { rebalanceConfigFingerprint } from './constraints';
 export { buildRouteIndex } from './routes';
 export { calculateRebalance } from './calculate';
 export { acceptedEconomicDiagnostics } from './economics';
+export {
+  buildMovementSummary,
+  type MovementScope,
+  type MovementSummaryInput,
+  type MovementSummary,
+} from './movementSummary';

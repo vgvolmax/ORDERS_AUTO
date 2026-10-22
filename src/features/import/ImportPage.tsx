@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { calculateDemand } from '../../domain/demand';
 import { resolveSuppliers } from '../../domain/suppliers';
@@ -8,7 +8,9 @@ import { parseSupplierWorkbook } from '../../import/supplierParser';
 import { Alert, Button } from '../../components/ui';
 
 export function ImportPage() {
-  const { state, set } = useStore();
+  const { state, set, commit } = useStore();
+  const reads = useRef({ min: 0, sup: 0 });
+  const [failures, setFailures] = useState({ min: '', sup: '' });
   const anyLoading = state.minMaxLoading || state.supplierLoading;
 
   const supplierResolutionSummary = useMemo(() => {
@@ -28,88 +30,109 @@ export function ImportPage() {
     ).filter((resolution) => neededSkuCodes.has(resolution.skuCode));
 
     return {
-      multiple: resolutions.filter((item) => item.status === 'MANUAL_REQUIRED').length,
-      withoutSupplier: resolutions.filter((item) => item.status === 'UNRESOLVED').length,
-      stale: resolutions.filter((item) => item.status === 'STALE_OVERRIDE').length,
+      multiple: resolutions.filter((item) => item.status === 'MANUAL_REQUIRED')
+        .length,
+      withoutSupplier: resolutions.filter(
+        (item) => item.status === 'UNRESOLVED',
+      ).length,
+      stale: resolutions.filter((item) => item.status === 'STALE_OVERRIDE')
+        .length,
     };
   }, [state.minMax, state.suppliers, state.overrides]);
 
   async function load(file: File, kind: 'min' | 'sup') {
+    const token = ++reads.current[kind],
+      epoch = state.importEpoch;
     set(kind === 'min' ? { minMaxLoading: true } : { supplierLoading: true });
+    setFailures((previous) => ({ ...previous, [kind]: '' }));
     try {
-      const buffer = await file.arrayBuffer();
-      if (kind === 'min') {
-        const result = parseMinMaxWorkbook(buffer);
-        set({
-          minMax: result.fatal ? null : result.data,
-          minMaxFileName: file.name,
-          minMaxIssues: result.issues,
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-          toast: result.fatal
-            ? 'Отчёт MIN/MAX не принят — исправьте ошибку файла.'
-            : 'Отчёт MIN/MAX успешно распознан.',
-        });
-      } else {
-        const result = parseSupplierWorkbook(buffer);
-        set({
-          suppliers: result.fatal ? null : result.data,
-          supplierFileName: file.name,
-          supplierIssues: result.issues,
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-          toast: result.fatal
-            ? 'Отчёт поставщиков не принят — исправьте ошибку файла.'
-            : 'Отчёт поставщиков успешно распознан.',
-        });
+      const bytes = await file.arrayBuffer();
+      if (reads.current[kind] !== token) return;
+      const result =
+        kind === 'min'
+          ? parseMinMaxWorkbook(bytes)
+          : parseSupplierWorkbook(bytes);
+      if (result.fatal || !result.data) {
+        setFailures((previous) => ({
+          ...previous,
+          [kind]:
+            result.issues.map((i) => i.message).join(' ') ||
+            'Файл не принят. Проверьте формат отчёта.',
+        }));
+        return;
       }
+      const ref = {
+        fileId: crypto.randomUUID(),
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        lastModified: file.lastModified,
+      };
+      const update = (current: typeof state) =>
+        reads.current[kind] !== token || current.importEpoch !== epoch
+          ? {}
+          : {
+              ...(kind === 'min'
+                ? {
+                    minMax: result.data as NonNullable<typeof state.minMax>,
+                    minMaxFileName: file.name,
+                    minMaxIssues: result.issues,
+                  }
+                : {
+                    suppliers: result.data as NonNullable<
+                      typeof state.suppliers
+                    >,
+                    supplierFileName: file.name,
+                    supplierIssues: result.issues,
+                  }),
+              rawImports: {
+                ...current.rawImports,
+                [kind === 'min' ? 'minMax' : 'suppliers']: ref,
+              },
+              pendingFiles: [{ ...ref, bytes }],
+              reviewedOrderIds: [],
+              exportedOrderIds: [],
+              toast: 'Отчёт успешно распознан и сохранён.',
+            };
+      if (commit) await commit(update);
+      else set(update);
     } catch {
-      if (kind === 'min') {
-        set({
-          minMax: null,
-          minMaxFileName: file.name,
-          minMaxIssues: [
-            {
-              severity: 'ERROR',
-              code: 'MISSING_REQUIRED_COLUMN',
-              message: 'Не удалось прочитать файл MIN/MAX.',
-            },
-          ],
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-        });
-      } else {
-        set({
-          suppliers: null,
-          supplierFileName: file.name,
-          supplierIssues: [
-            {
-              severity: 'ERROR',
-              code: 'MISSING_REQUIRED_COLUMN',
-              message: 'Не удалось прочитать файл поставщиков.',
-            },
-          ],
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-        });
-      }
+      if (reads.current[kind] === token)
+        setFailures((previous) => ({
+          ...previous,
+          [kind]:
+            'Не удалось прочитать или сохранить файл. Предыдущий отчёт сохранён. Повторите выбор файла.',
+        }));
     } finally {
-      set(kind === 'min' ? { minMaxLoading: false } : { supplierLoading: false });
+      if (reads.current[kind] === token)
+        set(
+          kind === 'min'
+            ? { minMaxLoading: false }
+            : { supplierLoading: false },
+        );
     }
   }
 
   return (
     <main>
       <header>
-        <p className="eyebrow">Шаг 1 из 4</p>
+        <p className="eyebrow">Рабочий сеанс</p>
         <h1>Импорт отчётов 1С</h1>
         <p>
-          Загрузите два отчёта. Они обрабатываются только в браузере и никуда
-          не отправляются.
+          Загрузите два отчёта. Они обрабатываются только в браузере и никуда не
+          отправляются.
         </p>
       </header>
 
       {anyLoading && <Alert>Обработка отчёта…</Alert>}
+      {failures.min && <Alert tone="danger">MIN/MAX: {failures.min}</Alert>}
+      {failures.sup && <Alert tone="danger">Поставщики: {failures.sup}</Alert>}
+      {(state.minMax || state.suppliers) && (
+        <p>
+          Замена отчёта создаёт новый сеанс без принятых перемещений и ручных
+          количеств. Предыдущая работа остаётся в истории.
+        </p>
+      )}
 
       <div className="upload-grid">
         <FileCard
@@ -147,13 +170,16 @@ export function ImportPage() {
           <h2>Готовность к формированию заказов</h2>
           <div className="resolution-grid">
             <span>
-              Несколько поставщиков: <strong>{supplierResolutionSummary.multiple}</strong>
+              Несколько поставщиков:{' '}
+              <strong>{supplierResolutionSummary.multiple}</strong>
             </span>
             <span>
-              Нет поставщика: <strong>{supplierResolutionSummary.withoutSupplier}</strong>
+              Нет поставщика:{' '}
+              <strong>{supplierResolutionSummary.withoutSupplier}</strong>
             </span>
             <span>
-              Устаревший выбор: <strong>{supplierResolutionSummary.stale}</strong>
+              Устаревший выбор:{' '}
+              <strong>{supplierResolutionSummary.stale}</strong>
             </span>
           </div>
           <p>
@@ -219,22 +245,27 @@ function FileCard({
             const file = event.target.files?.[0];
             if (file) {
               onFile(file);
+              event.target.value = '';
             }
           }}
         />
       </label>
 
-      <strong className={ready ? 'success' : errors.length ? 'danger-text' : ''}>
+      <strong
+        className={ready ? 'success' : errors.length ? 'danger-text' : ''}
+      >
         {busy
           ? 'Обработка файла…'
           : ready
-            ? 'Успешно распознан'
-            : errors.length
-              ? 'Файл требует исправления'
-              : 'Файл не загружен'}
+          ? 'Успешно распознан'
+          : errors.length
+          ? 'Файл требует исправления'
+          : 'Файл не загружен'}
       </strong>
       {summary && <small>{summary}</small>}
-      {(warnings.length > 0 || errors.length > 0) && <IssueList issues={issues} />}
+      {(warnings.length > 0 || errors.length > 0) && (
+        <IssueList issues={issues} />
+      )}
     </section>
   );
 }
@@ -244,11 +275,16 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
   return (
     <div className="issue-list">
       <strong>
-        Проверка данных: {issues.length} {issues.length === 1 ? 'сообщение' : 'сообщений'}
+        Проверка данных: {issues.length}{' '}
+        {issues.length === 1 ? 'сообщение' : 'сообщений'}
       </strong>
       <ul>
         {visible.map((issue, index) => (
-          <li key={`${issue.code}:${issue.skuCode ?? ''}:${issue.branch ?? ''}:${index}`}>
+          <li
+            key={`${issue.code}:${issue.skuCode ?? ''}:${
+              issue.branch ?? ''
+            }:${index}`}
+          >
             <span className={`issue-dot ${issue.severity.toLowerCase()}`} />
             {issue.message}
           </li>

@@ -1,5 +1,8 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { derive } from '../../app/selectors';
+import { useMemo, type ReactNode } from 'react';
+import { useDerivedState } from '../../app/useDerivedState';
+import { usePreference } from '../../app/usePreference';
+import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
+import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
 import { useStore } from '../../app/appStore';
 import {
   emptyDemandFilters,
@@ -8,7 +11,10 @@ import {
 } from '../../components/FiltersBar';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Alert, MetricCard } from '../../components/ui';
-import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
+import {
+  VirtualTable,
+  type VirtualColumn,
+} from '../../components/VirtualTable';
 import type { PricedDemandLine, StockStatus } from '../../domain/types';
 
 type DiagnosticNormStatus = 'NO_NORM' | 'INVALID_NORM';
@@ -17,7 +23,7 @@ interface NetworkGroup {
   skuCode: string;
   article: string | null;
   name: string;
-  lines: PricedDemandLine[];
+  lines: PurchaseDemandLine[];
   worstStatus: StockStatus;
   deficitBranchCount: number;
   belowMinBranchCount: number;
@@ -39,9 +45,19 @@ const severity: Record<StockStatus, number> = {
 
 export function DemandPage({ branch }: { branch?: string | undefined }) {
   const { state } = useStore();
-  const derived = derive(state)!;
-  const [filters, setFilters] = useState<DemandFilters>(emptyDemandFilters);
-  const [expandedSku, setExpandedSku] = useState<string | null>(null);
+  const derived = useDerivedState(state);
+  const [filters, setFilters] = usePreference<DemandFilters>(
+    `demand:${branch ?? 'all'}:filters`,
+    emptyDemandFilters,
+  );
+  const [showCovered, setShowCovered] = usePreference(
+    `demand:${branch ?? 'all'}:covered`,
+    false,
+  );
+  const [expandedSku, setExpandedSku] = usePreference<string | null>(
+    'demand:expanded',
+    null,
+  );
 
   const supplierOptions = useMemo(
     () => state.suppliers?.suppliers ?? [],
@@ -59,21 +75,35 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     return keys;
   }, [derived.projection.orders]);
 
-  const scopedLines = derived.demand.filter((line) => !branch || line.branch === branch);
-  const invalidNormCount = scopedLines.filter((line) => line.status === 'INVALID_NORM').length;
-  const noNormCount = scopedLines.filter((line) => line.status === 'NO_NORM').length;
+  const scopedLines = derived.purchaseDemand.filter(
+    (line) => !branch || line.branch === branch,
+  );
+  const invalidNormCount = scopedLines.filter(
+    (line) => line.purchaseStatus === 'INVALID_NORM',
+  ).length;
+  const noNormCount = scopedLines.filter(
+    (line) => line.purchaseStatus === 'NO_NORM',
+  ).length;
 
   if (!branch) {
     const diagnosticStatus = getDiagnosticNormStatus(filters.status);
     const groups = filterNetworkGroups(
-      buildNetworkGroups(derived.demand, diagnosticStatus),
+      buildNetworkGroups(derived.purchaseDemand, diagnosticStatus, showCovered),
       filters,
       orderLineKeys,
     );
     const qty = groups.reduce((sum, group) => sum + group.totalDeficitQty, 0);
-    const amount = groups.reduce((sum, group) => sum + group.totalDemandAmount, 0);
-    const missing = groups.reduce((sum, group) => sum + group.missingPriceCount, 0);
-    const belowMin = groups.filter((group) => group.belowMinBranchCount > 0).length;
+    const amount = groups.reduce(
+      (sum, group) => sum + group.totalDemandAmount,
+      0,
+    );
+    const missing = groups.reduce(
+      (sum, group) => sum + group.missingPriceCount,
+      0,
+    );
+    const belowMin = groups.filter(
+      (group) => group.belowMinBranchCount > 0,
+    ).length;
 
     const columns: VirtualColumn<NetworkGroup>[] = [
       {
@@ -82,8 +112,18 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         width: '150px',
         render: (group) => <StatusBadge status={group.worstStatus} />,
       },
-      { key: 'article', header: 'Артикул', width: '130px', render: (group) => group.article ?? '—' },
-      { key: 'code', header: 'Код', width: '135px', render: (group) => <strong>{group.skuCode}</strong> },
+      {
+        key: 'article',
+        header: 'Артикул',
+        width: '130px',
+        render: (group) => group.article ?? '—',
+      },
+      {
+        key: 'code',
+        header: 'Код',
+        width: '135px',
+        render: (group) => <strong>{group.skuCode}</strong>,
+      },
       {
         key: 'name',
         header: 'Товар',
@@ -91,18 +131,61 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         render: (group) => (
           <button
             className="row-expand"
-            onClick={() => setExpandedSku(expandedSku === group.skuCode ? null : group.skuCode)}
+            onClick={() =>
+              setExpandedSku(
+                expandedSku === group.skuCode ? null : group.skuCode,
+              )
+            }
           >
             <span>{group.name}</span>
-            <small>{expandedSku === group.skuCode ? 'Скрыть подразделения' : 'Показать подразделения'}</small>
+            <small>
+              {expandedSku === group.skuCode
+                ? 'Скрыть подразделения'
+                : 'Показать подразделения'}
+            </small>
           </button>
         ),
       },
-      { key: 'branches', header: 'Подразделений', width: '115px', className: 'num', render: (group) => group.deficitBranchCount },
-      { key: 'below', header: 'Ниже MIN', width: '95px', className: 'num', render: (group) => group.belowMinBranchCount },
-      { key: 'qty', header: 'Потребность', width: '115px', className: 'num', render: (group) => fmtQty(group.totalDeficitQty) },
-      { key: 'amount', header: 'Потребность, ₽', width: '155px', className: 'num', render: (group) => amountWithMissing(group.totalDemandAmount, group.missingPriceCount) },
-      { key: 'supplier', header: 'Поставщик / статус', width: '190px', render: (group) => group.selectedSupplier ?? 'Требует решения' },
+      {
+        key: 'branches',
+        header: 'Подразделений',
+        width: '115px',
+        className: 'num',
+        render: (group) => group.deficitBranchCount,
+      },
+      {
+        key: 'below',
+        header: 'Ниже MIN',
+        width: '95px',
+        className: 'num',
+        render: (group) => group.belowMinBranchCount,
+      },
+      {
+        key: 'qty',
+        header: 'Потребность',
+        width: '115px',
+        className: 'num',
+        render: (group) => (
+          <>
+            {fmtQty(group.totalDeficitQty)}
+            <MovementIndicator scope={{ skuCode: group.skuCode }} />
+          </>
+        ),
+      },
+      {
+        key: 'amount',
+        header: 'Потребность, ₽',
+        width: '155px',
+        className: 'num',
+        render: (group) =>
+          amountWithMissing(group.totalDemandAmount, group.missingPriceCount),
+      },
+      {
+        key: 'supplier',
+        header: 'Поставщик / статус',
+        width: '190px',
+        render: (group) => group.selectedSupplier ?? 'Требует решения',
+      },
     ];
 
     return (
@@ -110,44 +193,171 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         title="Потребность всей сети"
         subtitle="Одна строка на товар. Раскройте товар, чтобы увидеть распределение по подразделениям."
       >
-        <Metrics count={groups.length} below={belowMin} qty={qty} sum={amount} missing={missing} />
+        <Metrics
+          count={groups.length}
+          below={belowMin}
+          qty={qty}
+          sum={amount}
+          missing={missing}
+        />
         <NormAlerts invalid={invalidNormCount} missing={noNormCount} />
-        <FiltersBar value={filters} onChange={setFilters} suppliers={supplierOptions} resultCount={groups.length} />
+        <label className="checkbox-control">
+          <input
+            type="checkbox"
+            checked={showCovered}
+            onChange={(e) => setShowCovered(e.target.checked)}
+          />
+          Показать покрытые перемещениями
+        </label>
+        <FiltersBar
+          value={filters}
+          onChange={setFilters}
+          suppliers={supplierOptions}
+          resultCount={groups.length}
+        />
         <VirtualTable
           rows={groups}
           columns={columns}
           getRowKey={(group) => group.skuCode}
           renderDetails={(group) =>
-            expandedSku === group.skuCode ? <NetworkDetails group={group} /> : null
+            expandedSku === group.skuCode ? (
+              <NetworkDetails group={group} />
+            ) : null
           }
         />
       </Workspace>
     );
   }
 
-  const rows = filterBranchLines(scopedLines, filters, orderLineKeys).sort(
-    (left, right) => severity[right.status] - severity[left.status],
+  const rows = filterBranchLines(
+    scopedLines,
+    filters,
+    orderLineKeys,
+    showCovered,
+  ).sort(
+    (left, right) =>
+      severity[right.purchaseStatus] - severity[left.purchaseStatus],
   );
-  const qty = rows.reduce((sum, line) => sum + line.deficitQty, 0);
-  const amount = rows.reduce((sum, line) => sum + (line.demandAmount ?? 0), 0);
-  const missing = rows.filter((line) => line.deficitQty > 0 && line.demandAmount == null).length;
-  const belowMin = rows.filter((line) => line.status === 'BELOW_MIN').length;
+  const qty = rows.reduce((sum, line) => sum + line.purchaseQty, 0);
+  const amount = rows.reduce(
+    (sum, line) => sum + (line.purchaseAmount ?? 0),
+    0,
+  );
+  const missing = rows.filter(
+    (line) => line.purchaseQty > 0 && line.purchaseAmount == null,
+  ).length;
+  const belowMin = rows.filter(
+    (line) => line.purchaseStatus === 'BELOW_MIN',
+  ).length;
 
-  const columns: VirtualColumn<PricedDemandLine>[] = [
-    { key: 'status', header: 'Статус', width: '145px', render: (line) => <StatusBadge status={line.status} /> },
-    { key: 'article', header: 'Артикул', width: '120px', render: (line) => line.article ?? '—' },
-    { key: 'code', header: 'Код', width: '130px', render: (line) => <strong>{line.skuCode}</strong> },
-    { key: 'name', header: 'Номенклатура', width: 'minmax(240px, 1.5fr)', render: (line) => line.name },
-    { key: 'stock', header: 'Остаток', width: '85px', className: 'num', render: (line) => fmtQty(line.stock) },
-    { key: 'min', header: 'MIN', width: '75px', className: 'num', render: (line) => line.min ?? '—' },
-    { key: 'max', header: 'MAX', width: '75px', className: 'num', render: (line) => line.max ?? '—' },
-    { key: 'pct', header: 'Не хватает %', width: '105px', className: 'num', render: (line) => line.deficitPct == null ? '—' : `${Math.round(line.deficitPct * 100)}%` },
-    { key: 'localQty', header: 'Нужно сюда', width: '105px', className: 'num', render: (line) => fmtQty(line.deficitQty) },
-    { key: 'networkQty', header: 'Нужно всей сети', width: '125px', className: 'num', render: (line) => fmtQty(line.networkDeficitQty) },
-    { key: 'localAmount', header: '₽ сюда', width: '125px', className: 'num', render: (line) => line.demandAmount == null ? 'Нет цены' : money(line.demandAmount) },
-    { key: 'networkAmount', header: '₽ всей сети', width: '145px', className: 'num', render: (line) => amountWithMissing(line.networkDemandAmount, line.networkMissingPriceCount) },
-    { key: 'supplier', header: 'Поставщик', width: '175px', render: (line) => line.selectedSupplier ?? 'Не выбран' },
-    { key: 'source', header: 'Источник цены', width: '125px', render: (line) => priceSourceLabel(line.priceSource) },
+  const columns: VirtualColumn<PurchaseDemandLine>[] = [
+    {
+      key: 'status',
+      header: 'Статус',
+      width: '145px',
+      render: (line) => <StatusBadge status={line.purchaseStatus} />,
+    },
+    {
+      key: 'article',
+      header: 'Артикул',
+      width: '120px',
+      render: (line) => line.article ?? '—',
+    },
+    {
+      key: 'code',
+      header: 'Код',
+      width: '130px',
+      render: (line) => <strong>{line.skuCode}</strong>,
+    },
+    {
+      key: 'name',
+      header: 'Номенклатура',
+      width: 'minmax(240px, 1.5fr)',
+      render: (line) => line.name,
+    },
+    {
+      key: 'stock',
+      header: 'Остаток по отчёту',
+      width: '120px',
+      className: 'num',
+      render: (line) => fmtQty(line.stock),
+    },
+    {
+      key: 'min',
+      header: 'MIN',
+      width: '75px',
+      className: 'num',
+      render: (line) => line.min ?? '—',
+    },
+    {
+      key: 'max',
+      header: 'MAX',
+      width: '75px',
+      className: 'num',
+      render: (line) => line.max ?? '—',
+    },
+    {
+      key: 'pct',
+      header: 'Не хватает %',
+      width: '105px',
+      className: 'num',
+      render: (line) =>
+        line.purchaseDeficitPct == null
+          ? '—'
+          : `${Math.round(line.purchaseDeficitPct * 100)}%`,
+    },
+    {
+      key: 'localQty',
+      header: 'Нужно сюда',
+      width: '105px',
+      className: 'num',
+      render: (line) => (
+        <>
+          {fmtQty(line.purchaseQty)}
+          <MovementIndicator
+            scope={{ skuCode: line.skuCode, branch: line.branch }}
+          />
+        </>
+      ),
+    },
+    {
+      key: 'networkQty',
+      header: 'Нужно всей сети',
+      width: '125px',
+      className: 'num',
+      render: (line) => fmtQty(line.networkPurchaseQty),
+    },
+    {
+      key: 'localAmount',
+      header: '₽ сюда',
+      width: '125px',
+      className: 'num',
+      render: (line) =>
+        line.purchaseAmount == null ? 'Нет цены' : money(line.purchaseAmount),
+    },
+    {
+      key: 'networkAmount',
+      header: '₽ всей сети',
+      width: '145px',
+      className: 'num',
+      render: (line) =>
+        amountWithMissing(
+          line.networkPurchaseAmount,
+          line.networkPurchaseMissingPriceCount,
+        ),
+    },
+    {
+      key: 'supplier',
+      header: 'Поставщик',
+      width: '175px',
+      render: (line) => line.selectedSupplier ?? 'Не выбран',
+    },
+    {
+      key: 'source',
+      header: 'Источник цены',
+      width: '125px',
+      render: (line) => priceSourceLabel(line.priceSource),
+    },
   ];
 
   return (
@@ -155,9 +365,28 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       title={branch}
       subtitle="Потребность подразделения до MAX. Критичные позиции автоматически подняты выше."
     >
-      <Metrics count={rows.length} below={belowMin} qty={qty} sum={amount} missing={missing} />
+      <Metrics
+        count={rows.length}
+        below={belowMin}
+        qty={qty}
+        sum={amount}
+        missing={missing}
+      />
       <NormAlerts invalid={invalidNormCount} missing={noNormCount} />
-      <FiltersBar value={filters} onChange={setFilters} suppliers={supplierOptions} resultCount={rows.length} />
+      <label className="checkbox-control">
+        <input
+          type="checkbox"
+          checked={showCovered}
+          onChange={(e) => setShowCovered(e.target.checked)}
+        />
+        Показать покрытые перемещениями
+      </label>
+      <FiltersBar
+        value={filters}
+        onChange={setFilters}
+        suppliers={supplierOptions}
+        resultCount={rows.length}
+      />
       <VirtualTable
         rows={rows}
         columns={columns}
@@ -169,13 +398,18 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
 }
 
 function buildNetworkGroups(
-  lines: PricedDemandLine[],
+  lines: PurchaseDemandLine[],
   diagnosticStatus: DiagnosticNormStatus | null = null,
+  showCovered = false,
 ): NetworkGroup[] {
-  const grouped = new Map<string, PricedDemandLine[]>();
+  const grouped = new Map<string, PurchaseDemandLine[]>();
   const groupableLines = diagnosticStatus
-    ? lines.filter((item) => item.status === diagnosticStatus)
-    : lines.filter((item) => item.deficitQty > 0);
+    ? lines.filter((item) => item.purchaseStatus === diagnosticStatus)
+    : lines.filter(
+        (item) =>
+          item.purchaseQty > 0 ||
+          (showCovered && item.acceptedTransferIds.length > 0),
+      );
 
   for (const line of groupableLines) {
     const bucket = grouped.get(line.skuCode) ?? [];
@@ -184,21 +418,34 @@ function buildNetworkGroups(
   }
 
   return [...grouped.entries()].map(([skuCode, groupLines]) => {
-    const positiveLines = groupLines.filter((line) => line.deficitQty > 0);
+    const positiveLines = groupLines.filter((line) => line.purchaseQty > 0);
     return {
       skuCode,
       article: groupLines[0]!.article,
       name: groupLines[0]!.name,
       lines: groupLines,
       worstStatus: groupLines.reduce(
-        (worst, line) => (severity[line.status] > severity[worst] ? line.status : worst),
-        groupLines[0]!.status,
+        (worst, line) =>
+          severity[line.purchaseStatus] > severity[worst]
+            ? line.purchaseStatus
+            : worst,
+        groupLines[0]!.purchaseStatus,
       ),
       deficitBranchCount: groupLines.length,
-      belowMinBranchCount: groupLines.filter((line) => line.status === 'BELOW_MIN').length,
-      totalDeficitQty: groupLines.reduce((sum, line) => sum + line.deficitQty, 0),
-      totalDemandAmount: positiveLines.reduce((sum, line) => sum + (line.demandAmount ?? 0), 0),
-      missingPriceCount: positiveLines.filter((line) => line.demandAmount == null).length,
+      belowMinBranchCount: groupLines.filter(
+        (line) => line.purchaseStatus === 'BELOW_MIN',
+      ).length,
+      totalDeficitQty: groupLines.reduce(
+        (sum, line) => sum + line.purchaseQty,
+        0,
+      ),
+      totalDemandAmount: positiveLines.reduce(
+        (sum, line) => sum + (line.purchaseAmount ?? 0),
+        0,
+      ),
+      missingPriceCount: positiveLines.filter(
+        (line) => line.purchaseAmount == null,
+      ).length,
       selectedSupplier: groupLines[0]!.selectedSupplier,
     };
   });
@@ -211,32 +458,76 @@ function filterNetworkGroups(
 ): NetworkGroup[] {
   const query = filters.query.trim().toLocaleLowerCase('ru-RU');
   return groups.filter((group) => {
-    if (query && !`${group.skuCode} ${group.article ?? ''} ${group.name}`.toLocaleLowerCase('ru-RU').includes(query)) return false;
-    if (filters.status !== 'ALL' && group.worstStatus !== filters.status) return false;
-    if (filters.supplier === '__UNASSIGNED__' && group.selectedSupplier) return false;
-    if (filters.supplier && filters.supplier !== '__UNASSIGNED__' && group.selectedSupplier !== filters.supplier) return false;
+    if (
+      query &&
+      !`${group.skuCode} ${group.article ?? ''} ${group.name}`
+        .toLocaleLowerCase('ru-RU')
+        .includes(query)
+    )
+      return false;
+    if (filters.status !== 'ALL' && group.worstStatus !== filters.status)
+      return false;
+    if (filters.supplier === '__UNASSIGNED__' && group.selectedSupplier)
+      return false;
+    if (
+      filters.supplier &&
+      filters.supplier !== '__UNASSIGNED__' &&
+      group.selectedSupplier !== filters.supplier
+    )
+      return false;
     if (!passesMoney(group.totalDemandAmount, filters)) return false;
-    if (filters.onlyInOrders && !group.lines.some((line) => orderLineKeys.has(`${line.skuCode}\0${line.branch}`))) return false;
+    if (
+      filters.onlyInOrders &&
+      !group.lines.some((line) =>
+        orderLineKeys.has(`${line.skuCode}\0${line.branch}`),
+      )
+    )
+      return false;
     if (filters.problemsOnly && !group.lines.some(hasProblem)) return false;
     return true;
   });
 }
 
 function filterBranchLines(
-  lines: PricedDemandLine[],
+  lines: PurchaseDemandLine[],
   filters: DemandFilters,
   orderLineKeys: Set<string>,
-): PricedDemandLine[] {
+  showCovered = false,
+): PurchaseDemandLine[] {
   const query = filters.query.trim().toLocaleLowerCase('ru-RU');
   const diagnosticStatus = getDiagnosticNormStatus(filters.status);
   return lines.filter((line) => {
-    if (!(line.deficitQty > 0 || (diagnosticStatus !== null && line.status === diagnosticStatus))) return false;
-    if (query && !`${line.skuCode} ${line.article ?? ''} ${line.name}`.toLocaleLowerCase('ru-RU').includes(query)) return false;
-    if (filters.status !== 'ALL' && line.status !== filters.status) return false;
-    if (filters.supplier === '__UNASSIGNED__' && line.selectedSupplier) return false;
-    if (filters.supplier && filters.supplier !== '__UNASSIGNED__' && line.selectedSupplier !== filters.supplier) return false;
-    if (!passesMoney(line.demandAmount ?? 0, filters)) return false;
-    if (filters.onlyInOrders && !orderLineKeys.has(`${line.skuCode}\0${line.branch}`)) return false;
+    if (
+      !(
+        line.purchaseQty > 0 ||
+        (showCovered && line.acceptedTransferIds.length > 0) ||
+        (diagnosticStatus !== null && line.purchaseStatus === diagnosticStatus)
+      )
+    )
+      return false;
+    if (
+      query &&
+      !`${line.skuCode} ${line.article ?? ''} ${line.name}`
+        .toLocaleLowerCase('ru-RU')
+        .includes(query)
+    )
+      return false;
+    if (filters.status !== 'ALL' && line.purchaseStatus !== filters.status)
+      return false;
+    if (filters.supplier === '__UNASSIGNED__' && line.selectedSupplier)
+      return false;
+    if (
+      filters.supplier &&
+      filters.supplier !== '__UNASSIGNED__' &&
+      line.selectedSupplier !== filters.supplier
+    )
+      return false;
+    if (!passesMoney(line.purchaseAmount ?? 0, filters)) return false;
+    if (
+      filters.onlyInOrders &&
+      !orderLineKeys.has(`${line.skuCode}\0${line.branch}`)
+    )
+      return false;
     if (filters.problemsOnly && !hasProblem(line)) return false;
     return true;
   });
@@ -254,7 +545,7 @@ function passesMoney(amount: number, filters: DemandFilters): boolean {
   return (from == null || amount >= from) && (to == null || amount <= to);
 }
 
-function hasProblem(line: PricedDemandLine): boolean {
+function hasProblem(line: PurchaseDemandLine): boolean {
   return (
     line.unitPrice == null ||
     line.supplierResolutionStatus === 'MANUAL_REQUIRED' ||
@@ -269,39 +560,88 @@ function NetworkDetails({ group }: { group: NetworkGroup }) {
       {group.lines.map((line) => (
         <div key={line.branch} className="network-detail-item">
           <strong>{line.branch}</strong>
-          <span>Остаток {fmtQty(line.stock)}</span>
+          <span>Остаток по отчёту {fmtQty(line.stock)}</span>
           <span>MIN {line.min ?? '—'}</span>
           <span>MAX {line.max ?? '—'}</span>
-          <span>Нужно {fmtQty(line.deficitQty)}</span>
-          <span>{line.demandAmount == null ? 'Нет цены' : money(line.demandAmount)}</span>
+          <span>
+            Нужно {fmtQty(line.purchaseQty)}
+            <MovementIndicator
+              scope={{ skuCode: line.skuCode, branch: line.branch }}
+            />
+          </span>
+          <span>
+            {line.purchaseAmount == null
+              ? 'Нет цены'
+              : money(line.purchaseAmount)}
+          </span>
         </div>
       ))}
     </div>
   );
 }
 
-function NormAlerts({ invalid, missing }: { invalid: number; missing: number }) {
+function NormAlerts({
+  invalid,
+  missing,
+}: {
+  invalid: number;
+  missing: number;
+}) {
   if (invalid === 0 && missing === 0) return null;
   return (
     <div className="alert-stack">
-      {invalid > 0 && <Alert tone="danger">Ошибка MIN/MAX у {invalid} строк. Они не попадут в заказ до исправления норматива.</Alert>}
-      {missing > 0 && <Alert tone="warning">Нет MAX-норматива у {missing} строк. Потребность для них не рассчитывается.</Alert>}
+      {invalid > 0 && (
+        <Alert tone="danger">
+          Ошибка MIN/MAX у {invalid} строк. Они не попадут в заказ до
+          исправления норматива.
+        </Alert>
+      )}
+      {missing > 0 && (
+        <Alert tone="warning">
+          Нет MAX-норматива у {missing} строк. Потребность для них не
+          рассчитывается.
+        </Alert>
+      )}
     </div>
   );
 }
 
-function Metrics({ count, below, qty, sum, missing }: { count: number; below: number; qty: number; sum: number; missing: number }) {
+function Metrics({
+  count,
+  below,
+  qty,
+  sum,
+  missing,
+}: {
+  count: number;
+  below: number;
+  qty: number;
+  sum: number;
+  missing: number;
+}) {
   return (
     <div className="metrics">
       <MetricCard label="SKU ниже MAX" value={count} />
       <MetricCard label="SKU ниже MIN" value={below} />
       <MetricCard label="Нужно заказать" value={fmtQty(qty)} />
-      <MetricCard label="Известная сумма" value={money(sum)} note={missing > 0 ? `Без цены: ${missing}` : null} />
+      <MetricCard
+        label="Известная сумма"
+        value={money(sum)}
+        note={missing > 0 ? `Без цены: ${missing}` : null}
+      />
     </div>
   );
 }
 
-function Workspace({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+function Workspace({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
   return (
     <main>
       <header>
@@ -332,10 +672,17 @@ export function money(value: number): string {
 }
 
 export function fmtQty(value: number): string {
-  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(value);
+  return new Intl.NumberFormat('ru-RU', {
+    maximumFractionDigits: 12,
+    ...(value !== 0 && Math.abs(value) < 1e-9
+      ? { notation: 'scientific' as const, maximumSignificantDigits: 15 }
+      : {}),
+  }).format(value);
 }
 
-export function priceSourceLabel(source: PricedDemandLine['priceSource']): string {
+export function priceSourceLabel(
+  source: PricedDemandLine['priceSource'],
+): string {
   if (source === 'SUPPLIER_HISTORY') return 'История закупок';
   if (source === 'MIN_MAX_FALLBACK') return 'Цена MIN/MAX';
   return 'Нет цены';

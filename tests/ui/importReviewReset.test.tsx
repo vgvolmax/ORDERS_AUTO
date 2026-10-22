@@ -7,7 +7,10 @@ import { baseState, renderWithStore } from './renderWithStore';
 
 describe('report import review invalidation', () => {
   it('clears checked and exported order markers when a MIN/MAX report is replaced', async () => {
-    const set = vi.fn();
+    const initial = baseState();
+    const set = vi.fn((patch) =>
+      typeof patch === 'function' ? patch(initial) : patch,
+    );
     renderWithStore(
       <ImportPage />,
       baseState({
@@ -28,14 +31,17 @@ describe('report import review invalidation', () => {
     });
 
     await waitFor(() =>
-      expect(set).toHaveBeenCalledWith(
+      expect(set.mock.results.map((r) => r.value)).toContainEqual(
         expect.objectContaining({ reviewedOrderIds: [], exportedOrderIds: [] }),
       ),
     );
   });
 
   it('clears checked and exported order markers when a supplier report is replaced', async () => {
-    const set = vi.fn();
+    const initial = baseState();
+    const set = vi.fn((patch) =>
+      typeof patch === 'function' ? patch(initial) : patch,
+    );
     renderWithStore(
       <ImportPage />,
       baseState({
@@ -45,7 +51,9 @@ describe('report import review invalidation', () => {
       set,
     );
 
-    const supplierInput = screen.getByLabelText('Выбрать файл Отчёт поставщиков');
+    const supplierInput = screen.getByLabelText(
+      'Выбрать файл Отчёт поставщиков',
+    );
     fireEvent.change(supplierInput, {
       target: {
         files: [
@@ -57,11 +65,8 @@ describe('report import review invalidation', () => {
     });
 
     await waitFor(() =>
-      expect(set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          reviewedOrderIds: [],
-          exportedOrderIds: [],
-        }),
+      expect(set.mock.results.map((r) => r.value)).toContainEqual(
+        expect.objectContaining({ reviewedOrderIds: [], exportedOrderIds: [] }),
       ),
     );
   });

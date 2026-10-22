@@ -173,3 +173,7 @@ Motion сообщает изменение состояния: появлени�
 ## Уточнение20.10.2026: текущий MVP
 
 Для этой реализации flow-map/Pareto/PRIORITY-ALLOWED-MANUAL_ONLY не являются обязательными экранами. Рабочие вкладки маршрутов/условий/результатов и краткий поп-ап учтённых перемещений следуют существующим tokens и русскому плотному desktop UI. Донорский slider отсутствует; настройка условий получателя и receiver target независимы. Цвет только дополняет текст принятия. Этот раздел уточняет будущую UI-концепцию, PR1 не меняет runtime CSS/components.
+
+## Реализация PR2: canonical owners
+
+`src/components/Dialog.tsx` владеет modal focus/keyboard/inert/portal; оба order drawer используют тот же hook. Слои runtime CSS: sticky100, sheet500, dialog600, toast900. `SearchInput` в `components/ui.tsx` владеет очисткой и возвратом фокуса. Существующий native `Select` остаётся общим владельцем: OS popup допустим для компактных настроек; текст option и label русский. Поведенческие контракты и evidence находятся в `UX-CONTRACT.md` / `premium-ui.json`. Цвета, шрифты и формы существующих экранов сохранены.

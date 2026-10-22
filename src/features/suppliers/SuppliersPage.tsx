@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../../app/appStore';
-import { derive } from '../../app/selectors';
+import { useDerivedState } from '../../app/useDerivedState';
+import { usePreference } from '../../app/usePreference';
+import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import {
   Alert,
@@ -9,6 +11,7 @@ import {
   Input,
   MetricCard,
   Select,
+  SearchInput,
 } from '../../components/ui';
 import {
   buildAutoSupplierOverrides,
@@ -17,14 +20,9 @@ import {
 } from '../../domain/supplierAutomation';
 import type {
   Order,
-  PricedDemandLine,
   SupplierOverride,
   SupplierResolution,
 } from '../../domain/types';
-import {
-  saveSupplierOverride,
-  saveSupplierOverrides,
-} from '../../persistence/supplierOverrides';
 import { fmtQty, money } from '../demand/DemandPage';
 
 interface SupplierSummary {
@@ -41,29 +39,50 @@ interface SupplierSummary {
 }
 
 export function SuppliersPage() {
-  const { state, set } = useStore();
-  const derived = derive(state);
-  const [query, setQuery] = useState('');
-  const [amountFrom, setAmountFrom] = useState('');
-  const [showBelowThreshold, setShowBelowThreshold] = useState(false);
-  const [decisionsOpen, setDecisionsOpen] = useState(true);
-  const [selectedSkuCodes, setSelectedSkuCodes] = useState<Set<string>>(
-    () => new Set(),
+  const { state, set, commit } = useStore();
+  const derived = useDerivedState(state);
+  const [query, setQuery] = usePreference('suppliers:query', '');
+  const [amountFrom, setAmountFrom] = usePreference('suppliers:amountFrom', '');
+  const [showBelowThreshold, setShowBelowThreshold] = usePreference(
+    'suppliers:belowThreshold',
+    false,
   );
-  const [autoStrategy, setAutoStrategy] =
-    useState<SupplierAutoStrategy>('MIN_PRICE');
-  const [autoScope, setAutoScope] = useState<SupplierAutoScope>('ALL');
-  const [overwriteManual, setOverwriteManual] = useState(false);
+  const [decisionsOpen, setDecisionsOpen] = usePreference(
+    'suppliers:decisionsOpen',
+    true,
+  );
+  const [selectedCodes, setSelectedCodes] = usePreference<string[]>(
+    'suppliers:selectedCodes',
+    [],
+  );
+  const selectedSkuCodes = useMemo(
+    () => new Set(selectedCodes),
+    [selectedCodes],
+  );
+  const setSelectedSkuCodes = (codes: Set<string>) =>
+    setSelectedCodes([...codes]);
+  const [autoStrategy, setAutoStrategy] = usePreference<SupplierAutoStrategy>(
+    'suppliers:autoStrategy',
+    'MIN_PRICE',
+  );
+  const [autoScope, setAutoScope] = usePreference<SupplierAutoScope>(
+    'suppliers:autoScope',
+    'ALL',
+  );
+  const [overwriteManual, setOverwriteManual] = usePreference(
+    'suppliers:overwriteManual',
+    false,
+  );
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const neededSkuCodes = useMemo(
     () =>
       new Set(
-        derived.demand
-          .filter((line) => line.deficitQty > 0)
+        derived.purchaseDemand
+          .filter((line) => line.purchaseQty > 0)
           .map((line) => line.skuCode),
       ),
-    [derived.demand],
+    [derived.purchaseDemand],
   );
 
   const problems = derived.resolutions.filter(
@@ -77,15 +96,18 @@ export function SuppliersPage() {
   const operationPool = derived.resolutions.filter(
     (resolution) =>
       neededSkuCodes.has(resolution.skuCode) &&
-      (problems.includes(resolution) || resolution.status === 'MANUAL_SELECTED'),
+      (problems.includes(resolution) ||
+        resolution.status === 'MANUAL_SELECTED'),
   );
   const problemSkuCodes = new Set(problems.map((problem) => problem.skuCode));
-  const problemDemand = derived.demand.filter(
-    (line) => problemSkuCodes.has(line.skuCode) && line.deficitQty > 0,
+  const problemDemand = derived.purchaseDemand.filter(
+    (line) => problemSkuCodes.has(line.skuCode) && line.purchaseQty > 0,
   );
-  const problemAmount = problemDemand.some((line) => line.demandAmount == null)
+  const problemAmount = problemDemand.some(
+    (line) => line.purchaseAmount == null,
+  )
     ? null
-    : problemDemand.reduce((sum, line) => sum + (line.demandAmount ?? 0), 0);
+    : problemDemand.reduce((sum, line) => sum + (line.purchaseAmount ?? 0), 0);
 
   const autoOverrides = useMemo(
     () =>
@@ -97,12 +119,19 @@ export function SuppliersPage() {
         strategy: autoStrategy,
         overwriteManual,
       }),
-    [operationPool, state.overrides, selectedSkuCodes, autoScope, autoStrategy, overwriteManual],
+    [
+      operationPool,
+      state.overrides,
+      selectedSkuCodes,
+      autoScope,
+      autoStrategy,
+      overwriteManual,
+    ],
   );
 
   const summaries = buildSupplierSummaries(
     derived.projection.orders,
-    derived.demand,
+    derived.purchaseDemand,
   );
   const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
   const minimumAmount = amountFrom === '' ? null : Number(amountFrom);
@@ -142,42 +171,36 @@ export function SuppliersPage() {
       source: 'MANUAL',
       updatedAt: new Date().toISOString(),
     };
-    const previous = state.overrides;
-
-    set({
-      overrides: mergeOverrides(previous, [override]),
-      toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.`,
-    });
-
     try {
-      await saveSupplierOverride(override);
+      const patch = (s: typeof state) => ({
+        overrides: mergeOverrides(s.overrides, [override]),
+        toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.`,
+      });
+      if (commit) await commit(patch);
+      else set(patch(state));
     } catch {
       set({
-        overrides: previous,
-        toast: 'Не удалось сохранить выбор поставщика.',
+        toast:
+          'Не удалось сохранить выбор поставщика. Предыдущий выбор сохранён.',
       });
     }
   }
 
   async function applyAutomation(): Promise<void> {
-    if (autoOverrides.length === 0 || bulkBusy) {
-      return;
-    }
-
-    const previous = state.overrides;
+    if (!autoOverrides.length || bulkBusy) return;
     setBulkBusy(true);
-    set({
-      overrides: mergeOverrides(previous, autoOverrides),
-      toast: `Автоматически назначено: ${autoOverrides.length}.`,
-    });
-
     try {
-      await saveSupplierOverrides(autoOverrides);
+      const patch = (s: typeof state) => ({
+        overrides: mergeOverrides(s.overrides, autoOverrides),
+        toast: `Автоматически назначено: ${autoOverrides.length}.`,
+      });
+      if (commit) await commit(patch);
+      else set(patch(state));
       setSelectedSkuCodes(new Set());
     } catch {
       set({
-        overrides: previous,
-        toast: 'Не удалось сохранить массовый выбор поставщиков.',
+        toast:
+          'Не удалось сохранить массовый выбор поставщиков. Повторите действие.',
       });
     } finally {
       setBulkBusy(false);
@@ -187,7 +210,7 @@ export function SuppliersPage() {
   return (
     <main>
       <header>
-        <p className="eyebrow">Шаг 3 из 4</p>
+        <p className="eyebrow">Рабочая потребность</p>
         <h1>Поставщики</h1>
         <p>
           Кому, на какую сумму и в какие подразделения сейчас требуется заказ.
@@ -196,9 +219,11 @@ export function SuppliersPage() {
 
       <ThresholdControls
         settings={state.settings}
-        onChange={(settings) =>
-          set({ settings, toast: 'Порог закупки пересчитан.' })
-        }
+        onChange={async (settings) => {
+          const patch = { settings, toast: 'Порог закупки пересчитан.' };
+          if (commit) await commit(patch);
+          else set(patch);
+        }}
         showBelowThreshold={showBelowThreshold}
         onShowBelowThresholdChange={setShowBelowThreshold}
       />
@@ -243,9 +268,9 @@ export function SuppliersPage() {
       >
         <label>
           Поиск поставщика
-          <Input
+          <SearchInput
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onValueChange={setQuery}
             placeholder="Название поставщика"
           />
         </label>
@@ -485,8 +510,8 @@ function SupplierDecisions({
                     {resolution.status === 'STALE_OVERRIDE'
                       ? 'Сохранённый поставщик отсутствует в свежем отчёте.'
                       : resolution.candidates.length === 0
-                        ? 'Нет истории поставщиков для автоматического выбора.'
-                        : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
+                      ? 'Нет истории поставщиков для автоматического выбора.'
+                      : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
                   </p>
                 </div>
 
@@ -500,7 +525,10 @@ function SupplierDecisions({
                   >
                     <option value="">Выберите поставщика…</option>
                     {resolution.candidates.map((candidate) => (
-                      <option key={candidate.supplier} value={candidate.supplier}>
+                      <option
+                        key={candidate.supplier}
+                        value={candidate.supplier}
+                      >
                         {candidate.supplier}
                         {candidate.supplier === resolution.recommendedSupplier
                           ? ' — рекомендуемый'
@@ -576,7 +604,7 @@ function SupplierRow({ summary }: { summary: SupplierSummary }) {
 
 function buildSupplierSummaries(
   orders: Order[],
-  demand: PricedDemandLine[],
+  demand: PurchaseDemandLine[],
 ): SupplierSummary[] {
   const suppliers = [...new Set(orders.map((order) => order.supplier))];
 
@@ -596,8 +624,8 @@ function buildSupplierSummaries(
           .filter(
             (line) =>
               line.selectedSupplier === supplier &&
-              line.deficitQty > 0 &&
-              line.status === 'BELOW_MIN',
+              line.purchaseQty > 0 &&
+              line.purchaseStatus === 'BELOW_MIN',
           )
           .map((line) => line.skuCode),
       );
@@ -607,17 +635,11 @@ function buildSupplierSummaries(
         skuCount: new Set(positiveLines.map((line) => line.skuCode)).size,
         branchCount: new Set(supplierOrders.map((order) => order.branch)).size,
         belowMinSkuCount: belowMinSku.size,
-        totalQty: positiveLines.reduce(
-          (sum, line) => sum + line.orderQty,
-          0,
-        ),
+        totalQty: positiveLines.reduce((sum, line) => sum + line.orderQty, 0),
         totalAmount:
           missingPriceLineCount > 0
             ? null
-            : positiveLines.reduce(
-                (sum, line) => sum + (line.amount ?? 0),
-                0,
-              ),
+            : positiveLines.reduce((sum, line) => sum + (line.amount ?? 0), 0),
         missingPriceLineCount,
         belowThresholdOrderCount: supplierOrders.filter(
           (order) => order.belowThreshold,
@@ -634,9 +656,7 @@ function buildSupplierSummaries(
 }
 
 function hasHardBlocker(order: Order) {
-  return order.blockers.some(
-    (blocker) => blocker !== 'Ниже минимальной суммы',
-  );
+  return order.blockers.some((blocker) => blocker !== 'Ниже минимальной суммы');
 }
 
 function mergeOverrides(
