@@ -13,7 +13,7 @@ import { ConditionsPanel } from './ConditionsPanel';
 import { RoutesMatrix } from './RoutesMatrix';
 import { ResultsTable } from './ResultsTable';
 import { buildRebalancingWorkbook } from '../../export/rebalancingWorkbook';
-import { save as download } from '../../export/download';
+import { save as download, downloadTransferCsv } from '../../export/download';
 import { AcceptTransfersDialog } from './AcceptTransfersDialog';
 import {
   buildTransferDocuments,
@@ -29,7 +29,7 @@ const messages: Record<string, string> = {
 };
 export const rebalanceMessage = (e: unknown) =>
   e instanceof Error
-    ? messages[e.message] ?? e.message
+    ? (messages[e.message] ?? e.message)
     : 'Не удалось выполнить действие';
 export function RebalancingPage() {
   const store = useStore(),
@@ -280,6 +280,31 @@ export function RebalancingPage() {
       setBusy(false);
     }
   }
+  function csv(documentId: string) {
+    if (busy) return;
+    setError('');
+    try {
+      const doc = buildTransferDocuments({
+        proposal: r.proposal,
+        accepted: r.accepted,
+        registry: r.registry,
+        policies: r.policies,
+        skus: state.minMax?.skus ?? [],
+        snapshot: d.snapshot?.snapshot ?? null,
+        selected: [],
+        rejected: r.rejectedLineIds,
+        query: '',
+        scope: {},
+      }).find((doc) => doc.id === documentId);
+      if (!doc) throw new Error('В направлении нет принятых позиций.');
+      downloadTransferCsv(doc);
+      set({
+        toast: `CSV перемещения ${doc.fromName} → ${doc.toName} сформирован.`,
+      });
+    } catch {
+      setError('Не удалось скачать CSV перемещения. Повторите выгрузку.');
+    }
+  }
   return (
     <main>
       <header className="header-actions">
@@ -352,12 +377,12 @@ export function RebalancingPage() {
                 e.key === 'ArrowRight'
                   ? tabs[(i + 1) % 3]
                   : e.key === 'ArrowLeft'
-                  ? tabs[(i + 2) % 3]
-                  : e.key === 'Home'
-                  ? tabs[0]
-                  : e.key === 'End'
-                  ? tabs[2]
-                  : null;
+                    ? tabs[(i + 2) % 3]
+                    : e.key === 'Home'
+                      ? tabs[0]
+                      : e.key === 'End'
+                        ? tabs[2]
+                        : null;
               if (target) {
                 e.preventDefault();
                 edit({ tab: target });
@@ -450,6 +475,7 @@ export function RebalancingPage() {
                 }
                 onRevoke={(id) => open('revoke', [id])}
                 onAccept={(ids) => open('accept', ids)}
+                onExport={csv}
                 stale={stale}
                 busy={busy}
                 acceptingDisabled={Boolean(saving)}

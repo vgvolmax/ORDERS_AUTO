@@ -2,6 +2,8 @@ import JSZip from 'jszip';
 import type { Order } from '../domain/types';
 import { orderToCsv } from './csv';
 import { orderCsvFilename, ordersZipFilename } from './orderFilenames';
+import type { TransferDocument } from '../features/rebalancing/transferDocuments';
+import { transferToCsv, transferCsvFilename } from './transferCsv';
 
 export function save(blob: Blob, name: string): void {
   const anchor = document.createElement('a');
@@ -18,6 +20,15 @@ export function downloadCsv(order: Order): void {
   save(
     new Blob([orderToCsv(order)], { type: 'text/csv;charset=utf-8' }),
     orderCsvFilename(order),
+  );
+}
+
+export function downloadTransferCsv(doc: TransferDocument): void {
+  if (!doc.lines.some((line) => line.decision === 'ACCEPTED' && line.qty > 0))
+    throw new Error('В перемещении нет принятых позиций для CSV.');
+  save(
+    new Blob([transferToCsv(doc)], { type: 'text/csv;charset=utf-8' }),
+    transferCsvFilename(doc),
   );
 }
 

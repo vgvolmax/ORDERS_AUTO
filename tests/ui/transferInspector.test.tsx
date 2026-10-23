@@ -6,7 +6,8 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+import * as downloads from '../../src/export/download';
 import {
   StoreContext,
   type AppState,
@@ -324,7 +325,7 @@ it('allows inspecting an outdated proposal but disables selecting and accepting 
   expect(current().rebalance.accepted).toHaveLength(0);
 });
 
-it('keeps a large route virtualized and searches positions outside the rendered window', () => {
+it('pages a large route, preserves cross-page selection and searches the entire composition', () => {
   const state = rebalanceAppState();
   const sku = state.minMax!.skus[0]!;
   const stocks = state.minMax!.branchStocks;
@@ -346,7 +347,32 @@ it('keeps a large route virtualized and searches positions outside the rendered 
   harness(state);
   const { drawer } = openRoute();
   expect(drawer).toHaveTextContent('500 SKU');
-  expect(within(drawer).getAllByRole('row').length).toBeLessThan(120);
+  expect(within(drawer).getAllByRole('row')).toHaveLength(4);
+  fireEvent.click(
+    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение SKU1 / }),
+  );
+  fireEvent.click(
+    within(drawer).getByRole('button', { name: 'Следующая страница' }),
+  );
+  expect(
+    within(drawer).queryByRole('checkbox', {
+      name: /Выбрать перемещение SKU1 /,
+    }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(
+    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение SKU4 / }),
+  );
+  expect(
+    within(drawer).getByRole('button', {
+      name: 'Принять выбранные в перемещении (2)',
+    }),
+  ).toBeEnabled();
+  fireEvent.click(
+    within(drawer).getByRole('button', { name: 'Предыдущая страница' }),
+  );
+  expect(
+    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение SKU1 / }),
+  ).toBeChecked();
   fireEvent.change(
     within(drawer).getByRole('textbox', {
       name: 'Поиск по составу перемещения',
@@ -400,4 +426,95 @@ it('keeps an empty route inspector open after its last accepted row is revoked f
   expect(
     screen.getByRole('heading', { name: 'Условия перемещений' }),
   ).toBeVisible();
+});
+
+it('shows sender-wide total and selected money while preserving hidden selections under search', () => {
+  const state = rebalanceAppState();
+  state.rebalance.proposal = createProposal(state);
+  state.rebalance.tab = 'results';
+  const first = state.rebalance.proposal.transfers[0]!;
+  state.rebalance.proposal.transfers.push({
+    ...first,
+    sourceLineId: 'second-route',
+    toBranchId: 'b1',
+    qty: 5,
+  });
+  state.rebalance.selectedLineIds = [first.sourceLineId, 'second-route'];
+  harness(state);
+  const sender = () =>
+    screen.getByRole('group', { name: 'Итоги отправителя Донор А' });
+  expect(sender()).toHaveTextContent('Всего: 2 000,00');
+  expect(sender()).toHaveTextContent('Выбрано: 2 000,00');
+  fireEvent.change(
+    screen.getByRole('textbox', {
+      name: 'Поиск по коду, артикулу, товару и маршруту',
+    }),
+    { target: { value: 'Получатель' } },
+  );
+  expect(sender()).toHaveTextContent('Всего: 2 000,00');
+  expect(sender()).toHaveTextContent('Выбрано: 2 000,00');
+  const { drawer, trigger } = openRoute();
+  expect(trigger).toHaveTextContent('Выбрано на сумму: 1 500,00');
+  expect(
+    within(drawer).getByLabelText('Выбрано на сумму в перемещении'),
+  ).toHaveTextContent('1 500,00');
+});
+
+it('offers CSV only after acceptance and keeps accepted/purchasing state when download fails', () => {
+  let state = rebalanceAppState();
+  state.rebalance.proposal = createProposal(state);
+  const id = state.rebalance.proposal.transfers[0]!.sourceLineId;
+  state.rebalance.tab = 'results';
+  state = {
+    ...state,
+    ...prepareAcceptedChange(state, {
+      kind: 'accept',
+      ids: [id],
+      expectedRevision: 0,
+    }).patch,
+  };
+  const current = harness(state);
+  const before = structuredClone(current());
+  const { drawer } = openRoute();
+  const failure = vi
+    .spyOn(downloads, 'downloadTransferCsv')
+    .mockImplementation(() => {
+      throw new Error('download failed');
+    });
+  try {
+    fireEvent.click(
+      within(drawer).getByRole('button', {
+        name: 'Скачать CSV принятых позиций (1)',
+      }),
+    );
+    expect(within(drawer).getByRole('alert')).toHaveTextContent(
+      'Не удалось скачать CSV',
+    );
+    expect(current().rebalance.accepted).toEqual(before.rebalance.accepted);
+    expect(derive(current()).purchaseDemand).toEqual(
+      derive(before).purchaseDemand,
+    );
+    expect(
+      within(drawer).getByRole('button', {
+        name: 'Скачать CSV принятых позиций (1)',
+      }),
+    ).toBeEnabled();
+  } finally {
+    failure.mockRestore();
+  }
+});
+
+it('does not enable movement CSV for selected proposals', () => {
+  harness();
+  const { drawer } = openRoute();
+  fireEvent.click(
+    within(drawer).getByRole('checkbox', {
+      name: 'Выбрать видимые предложения',
+    }),
+  );
+  expect(
+    within(drawer).getByRole('button', {
+      name: 'Скачать CSV принятых позиций (0)',
+    }),
+  ).toBeDisabled();
 });

@@ -252,20 +252,60 @@ details summary { cursor: pointer; }
 .transfer-product > span:first-of-type, .transfer-stock > small, .transfer-stock-help { color: var(--muted); font-size: 12px; }
 .transfer-line-actions { display: grid; gap: 10px; justify-items: start; }
 .transfer-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.transfer-drawer { display: flex; flex-direction: column; overflow: hidden; max-height: 100dvh; }
+/* Composition pages own viewport sizing; the other rebalance tabs keep natural height. */
+.transfer-drawer { --transfer-row-height: 108px; display: flex; flex-direction: column; overflow: hidden; top: 16px; right: 16px; width: calc(100vw - 32px); height: calc(100dvh - 32px); max-height: calc(100dvh - 32px); padding: 18px 20px; }
 .transfer-drawer > * { flex-shrink: 0; }
-.transfer-drawer > .virtual-table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.transfer-drawer > .empty { flex: 1; min-height: 0; overflow: auto; }
-.transfer-drawer .virtual-scroll { flex: 1; min-height: 0; }
-.transfer-drawer .close { align-self: flex-start; flex: 0 0 38px; width: 38px; height: 38px; line-height: 1; padding: 0; }
-.transfer-drawer > .filters { margin: 12px 0; }
-.transfer-financial-summary { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0; }
+.transfer-drawer .drawer-head { align-items: flex-start; gap: 16px; }
+.transfer-heading { max-width: 46%; }
+.transfer-heading .eyebrow { margin: 0 0 4px; }
+.transfer-heading h2 { font-size: 20px; margin: 0; }
+.transfer-heading > p:last-child { font-size: 12px; margin: 6px 0 0; }
+.transfer-drawer .close { flex: 0 0 32px; width: 32px; height: 32px; line-height: 1; padding: 0; }
+.transfer-financial-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0 0; }
+.transfer-financial-summary > div { padding: 8px 12px; background: #fff; border: 1px solid var(--line); border-radius: 7px; min-width: 0; }
 .transfer-financial-summary small, .transfer-financial-summary strong { display: block; }
-.transfer-financial-summary strong { margin-top: 4px; font-size: 16px; }
-.transfer-drawer-actions { align-items: center; justify-content: space-between; flex-wrap: wrap; border-top: 1px solid var(--line); margin-top: 12px; padding: 12px 0 0; }
-.transfer-selection-summary { display: grid; gap: 4px; font-size: 13px; }
-.transfer-action-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
-.transfer-action-buttons .button { max-width: 100%; white-space: normal; }
+.transfer-financial-summary small { font-size: 12px; color: var(--muted); }
+.transfer-financial-summary strong { margin-top: 3px; font-size: 17px; font-variant-numeric: tabular-nums; }
+.transfer-drawer > .filters { margin: 10px 0 6px; padding: 8px 10px; }
+.transfer-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
+.transfer-toolbar > label:first-child { flex: 1; min-width: 200px; }
+.transfer-toolbar .search-control { width: 100%; }
+.transfer-toolbar .checkbox-control { min-height: 36px; font-size: 12px; }
+.transfer-pagination { display: flex; align-items: center; gap: 4px; min-height: 36px; }
+.transfer-pagination > span { font-size: 12px; font-variant-numeric: tabular-nums; margin-right: 6px; white-space: nowrap; }
+.transfer-pagination .button { width: 30px; min-height: 30px; padding: 3px; font-size: 18px; }
+.transfer-stock-help { margin: 0 0 8px; font-size: 11px; }
+.transfer-table-frame { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.transfer-table-frame > .virtual-table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.transfer-table-frame > .empty { flex: 1; min-height: 0; padding: 20px; }
+.transfer-drawer .virtual-scroll { flex: 1; min-height: 0; }
+.transfer-drawer .virtual-header { min-height: 38px; font-size: 11px; }
+.transfer-drawer .virtual-header > div, .transfer-drawer .virtual-row > div { padding: 6px 8px; }
+.transfer-drawer .virtual-row-shell, .transfer-drawer .virtual-row { height: var(--transfer-row-height); min-height: 0; }
+.transfer-drawer .virtual-row { font-size: 13px; }
+.transfer-drawer .transfer-product > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.transfer-product-name { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; width: 100%; border: 0; border-radius: 3px; background: transparent; color: var(--text); padding: 0; margin-top: 4px; text-align: left; font: inherit; font-size: 12px; line-height: 1.3; cursor: pointer; }
+.transfer-product-name:hover { color: var(--blue); text-decoration: underline; }
+.transfer-product-name:active { background: var(--blue-soft); }
+.transfer-cost > * { display: block; margin: 0; }
+.transfer-cost > small { margin: 5px 0; color: var(--muted); font-size: 11px; }
+.transfer-cost > span { font-weight: 650; }
+.transfer-drawer .transfer-line-actions { gap: 6px; font-size: 12px; }
+.transfer-drawer .transfer-line-actions .link { text-align: left; font-size: 12px; }
+.transfer-drawer .transfer-stock > small { font-size: 11px; margin-top: 4px; }
+.transfer-scope-note { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+.transfer-drawer-actions { align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line); margin-top: 8px; padding: 10px 0 0; }
+.transfer-selection-summary { display: grid; gap: 3px; font-size: 12px; min-width: 160px; }
+.transfer-action-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.transfer-action-buttons .button { max-width: 100%; white-space: nowrap; font-size: 13px; }
+.transfer-action-buttons .button:last-child { min-width: 190px; }
+.transfer-product-details { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; overflow-wrap: anywhere; }
+.transfer-product-details dt { color: var(--muted); }
+.transfer-product-details dd { margin: 0; }
+.transfer-sender-summary { display: grid; gap: 8px; padding: 4px 0; font-size: 12px; }
+.transfer-sender-summary > strong { font-size: 15px; }
+.transfer-sender-summary small { color: var(--muted); font-size: 11px; font-weight: normal; }
+@media (max-height: 650px) { .transfer-drawer { top: 8px; right: 8px; width: calc(100vw - 16px); height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); padding: 12px 16px; } .transfer-financial-summary { margin-top: 8px; } .transfer-drawer > .filters { margin-top: 8px; } }
 @media (max-width: 1100px) { .transfer-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 820px) { .transfer-metrics { grid-template-columns: 1fr; } }
 .search-control { position: relative; display: flex; min-width: 200px; }

@@ -35,9 +35,13 @@ export function orderToCsv(order: Order): string {
       line.amount,
     ]);
 
+  return rowsToCsv(HEADERS, rows);
+}
+
+export function rowsToCsv(headers: string[], rows: unknown[][]): string {
   return (
     '\ufeff' +
-    [HEADERS, ...rows]
+    [headers, ...rows]
       .map((row) => row.map(escapeCell).join(';'))
       .join('\r\n') +
     '\r\n'
