@@ -604,6 +604,9 @@ export function RebalancingPage() {
           key={`${r.proposal?.runId}:${donorId}`}
           name={r.registry.find((b) => b.id === donorId)?.name ?? donorId}
           fromBranchId={donorId}
+          recipients={r.registry.filter(
+            (branch) => branch.active && branch.id !== donorId,
+          )}
           rows={allocation.rows.filter((r) => r.fromBranchId === donorId)}
           mode={r.proposal?.allocationModes?.[donorId] ?? 'PROPORTIONAL'}
           onEdit={editPlan}

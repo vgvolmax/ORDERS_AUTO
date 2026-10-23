@@ -167,20 +167,25 @@ test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload o
   const expectFits = async () => {
     await expect
       .poll(() =>
-        drawer.evaluate((root) =>
-          [root, ...root.querySelectorAll('*')].every((node) => {
-            const el = node as HTMLElement,
-              css = getComputedStyle(el);
-            return !(
-              (/auto|scroll/.test(css.overflowX) &&
-                el.clientWidth > 0 &&
-                el.scrollWidth > el.clientWidth + 1) ||
-              (/auto|scroll/.test(css.overflowY) &&
-                el.clientHeight > 0 &&
-                el.scrollHeight > el.clientHeight + 1)
-            );
-          }),
-        ),
+        drawer.evaluate((root) => {
+          const list = root.querySelector('.virtual-list');
+          return (
+            root.scrollHeight <= root.clientHeight + 1 &&
+            [root, ...root.querySelectorAll('*')].every((node) => {
+              const el = node as HTMLElement,
+                css = getComputedStyle(el);
+              return (
+                !(el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) &&
+                !(
+                  node !== list &&
+                  /auto|scroll/.test(css.overflowY) &&
+                  el.clientHeight > 0 &&
+                  el.scrollHeight > el.clientHeight + 1
+                )
+              );
+            })
+          );
+        }),
       )
       .toBe(true);
     const box = await drawer
@@ -204,13 +209,14 @@ test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload o
     });
   }
   await page.setViewportSize({ width: 1280, height: 720 });
-  await drawer
-    .getByRole('button', { name: 'Следующие товары', exact: true })
-    .click();
+  const productSearch = drawer.getByRole('textbox', {
+    name: 'Поиск товара',
+    exact: true,
+  });
+  await productSearch.fill('SKU0012');
   await expect(drawer.getByText('SKU0001', { exact: true })).toHaveCount(0);
-  await drawer
-    .getByRole('button', { name: 'Предыдущие товары', exact: true })
-    .click();
+  await expect(drawer.getByText('SKU0012', { exact: true })).toBeVisible();
+  await productSearch.fill('');
   await expect(second).toHaveValue('2');
   await drawer
     .getByRole('button', { name: 'К принятию перемещений', exact: true })
@@ -1187,3 +1193,265 @@ for (const { count, width, height } of [
     expect(evidence.remoteRequests).toEqual([]);
   });
 }
+
+test('E2E-11 continuous cards show seven divisions and keep249SKU editable offline', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const evidence = observeRuntime(page);
+  const branches = [
+    'Наро-Фоминск',
+    'Щурово',
+    'Ступино',
+    'Электросталь',
+    'Егорьевск',
+    'Ленина',
+    'Подразделение с длинным названием',
+  ];
+  const codes = Array.from(
+    { length: 249 },
+    (_, i) => `SKU${String(i + 1).padStart(4, '0')}`,
+  );
+  await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1920, height: 900 });
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  const min = buildWorkbook([
+    [
+      'Код',
+      'Артикул',
+      'Номенклатура',
+      'Количество',
+      'Минимальный остаток',
+      'Максимальный остаток',
+      'Цена',
+    ],
+    ...codes.flatMap((code, index) => [
+      [
+        code,
+        code,
+        `Штуцер для присоединения счётчика воды PPR25 с длинным названием ${code}`,
+        48,
+        5,
+        10,
+        100,
+      ],
+      [null, null, 'Донор', 48, 5, 10, null],
+      ...branches.map((branch, i) => [
+        null,
+        null,
+        branch,
+        index === 1 && i > 0 ? 10 : 0,
+        5,
+        10,
+        null,
+      ]),
+    ]),
+  ]);
+  const suppliers = buildWorkbook([
+    [
+      'Контрагент',
+      'Код',
+      'Номенклатура',
+      'Количество',
+      'Стоимость',
+      'Ед. изм.',
+    ],
+    ...codes.map((code) => [
+      'ООО "Терем"',
+      code,
+      `Товар ${code}`,
+      1,
+      100,
+      'шт',
+    ]),
+  ]);
+  for (const [label, name, bytes] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'card-min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'card-sup.xlsx', suppliers],
+  ] as const)
+    await page
+      .getByLabel(label)
+      .setInputFiles({
+        name,
+        mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer: Buffer.from(bytes),
+      });
+  await page.getByRole('button', { name: 'Перейти к потребности' }).click();
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
+  await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
+  await page
+    .getByRole('button', { name: 'Назначить ненастроенным (249)', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Приоритеты', exact: true }).click();
+  const open = page.getByRole('button', {
+    name: 'Приоритеты Донор',
+    exact: true,
+  });
+  await open.focus();
+  await page.keyboard.press('Enter');
+  const drawer = page.getByRole('dialog', {
+    name: 'Приоритеты донора Донор',
+    exact: true,
+  });
+  const list = drawer.getByRole('list', {
+    name: 'Список перемещений донора',
+    exact: true,
+  });
+  const first = drawer.getByRole('article', {
+    name: 'Перемещения SKU0001',
+    exact: true,
+  });
+  await expect(first).toBeVisible();
+  await expect(list.getByRole('listitem').first()).toHaveAttribute(
+    'aria-setsize',
+    '249',
+  );
+  expect(await list.getByRole('listitem').count()).toBeLessThan(40);
+  await expect(
+    drawer.getByRole('button', { name: 'Следующие получатели', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    drawer.getByRole('button', { name: 'Следующие товары', exact: true }),
+  ).toHaveCount(0);
+  const footer = drawer.getByRole('button', {
+    name: 'К принятию перемещений',
+    exact: true,
+  });
+  const fits = () =>
+    expect
+      .poll(() =>
+        drawer.evaluate((root) => {
+          const list = root.querySelector('.virtual-list');
+          return (
+            root.scrollHeight <= root.clientHeight + 1 &&
+            [root, ...root.querySelectorAll('*')].every((node) => {
+              const el = node as HTMLElement,
+                css = getComputedStyle(el);
+              return (
+                !(el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) &&
+                !(
+                  node !== list &&
+                  /auto|scroll/.test(css.overflowY) &&
+                  el.clientHeight > 0 &&
+                  el.scrollHeight > el.clientHeight + 1
+                )
+              );
+            })
+          );
+        }),
+      )
+      .toBe(true);
+  for (const size of [
+    { width: 1920, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+    { width: 1280, height: 600 },
+  ]) {
+    await page.setViewportSize(size);
+    for (const branch of branches)
+      await expect(
+        first.getByRole('group', { name: `Получатель ${branch}`, exact: true }),
+      ).toBeVisible();
+    await fits();
+    const cardBox = await first.boundingBox(),
+      listBox = await list.boundingBox(),
+      actionBox = await footer.boundingBox();
+    expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(
+      listBox!.x + listBox!.width + 1,
+    );
+    expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(actionBox!.y);
+    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(size.height);
+    expect(
+      (await first
+        .getByLabel('Переместить SKU0001 Наро-Фоминск', { exact: true })
+        .boundingBox())!.width,
+    ).toBeGreaterThanOrEqual(45);
+    await page.screenshot({
+      path: testInfo.outputPath(`22-cards-${size.width}-${size.height}.png`),
+    });
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await first
+    .getByRole('button', { name: 'Показать товар SKU0001', exact: true })
+    .click();
+  await expect(
+    page.getByRole('dialog', { name: 'Товар SKU0001', exact: true }),
+  ).toContainText('Штуцер');
+  await page.keyboard.press('Escape');
+  await expect(
+    first.getByRole('button', { name: 'Показать товар SKU0001', exact: true }),
+  ).toBeFocused();
+  const last = drawer.getByRole('article', {
+    name: 'Перемещения SKU0249',
+    exact: true,
+  });
+  const scrollLast = () =>
+    expect
+      .poll(async () => {
+        await list.evaluate((el) => {
+          el.scrollTop = el.scrollHeight;
+        });
+        return await last.count();
+      })
+      .toBe(1);
+  await scrollLast();
+  const quantity = last.getByLabel('Переместить SKU0249 Наро-Фоминск', {
+    exact: true,
+  });
+  await quantity.fill('999');
+  await expect(
+    drawer.getByRole('alert').filter({ hasText: 'MAX' }),
+  ).toBeVisible();
+  await quantity.fill('2');
+  await expect(last).toContainText('Вручную');
+  await expect(footer).toBeEnabled();
+  expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await fits();
+  await page.screenshot({ path: testInfo.outputPath('23-cards-last-249.png') });
+  await list.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await expect(first).toBeVisible();
+  await scrollLast();
+  await expect(quantity).toHaveValue('2');
+  const search = drawer.getByRole('textbox', {
+    name: 'Поиск товара',
+    exact: true,
+  });
+  await search.fill('SKU0002');
+  const only = drawer.getByRole('article', {
+    name: 'Перемещения SKU0002',
+    exact: true,
+  });
+  await expect(only.getByRole('group')).toHaveCount(7);
+  await expect(only.getByText('Нет потребности или маршрута')).toHaveCount(6);
+  await search.fill('Несуществующий товар');
+  await expect(list).toContainText('Нет товаров по выбранному фильтру.');
+  await drawer
+    .getByRole('button', { name: 'Очистить поиск', exact: true })
+    .click();
+  await expect(first).toBeVisible();
+  await expect(search).toBeFocused();
+  await drawer.getByRole('button', { name: 'Готово', exact: true }).click();
+  await expect(open).toBeFocused();
+  await page.reload();
+  await page
+    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
+    .click();
+  await drawer
+    .getByRole('textbox', { name: 'Поиск товара', exact: true })
+    .fill('SKU0249');
+  await expect(quantity).toHaveValue('2');
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
