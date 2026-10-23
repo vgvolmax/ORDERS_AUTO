@@ -220,3 +220,7 @@ Fatal import означает только невозможность получ
 
 
 Уточнение21.10.2026: `AcceptedTransferChange.diagnostics` обязателен и содержит `RebalanceIssue[]` после accept/revoke, включая no-op. Предупреждения accepted economics содержат sourceRunId/configFingerprint/quantity/amount/threshold; они не меняют ledger и возвращаются также в RebalanceResult.exclusions. Группировка — sourceRunId×SKU×сохранённая конфигурация, а не общая сумма разных расчётов.
+
+### Editable RebalanceProposal ·23.10.2026
+
+Proposal.transfers — текущий конкретный план до принятия. Необязательные allocationRevision (монотонная ревизия правок), allocationModes: Record<branchId, PROPORTIONAL|EQUAL> и allocationDecisions: Array<{skuCode,fromBranchId,recipientIds,mode:PRIORITY|MANUAL,quantities?:Record<branchId,number>}> сохраняются внутри прежнего workspace schemaVersion1. Отсутствующие поля означают исходный автоматический план; миграция не нужна. Порядок решений задаёт порядок резервирования приоритетных групп. Сначала резервируются весь accepted ledger и ручные группы, затем приоритетные, затем остаток распределяет исходный Min-first flow для автоматических доноров. Исходная eligibleRecipientKeys и captured config неизменны. SourceLineId по-прежнему tuple SKU/from/to; принятый source текущего run неизменяем. Поля balances/uncoveredNeed пересобираются по accepted + pending без двойного учёта. inputFingerprint сохраняет исходные входы расчёта, allocationRevision обозначает последующие правки.

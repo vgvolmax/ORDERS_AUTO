@@ -18,6 +18,8 @@ export function ResultsTable({
   onRevoke,
   onAccept,
   onExport,
+  onPriorities,
+  blockedSources = new Set<string>(),
   stale,
   busy,
   acceptingDisabled = false,
@@ -31,6 +33,8 @@ export function ResultsTable({
   onRevoke: (id: string) => void;
   onAccept: (ids: string[]) => void;
   onExport: (documentId: string) => void;
+  onPriorities?: (fromBranchId: string) => void;
+  blockedSources?: ReadonlySet<string>;
   stale: boolean;
   busy: boolean;
   acceptingDisabled?: boolean;
@@ -107,7 +111,9 @@ export function ResultsTable({
   const recipients = [...new Set(docs.map((doc) => doc.toBranchId))];
   const byId = new Map(docs.map((doc) => [doc.id, doc]));
   const visibleLines = docs.flatMap((doc) => doc.lines);
-  const eligible = visibleLines.filter((l) => l.decision === 'PROPOSED');
+  const eligible = visibleLines.filter(
+    (l) => l.decision === 'PROPOSED' && !blockedSources.has(l.sourceLineId),
+  );
   const selectedSet = new Set(selected),
     rejectedSet = new Set(rejected);
   const acceptedSources = new Set(
@@ -120,7 +126,8 @@ export function ResultsTable({
       (t) =>
         selectedSet.has(t.sourceLineId) &&
         !acceptedSources.has(t.sourceLineId) &&
-        !rejectedSet.has(t.sourceLineId),
+        !rejectedSet.has(t.sourceLineId) &&
+        !blockedSources.has(t.sourceLineId),
     )
     .map((t) => t.sourceLineId);
   const eligibleIds = new Set(eligible.map((l) => l.sourceLineId));
@@ -230,6 +237,23 @@ export function ResultsTable({
                         </b>
                       </span>
                       <small>Все направления, без фильтров</small>
+                      {onPriorities && (
+                        <button
+                          className="link"
+                          onClick={() => onPriorities(id)}
+                        >
+                          Приоритеты отправлений
+                          {[...blockedSources].some((source) =>
+                            proposal?.transfers.some(
+                              (t) =>
+                                t.sourceLineId === source &&
+                                t.fromBranchId === id,
+                            ),
+                          )
+                            ? ' · требуется решение'
+                            : ''}
+                        </button>
+                      )}
                     </div>
                   );
                 },
@@ -321,6 +345,15 @@ export function ResultsTable({
         <TransferDrawer
           document={opened}
           selected={selectedIds}
+          blockedSources={blockedSources}
+          onPriorities={
+            onPriorities
+              ? () => {
+                  setOpenedDocument(null);
+                  onPriorities(opened.fromBranchId);
+                }
+              : undefined
+          }
           onSelection={onSelection}
           onReject={onReject}
           onRevoke={onRevoke}

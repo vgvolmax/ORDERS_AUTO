@@ -15,6 +15,8 @@ import { useTransferPageSize } from './useTransferPageSize';
 export function TransferDrawer({
   document: doc,
   selected,
+  blockedSources = new Set<string>(),
+  onPriorities,
   onSelection,
   onReject,
   onRevoke,
@@ -29,6 +31,8 @@ export function TransferDrawer({
 }: {
   document: TransferDocument;
   selected: string[];
+  blockedSources?: ReadonlySet<string>;
+  onPriorities?: (() => void) | undefined;
   onSelection: (ids: string[]) => void;
   onReject: (id: string) => void;
   onRevoke: (id: string) => void;
@@ -59,8 +63,12 @@ export function TransferDrawer({
     currentPage * pageSize,
     (currentPage + 1) * pageSize,
   );
-  const pageEligible = pageRows.filter((l) => l.decision === 'PROPOSED');
-  const eligible = rows.filter((l) => l.decision === 'PROPOSED');
+  const pageEligible = pageRows.filter(
+    (l) => l.decision === 'PROPOSED' && !blockedSources.has(l.sourceLineId),
+  );
+  const eligible = rows.filter(
+    (l) => l.decision === 'PROPOSED' && !blockedSources.has(l.sourceLineId),
+  );
   const routeSelected = eligible
     .filter((l) => l.selected)
     .map((l) => l.sourceLineId);
@@ -123,6 +131,16 @@ export function TransferDrawer({
           </Alert>
         )}
         {error && <Alert tone="danger">{error}</Alert>}
+        {doc.lines.some((l) => blockedSources.has(l.sourceLineId)) && (
+          <Alert tone="warning">
+            Нужны приоритеты для товаров с нехваткой.{' '}
+            {onPriorities && (
+              <button className="link" onClick={onPriorities}>
+                Открыть приоритеты донора
+              </button>
+            )}
+          </Alert>
+        )}
         <div className="filters compact-filters transfer-toolbar">
           <label>
             Поиск по составу перемещения
@@ -230,7 +248,11 @@ export function TransferDrawer({
                         doc.toName,
                       ].join(' ')}
                       checked={l.selected}
-                      disabled={disabled || l.decision === 'REJECTED'}
+                      disabled={
+                        disabled ||
+                        l.decision === 'REJECTED' ||
+                        blockedSources.has(l.sourceLineId)
+                      }
                       onChange={(e) =>
                         onSelection(
                           e.target.checked

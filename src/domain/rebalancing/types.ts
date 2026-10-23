@@ -36,7 +36,18 @@ export interface RebalanceResult {
   inputFingerprint: string; algorithmVersion: string; transfers: RebalanceTransfer[]; eligibleRecipientKeys: string[];
   uncoveredNeed: UncoveredNeed[]; balances: RebalanceBalance[]; exclusions: RebalanceIssue[];
 }
+export type DonorSplitMode = 'PROPORTIONAL' | 'EQUAL';
+export interface DonorAllocationDecision {
+  skuCode: string;
+  fromBranchId: string;
+  recipientIds: string[];
+  mode: 'PRIORITY' | 'MANUAL';
+  quantities?: Record<string, number>;
+}
 export interface RebalanceProposal extends RebalanceResult {
+  allocationRevision?: number;
+  allocationDecisions?: DonorAllocationDecision[];
+  allocationModes?: Record<string, DonorSplitMode>;
   runId: string; createdAt: string; snapshotId: string; baseAcceptedRevision: number; configFingerprint: string;
   /** Exact physical/calculation inputs used for this proposal, never a live settings reference. */
   config: RebalanceConfig;
@@ -48,7 +59,7 @@ export interface AcceptTransfersInput {
 }
 export interface RevokeTransfersInput { snapshot: RebalanceSnapshot; currentAccepted: AcceptedTransfer[]; transferIds: string[]; currentRevision: number; expectedRevision: number }
 export interface AcceptedTransferChange { nextAccepted: AcceptedTransfer[]; changedSkuBranchKeys: string[]; nextRevision: number; diagnostics: RebalanceIssue[] }
-export type RebalanceErrorCode = 'INVALID_SNAPSHOT' | 'INVALID_CONFIG' | 'INVALID_ACCEPTED_LEDGER' | 'REVISION_CONFLICT' | 'STALE_PROPOSAL' | 'TRANSFER_ID_CONFLICT' | 'INVALID_TRANSFER_BATCH';
+export type RebalanceErrorCode = 'INVALID_SNAPSHOT' | 'INVALID_CONFIG' | 'INVALID_ACCEPTED_LEDGER' | 'REVISION_CONFLICT' | 'STALE_PROPOSAL' | 'TRANSFER_ID_CONFLICT' | 'INVALID_TRANSFER_BATCH' | 'PRIORITIES_REQUIRED';
 export class RebalanceError extends Error {
   constructor(public readonly code: RebalanceErrorCode, public readonly issues: RebalanceIssue[] = []) {
     super(code); this.name = 'RebalanceError';

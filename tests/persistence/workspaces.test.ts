@@ -14,6 +14,11 @@ import { db } from '../../src/persistence/db';
 import { getSettings } from '../../src/persistence/settings';
 import { getSupplierOverrides } from '../../src/persistence/supplierOverrides';
 import { snapshot, config } from '../fixtures/rebalanceFixtures';
+import { rebalanceAppState } from '../fixtures/rebalanceAppState';
+import {
+  createProposal,
+  prepareDonorPlanChange,
+} from '../../src/app/rebalanceActions';
 
 beforeEach(() => vi.stubGlobal('indexedDB', new IDBFactory()));
 function fixture(id = 'w1', revision = 0) {
@@ -33,6 +38,53 @@ function fixture(id = 'w1', revision = 0) {
   return workspaceFromState(state);
 }
 describe('complete durable purchasing workspace', () => {
+  it('round trips editable priorities, mode and quantities while legacy proposals need no migration', async () => {
+    let state = rebalanceAppState();
+    state.workspaceId = 'donor-priorities';
+    state.workspaceRevision = 0;
+    state.rebalance.proposal = createProposal(state);
+    const legacy = workspaceFromState(state);
+    await saveWorkspace(legacy, -1);
+    expect(
+      (await loadActiveWorkspace())!.data.rebalance.proposal
+        ?.allocationDecisions,
+    ).toBeUndefined();
+    const expected = {
+      runId: state.rebalance.proposal.runId,
+      acceptedRevision: 0,
+    };
+    state = {
+      ...state,
+      ...prepareDonorPlanChange(
+        state,
+        {
+          kind: 'quantity',
+          skuCode: 'SKU1',
+          fromBranchId: 'b0',
+          toBranchId: 'b2',
+          qty: 10,
+        },
+        expected,
+      ),
+    };
+    state = {
+      ...state,
+      ...prepareDonorPlanChange(
+        state,
+        { kind: 'mode', fromBranchId: 'b0', mode: 'EQUAL' },
+        expected,
+      ),
+      workspaceRevision: 1,
+    };
+    const edited = workspaceFromState(state);
+    edited.data.rebalance.tab = 'priorities';
+    await saveWorkspace(edited, 0);
+    expect(await loadActiveWorkspace()).toEqual(edited);
+    expect(
+      (await loadActiveWorkspace())!.data.rebalance.proposal
+        ?.allocationDecisions?.[0]?.quantities?.b2,
+    ).toBe(10);
+  });
   it('upgrades v1 additively without losing existing settings or supplier mappings', async () => {
     const legacy = await openDB('orders-auto', 1, {
       upgrade(d) {

@@ -32,6 +32,255 @@ function observeRuntime(page: Page): RuntimeEvidence {
   return evidence;
 }
 
+test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload offline', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const evidence = observeRuntime(page);
+  await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  const codes = Array.from(
+    { length: 12 },
+    (_, i) => `SKU${String(i + 1).padStart(4, '0')}`,
+  );
+  const min = buildWorkbook([
+    [
+      'Код',
+      'Артикул',
+      'Номенклатура',
+      'Количество',
+      'Минимальный остаток',
+      'Максимальный остаток',
+      'Цена',
+    ],
+    ...codes.flatMap((code) => [
+      [
+        code,
+        code,
+        `Товар с длинным названием для проверки приоритетов ${code}`,
+        66,
+        1,
+        60,
+        100,
+      ],
+      [null, null, 'Донор', 66, 1, 60, null],
+      [null, null, 'Первый', 0, 1, 8, null],
+      [null, null, 'Второй', 0, 1, 4, null],
+    ]),
+  ]);
+  const suppliers = buildWorkbook([
+    [
+      'Контрагент',
+      'Код',
+      'Номенклатура',
+      'Количество',
+      'Стоимость',
+      'Ед. изм.',
+    ],
+    ...codes.map((code) => [
+      'ООО "Терем"',
+      code,
+      `Товар ${code}`,
+      1,
+      100,
+      'шт',
+    ]),
+  ]);
+  for (const [label, name, bytes] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'priority-min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'priority-sup.xlsx', suppliers],
+  ] as const)
+    await page
+      .getByLabel(label)
+      .setInputFiles({
+        name,
+        mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer: Buffer.from(bytes),
+      });
+  await page.getByRole('button', { name: 'Перейти к потребности' }).click();
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Условия' }).click();
+  await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
+  await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
+  await page
+    .getByRole('button', { name: 'Назначить ненастроенным (12)' })
+    .click();
+  await page.getByRole('button', { name: 'Рассчитать перемещения' }).click();
+  await expect(
+    page.getByRole('checkbox', {
+      name: 'Выбрать видимые предложения',
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page.getByRole('tab', { name: 'Приоритеты', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
+    .click();
+  const drawer = page.getByRole('dialog', {
+    name: 'Приоритеты донора Донор',
+    exact: true,
+  });
+  const first = drawer.getByLabel('Переместить SKU0001 Первый', {
+    exact: true,
+  });
+  const second = drawer.getByLabel('Переместить SKU0001 Второй', {
+    exact: true,
+  });
+  await drawer
+    .getByRole('checkbox', { name: 'Приоритет SKU0001 Первый', exact: true })
+    .check();
+  await expect(first).toHaveValue('6');
+  await drawer
+    .getByRole('checkbox', { name: 'Приоритет SKU0001 Второй', exact: true })
+    .check();
+  await expect(first).toHaveValue('4');
+  await expect(second).toHaveValue('2');
+  await drawer
+    .getByLabel('Распределение между выбранными')
+    .selectOption('EQUAL');
+  await expect(first).toHaveValue('3');
+  await expect(second).toHaveValue('3');
+  await second.fill('4');
+  await expect(
+    drawer.getByRole('alert').filter({ hasText: 'MAX' }),
+  ).toBeVisible();
+  await expect(second).toHaveValue('3');
+  await second.fill('2');
+  await expect(drawer.getByText('Вручную', { exact: true })).toBeVisible();
+  await drawer
+    .getByLabel('Распределение между выбранными')
+    .selectOption('PROPORTIONAL');
+  await expect(first).toHaveValue('3');
+  await expect(second).toHaveValue('2');
+  const expectFits = async () => {
+    await expect
+      .poll(() =>
+        drawer.evaluate((root) =>
+          [root, ...root.querySelectorAll('*')].every((node) => {
+            const el = node as HTMLElement,
+              css = getComputedStyle(el);
+            return !(
+              (/auto|scroll/.test(css.overflowX) &&
+                el.clientWidth > 0 &&
+                el.scrollWidth > el.clientWidth + 1) ||
+              (/auto|scroll/.test(css.overflowY) &&
+                el.clientHeight > 0 &&
+                el.scrollHeight > el.clientHeight + 1)
+            );
+          }),
+        ),
+      )
+      .toBe(true);
+    const box = await drawer
+      .getByRole('button', { name: 'К принятию перемещений', exact: true })
+      .boundingBox();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height,
+    );
+  };
+  for (const size of [
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+    { width: 1280, height: 600 },
+  ]) {
+    await page.setViewportSize(size);
+    await expectFits();
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `20-priorities-${size.width}-${size.height}.png`,
+      ),
+    });
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await drawer
+    .getByRole('button', { name: 'Следующие товары', exact: true })
+    .click();
+  await expect(drawer.getByText('SKU0001', { exact: true })).toHaveCount(0);
+  await drawer
+    .getByRole('button', { name: 'Предыдущие товары', exact: true })
+    .click();
+  await expect(second).toHaveValue('2');
+  await drawer
+    .getByRole('button', { name: 'К принятию перемещений', exact: true })
+    .click();
+  await page
+    .getByRole('button', {
+      name: 'Открыть перемещение Донор → Второй',
+      exact: true,
+    })
+    .click();
+  const transfer = page.getByRole('dialog', {
+    name: 'Состав перемещения',
+    exact: true,
+  });
+  await transfer
+    .getByRole('checkbox', {
+      name: 'Выбрать перемещение SKU0001 Донор → Второй',
+      exact: true,
+    })
+    .check();
+  await transfer
+    .getByRole('button', {
+      name: 'Принять выбранные в перемещении (1)',
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  const downloaded = page.waitForEvent('download');
+  await transfer
+    .getByRole('button', {
+      name: 'Скачать CSV принятых позиций (1)',
+      exact: true,
+    })
+    .click();
+  const csv = readFileSync((await (await downloaded).path())!, 'utf8');
+  expect(csv).toContain(';2;шт;');
+  expect(csv).not.toContain('SKU0002;');
+  await transfer
+    .getByRole('button', { name: 'Закрыть карточку', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Второй', exact: true }).click();
+  await expect(
+    page.getByRole('row').filter({ hasText: 'SKU0001' }),
+  ).toContainText('2');
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Приоритеты', exact: true }).click();
+  await expect(
+    page.getByText('Сеанс сохранён на этом компьютере', { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
+    .click();
+  await expect(drawer.getByLabel('Распределение между выбранными')).toHaveValue(
+    'PROPORTIONAL',
+  );
+  await expect(first).toHaveValue('3');
+  await expect(drawer).toContainText('Принято: 2 шт · зафиксировано');
+  await drawer.getByRole('button', { name: 'Готово', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
+    .click();
+  await expect(
+    page.getByRole('dialog', { name: 'Пересчитать перемещения?', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Сохранить текущий план', exact: true })
+    .click();
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
 async function expectOfflineApp(
   page: Page,
   packageDirectory: string,

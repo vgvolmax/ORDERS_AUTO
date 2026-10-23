@@ -168,7 +168,7 @@ export async function buildRebalancingWorkbook(
       i.code,
       i.severity,
       i.skuCode ?? null,
-      i.branchId ? branches.get(i.branchId) ?? i.branchId : null,
+      i.branchId ? (branches.get(i.branchId) ?? i.branchId) : null,
       i.sourceRow,
       i.message,
     ]);
@@ -178,6 +178,12 @@ export async function buildRebalancingWorkbook(
     ['Сеанс', input.workspaceId],
     ['Выгружено в', input.exportedAt],
     ['Расчёт', proposal?.runId ?? null],
+    ['Ревизия плана', proposal?.allocationRevision ?? 0],
+    ['Режимы распределения', JSON.stringify(proposal?.allocationModes ?? {})],
+    [
+      'Приоритеты и ручные количества',
+      JSON.stringify(proposal?.allocationDecisions ?? []),
+    ],
     ['Версия алгоритма', proposal?.algorithmVersion ?? null],
     ['Исходная ревизия принятых', proposal?.baseAcceptedRevision ?? null],
     ['Отпечаток входов', proposal?.inputFingerprint ?? null],

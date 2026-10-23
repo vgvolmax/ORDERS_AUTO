@@ -313,3 +313,30 @@ details summary { cursor: pointer; }
 .search-clear { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 30px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 .search-clear:hover { background: var(--blue-soft); color: var(--blue); }
 .rebalance-fields .checkbox-control { display: flex; }
+
+/* Donor priority matrix follows the existing full-viewport transfer inspector. */
+.donor-card { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(180px, 1fr) auto; align-items: center; gap: 16px; width: 100%; border: 0; background: transparent; color: inherit; text-align: left; padding: 12px 8px; }
+.donor-card:hover { background: var(--surface-alt, #f2f5fa); }
+.donor-card > * { min-width: 0; overflow-wrap: anywhere; }
+.donor-allocation-drawer { --transfer-row-height: 178px; }
+.donor-mode-bar { display: flex; gap: 24px; align-items: center; padding: 10px 0; }
+.donor-mode-bar > label { flex: 0 0 300px; display: grid; gap: 4px; font-size: 12px; }
+.donor-mode-bar > p { margin: 0; max-width: 800px; font-size: 12px; color: var(--muted); }
+.donor-matrix-tools { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.donor-matrix-tools > label:first-child { flex: 1 1 180px; }
+.donor-matrix-tools .transfer-pagination { margin-left: auto; }
+.donor-sku, .donor-receiver { display: flex; flex-direction: column; gap: 5px; font-variant-numeric: tabular-nums; }
+.donor-sku > strong:first-child { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.donor-status { font-size: 11px; font-weight: 600; }
+.needs-priorities { border-left: 3px solid var(--warning); padding-left: 8px; }
+.needs-priorities .donor-status { color: var(--warning); }
+.donor-sku .transfer-product-name { -webkit-line-clamp: 1; }
+.donor-receiver > small, .donor-sku > small { font-size: 11px; color: var(--muted); }
+.donor-cell-inputs { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.donor-cell-inputs > label:last-child { display: grid; gap: 2px; width: 108px; font-size: 11px; }
+.donor-cell-inputs .input { width: 100%; min-width: 0; padding: 5px 8px; height: 32px; }
+.donor-cell-inputs [role="alert"] { font-size: 10px; }
+.donor-allocation-drawer .virtual-header { height: 52px; }
+.donor-allocation-drawer .virtual-header > div { overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .donor-card { grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr); } .donor-mode-bar { gap: 12px; } .donor-mode-bar > label { flex-basis: 270px; } }
+@media (max-height: 650px) { .donor-allocation-drawer { --transfer-row-height: 164px; } .donor-allocation-drawer .donor-mode-bar { padding: 6px 0; } .donor-allocation-drawer .donor-matrix-tools { margin-top: 4px; padding: 4px 8px; } .donor-sku, .donor-receiver { gap: 3px; } }

@@ -1,3 +1,11 @@
+import { Dialog } from '../../components/Dialog';
+import { DonorPriorities } from './DonorPriorities';
+import { DonorAllocationDrawer } from './DonorAllocationDrawer';
+import { buildDonorAllocationModel } from '../../domain/rebalancing/allocationPlan';
+import {
+  prepareDonorPlanChange,
+  type DonorPlanCommand,
+} from '../../app/rebalanceActions';
 import { useMemo, useState } from 'react';
 import { useDurableDraft } from '../../app/useDurableDraft';
 import { useStore, type AppState } from '../../app/appStore';
@@ -25,7 +33,9 @@ const messages: Record<string, string> = {
     'Условия или снимок изменились. Рассчитайте предложения заново. Принятые перемещения сохранены.',
   REVISION_CONFLICT: 'Решения изменились. Откройте подтверждение заново.',
   INVALID_TRANSFER_BATCH:
-    'Выбранные строки не проходят ограничения текущих условий. Проверьте порог суммы SKU и пересчитайте предложения.',
+    'Количество не сохранено: проверьте шаг, потребность получателя и общий выход. Остаток донора должен оставаться не ниже MAX. При принятии также действует порог суммы SKU.',
+  PRIORITIES_REQUIRED:
+    'Сначала задайте приоритеты для товаров с нехваткой излишка. Откройте карточку донора на вкладке «Приоритеты».',
 };
 export const rebalanceMessage = (e: unknown) =>
   e instanceof Error
@@ -36,6 +46,43 @@ export function RebalancingPage() {
     { state, set, saving } = store,
     d = useDerivedState(state),
     r = state.rebalance;
+  const [donorId, setDonorId] = useState<string | null>(null);
+  const [planSaving, setPlanSaving] = useState(0);
+  const [recalculateWarning, setRecalculateWarning] = useState(false);
+  const allocationContext = useMemo(
+    () =>
+      r.proposal && d.snapshot && r.proposal.snapshotId === state.snapshotId
+        ? {
+            snapshot: d.snapshot.snapshot,
+            proposal: r.proposal,
+            accepted: r.accepted,
+          }
+        : null,
+    [r.proposal, d.snapshot, r.accepted, state.snapshotId],
+  );
+  const allocation = useMemo(() => {
+    try {
+      return {
+        rows: allocationContext
+          ? buildDonorAllocationModel(allocationContext)
+          : [],
+        error: '',
+      };
+    } catch (e) {
+      return { rows: [], error: rebalanceMessage(e) };
+    }
+  }, [allocationContext]);
+  const blockedSources = useMemo(
+    () =>
+      new Set(
+        allocation.rows
+          .filter((r) => r.priorityRequired)
+          .flatMap((r) =>
+            r.cells.filter((c) => c.qty > 0).map((c) => c.sourceLineId),
+          ),
+      ),
+    [allocation.rows],
+  );
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<{
@@ -49,6 +96,23 @@ export function RebalancingPage() {
   async function save(update: (s: AppState) => Partial<AppState>) {
     if (store.commit) await store.commit(update);
     else set(update);
+  }
+  async function editPlan(command: DonorPlanCommand) {
+    if (!r.proposal) return;
+    const expected = {
+      runId: r.proposal.runId,
+      acceptedRevision: r.acceptedRevision,
+    };
+    setPlanSaving((n) => n + 1);
+    setError('');
+    try {
+      await save((s) => prepareDonorPlanChange(s, command, expected));
+    } catch (e) {
+      setError(rebalanceMessage(e));
+      throw e;
+    } finally {
+      setPlanSaving((n) => n - 1);
+    }
   }
   const edit = (update: Partial<typeof r>) =>
     set((s) => ({ rebalance: { ...s.rebalance, ...update } }));
@@ -325,7 +389,10 @@ export function RebalancingPage() {
             Excel ребалансировки
           </Button>
           <Button
-            onClick={calculate}
+            onClick={() => {
+              if (r.proposal?.allocationRevision) setRecalculateWarning(true);
+              else void calculate();
+            }}
             disabled={busy || saving || !state.minMax || !state.suppliers}
           >
             {busy ? 'Сохранение…' : 'Рассчитать перемещения'}
@@ -363,45 +430,55 @@ export function RebalancingPage() {
         aria-label="Ребалансировка"
         className="workspace-tabs"
       >
-        {(['routes', 'conditions', 'results'] as const).map((tab) => (
-          <button
-            key={tab}
-            role="tab"
-            id={`rebalance-tab-${tab}`}
-            aria-selected={r.tab === tab}
-            aria-controls="rebalance-panel"
-            onKeyDown={(e) => {
-              const tabs = ['routes', 'conditions', 'results'] as const;
-              const i = tabs.indexOf(tab);
-              const target =
-                e.key === 'ArrowRight'
-                  ? tabs[(i + 1) % 3]
-                  : e.key === 'ArrowLeft'
-                    ? tabs[(i + 2) % 3]
-                    : e.key === 'Home'
-                      ? tabs[0]
-                      : e.key === 'End'
-                        ? tabs[2]
-                        : null;
-              if (target) {
-                e.preventDefault();
-                edit({ tab: target });
-                document.getElementById(`rebalance-tab-${target}`)?.focus();
-              }
-            }}
-            onClick={() => edit({ tab })}
-          >
-            {
+        {(['routes', 'conditions', 'results', 'priorities'] as const).map(
+          (tab) => (
+            <button
+              key={tab}
+              role="tab"
+              id={`rebalance-tab-${tab}`}
+              aria-selected={r.tab === tab}
+              aria-controls="rebalance-panel"
+              onKeyDown={(e) => {
+                const tabs = [
+                  'routes',
+                  'conditions',
+                  'results',
+                  'priorities',
+                ] as const;
+                const i = tabs.indexOf(tab);
+                const target =
+                  e.key === 'ArrowRight'
+                    ? tabs[(i + 1) % tabs.length]
+                    : e.key === 'ArrowLeft'
+                      ? tabs[(i + tabs.length - 1) % tabs.length]
+                      : e.key === 'Home'
+                        ? tabs[0]
+                        : e.key === 'End'
+                          ? tabs[tabs.length - 1]
+                          : null;
+                if (target) {
+                  e.preventDefault();
+                  edit({ tab: target });
+                  document.getElementById(`rebalance-tab-${target}`)?.focus();
+                }
+              }}
+              onClick={() => edit({ tab })}
+            >
               {
-                routes: 'Маршруты',
-                conditions: 'Условия',
-                results: 'Результаты',
-              }[tab]
-            }
-          </button>
-        ))}
+                {
+                  routes: 'Маршруты',
+                  conditions: 'Условия',
+                  results: 'Результаты',
+                  priorities: 'Приоритеты',
+                }[tab]
+              }
+            </button>
+          ),
+        )}
       </div>
-      {error && !confirmation && <Alert tone="danger">{error}</Alert>}
+      {error && !confirmation && !donorId && (
+        <Alert tone="danger">{error}</Alert>
+      )}
       {stale && (
         <Alert tone="warning">
           Предложения устарели после изменения условий. Выполните новый расчёт.
@@ -432,6 +509,18 @@ export function RebalancingPage() {
               locked={r.accepted.length > 0}
               onPolicies={changePolicies}
             />
+          )}
+          {r.tab === 'priorities' && (
+            <>
+              <DonorPriorities
+                rows={allocation.rows}
+                context={allocationContext}
+                onOpen={setDonorId}
+              />
+              {allocation.error && (
+                <Alert tone="danger">{allocation.error}</Alert>
+              )}
+            </>
           )}
           {r.tab === 'results' && (
             <>
@@ -476,6 +565,8 @@ export function RebalancingPage() {
                 onRevoke={(id) => open('revoke', [id])}
                 onAccept={(ids) => open('accept', ids)}
                 onExport={csv}
+                onPriorities={setDonorId}
+                blockedSources={blockedSources}
                 stale={stale}
                 busy={busy}
                 acceptingDisabled={Boolean(saving)}
@@ -504,6 +595,54 @@ export function RebalancingPage() {
           )}
         </fieldset>
       </div>
+      {donorId && (
+        <DonorAllocationDrawer
+          key={`${r.proposal?.runId}:${donorId}`}
+          name={r.registry.find((b) => b.id === donorId)?.name ?? donorId}
+          fromBranchId={donorId}
+          rows={allocation.rows.filter((r) => r.fromBranchId === donorId)}
+          mode={r.proposal?.allocationModes?.[donorId] ?? 'PROPORTIONAL'}
+          onEdit={editPlan}
+          onClose={() => setDonorId(null)}
+          onResults={() => {
+            setDonorId(null);
+            edit({ tab: 'results' });
+          }}
+          stale={stale || !allocationContext}
+          saving={Boolean(saving) || planSaving > 0}
+          error={error || allocation.error}
+        />
+      )}
+      {recalculateWarning && (
+        <Dialog
+          title="Пересчитать перемещения?"
+          onClose={() => setRecalculateWarning(false)}
+          actions={
+            <>
+              <Button
+                className="secondary"
+                onClick={() => setRecalculateWarning(false)}
+              >
+                Сохранить текущий план
+              </Button>
+              <Button
+                disabled={busy || saving}
+                onClick={() => {
+                  setRecalculateWarning(false);
+                  void calculate();
+                }}
+              >
+                Пересчитать и сбросить правки
+              </Button>
+            </>
+          }
+        >
+          <p>
+            Новый расчёт заменит приоритеты и ручные количества текущего плана.
+            Уже принятые перемещения сохранятся.
+          </p>
+        </Dialog>
+      )}
       {confirmation && preview && (
         <AcceptTransfersDialog
           kind={confirmation.kind}

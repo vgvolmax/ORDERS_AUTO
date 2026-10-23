@@ -43,7 +43,7 @@ export function assertSnapshot(snapshot: RebalanceSnapshot): void {
   if (errors.length) throw new RebalanceError('INVALID_SNAPSHOT', errors);
 }
 export interface AcceptedTotals { incoming: Map<string, number>; outgoing: Map<string, number> }
-export function acceptedTotals(accepted: readonly AcceptedTransfer[]): AcceptedTotals {
+export function acceptedTotals(accepted: readonly Pick<AcceptedTransfer, 'skuCode' | 'fromBranchId' | 'toBranchId' | 'qty'>[]): AcceptedTotals {
   const incoming = new Map<string, number[]>(), outgoing = new Map<string, number[]>();
   for (const t of accepted) {
     const from = stockKey(t.skuCode, t.fromBranchId), to = stockKey(t.skuCode, t.toBranchId);

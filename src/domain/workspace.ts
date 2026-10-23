@@ -26,7 +26,7 @@ export interface RebalanceWorkspace {
   acceptedRevision: number;
   selectedLineIds: string[];
   rejectedLineIds: string[];
-  tab: 'routes' | 'conditions' | 'results';
+  tab: 'routes' | 'conditions' | 'results' | 'priorities';
   query: string;
   resultScope?: RebalanceResultScope;
 }

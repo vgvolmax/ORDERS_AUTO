@@ -1,3 +1,4 @@
+import { assertDonorPrioritiesReady } from './allocationPlan';
 import { assertConfig, assertSnapshot, acceptedTotals, rebalanceConfigFingerprint, validateAcceptedLedger } from './constraints';
 import { moneyGreaterThan, receiverTarget, sumQuantities } from './numbers';
 import { acceptedEconomicDiagnostics } from './economics';
@@ -51,6 +52,7 @@ export function acceptTransfers(input: AcceptTransfersInput): AcceptedTransferCh
   const next = [...input.currentAccepted, ...additions];
   const issues = validateAcceptedLedger(input.snapshot, next);
   if (issues.length) throw new RebalanceError('INVALID_TRANSFER_BATCH', issues);
+  assertDonorPrioritiesReady({ snapshot: input.snapshot, proposal: p, accepted: input.currentAccepted }, additions.map((t) => t.sourceLineId));
   const totals = acceptedTotals(next), skus = new Map(input.snapshot.skus.map((s) => [s.skuCode, s]));
   const stocks = new Map(input.snapshot.stocks.map((s) => [stockKey(s.skuCode, s.branchId), s]));
   const addedSkus = new Set(additions.map((t) => t.skuCode));
