@@ -82,6 +82,41 @@ const openRoute = (from = 'Донор А') => {
     drawer: screen.getByRole('dialog', { name: 'Состав перемещения' }),
   };
 };
+it('shows global and route amounts, keeps selection separate from rejection and updates the accepted amount', async () => {
+  const state = rebalanceAppState();
+  state.rebalance.proposal = createProposal(state);
+  state.rebalance.tab = 'results';
+  const current = harness(state);
+  const metric = (label: string) => screen.getByText(label).parentElement!;
+  expect(metric('Сумма перемещений')).toHaveTextContent('3 500,00');
+  expect(metric('Принято на сумму')).toHaveTextContent('0,00');
+  const { drawer } = openRoute();
+  expect(within(drawer).getByLabelText('Сумма перемещения')).toHaveTextContent(
+    '1 500,00',
+  );
+  fireEvent.click(
+    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение SKU1/ }),
+  );
+  expect(drawer).toHaveTextContent('Выбрано к принятию: 1');
+  expect(current().rebalance.rejectedLineIds).toEqual([]);
+  expect(current().rebalance.accepted).toEqual([]);
+  fireEvent.click(
+    within(drawer).getByRole('button', {
+      name: 'Принять выбранные в перемещении (1)',
+    }),
+  );
+  fireEvent.click(
+    within(
+      screen.getByRole('dialog', { name: 'Принять выбранные перемещения' }),
+    ).getByRole('button', { name: 'Принять перемещения' }),
+  );
+  await waitFor(() => expect(current().rebalance.accepted).toHaveLength(1));
+  expect(metric('Сумма перемещений')).toHaveTextContent('3 500,00');
+  expect(metric('Принято на сумму')).toHaveTextContent('1 500,00');
+  expect(
+    within(drawer).getByLabelText('Принято на сумму в перемещении'),
+  ).toHaveTextContent('1 500,00');
+});
 it('opens a route document with product identity, exact units and both stock previews without quantity editing', () => {
   const current = harness();
   const original = structuredClone(current());

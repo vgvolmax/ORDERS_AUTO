@@ -4,7 +4,10 @@ import {
   prepareAcceptedChange,
 } from '../../src/app/rebalanceActions';
 import { derive } from '../../src/app/selectors';
-import { buildTransferDocuments } from '../../src/features/rebalancing/transferDocuments';
+import {
+  buildTransferDocuments,
+  summarizeTransferDocuments,
+} from '../../src/features/rebalancing/transferDocuments';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
 
 function input() {
@@ -23,6 +26,48 @@ function input() {
     scope: {},
   };
 }
+it('summarizes accepted, selected and rejected money without double counting or inventing unknown prices', () => {
+  const data = input();
+  const line = data.proposal.transfers[0]!;
+  data.accepted = [
+    {
+      ...line,
+      transferId: 'accepted',
+      sourceRunId: data.proposal.runId,
+      snapshotId: data.proposal.snapshotId,
+      acceptedAt: '2026-10-22',
+      acceptedConfig: data.proposal.config,
+    },
+  ];
+  data.selected = [data.proposal.transfers[1]!.sourceLineId];
+  expect(
+    summarizeTransferDocuments(buildTransferDocuments(data)),
+  ).toMatchObject({
+    totalAmount: 3500,
+    acceptedAmount: 1500,
+    selectedAmount: 2000,
+    activeCount: 2,
+    acceptedCount: 1,
+    selectedCount: 1,
+    rejectedCount: 0,
+  });
+  data.skus[0] = { ...data.skus[0]!, referencePrice: null };
+  expect(
+    summarizeTransferDocuments(buildTransferDocuments(data)),
+  ).toMatchObject({ totalAmount: null, acceptedAmount: null });
+  data.skus[0] = { ...data.skus[0]!, referencePrice: 0 };
+  data.rejected = [data.proposal.transfers[1]!.sourceLineId];
+  expect(
+    summarizeTransferDocuments(buildTransferDocuments(data)),
+  ).toMatchObject({
+    totalAmount: 0,
+    acceptedAmount: 0,
+    activeCount: 1,
+    acceptedCount: 1,
+    selectedCount: 0,
+    rejectedCount: 1,
+  });
+});
 it('groups by stable directed branch IDs and resolves product identity only by exact code', () => {
   const data = input();
   const before = structuredClone(data);

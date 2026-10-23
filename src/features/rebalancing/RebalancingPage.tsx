@@ -15,6 +15,11 @@ import { ResultsTable } from './ResultsTable';
 import { buildRebalancingWorkbook } from '../../export/rebalancingWorkbook';
 import { save as download } from '../../export/download';
 import { AcceptTransfersDialog } from './AcceptTransfersDialog';
+import {
+  buildTransferDocuments,
+  summarizeTransferDocuments,
+} from './transferDocuments';
+import { money } from '../demand/DemandPage';
 const messages: Record<string, string> = {
   STALE_PROPOSAL:
     'Условия или снимок изменились. Рассчитайте предложения заново. Принятые перемещения сохранены.',
@@ -31,18 +36,6 @@ export function RebalancingPage() {
     { state, set, saving } = store,
     d = useDerivedState(state),
     r = state.rebalance;
-  const proposedCount = useMemo(() => {
-    const acceptedSources = new Set(
-      r.accepted
-        .filter((line) => line.sourceRunId === r.proposal?.runId)
-        .map((line) => line.sourceLineId),
-    );
-    return (
-      r.proposal?.transfers.filter(
-        (line) => !acceptedSources.has(line.sourceLineId),
-      ).length ?? 0
-    );
-  }, [r.accepted, r.proposal]);
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<{
@@ -85,6 +78,30 @@ export function RebalancingPage() {
     state.workspaceId,
     (value) => save((s) => ({ rebalance: { ...s.rebalance, ...value } })),
   );
+  const totals = useMemo(
+    () =>
+      summarizeTransferDocuments(
+        buildTransferDocuments({
+          proposal: r.proposal,
+          accepted: r.accepted,
+          rejected: decisions.rejectedLineIds,
+          selected: [],
+          registry: r.registry,
+          skus: state.minMax?.skus ?? [],
+          policies: [],
+          snapshot: null,
+          query: '',
+          scope: {},
+        }),
+      ),
+    [
+      r.proposal,
+      r.accepted,
+      r.registry,
+      decisions.rejectedLineIds,
+      state.minMax?.skus,
+    ],
+  );
   const [policies, changePolicies] = useDurableDraft(
     r.policies,
     state.workspaceId,
@@ -117,21 +134,59 @@ export function RebalancingPage() {
           rebalanceConfigFingerprint(configDraft)),
   );
   function open(kind: 'accept' | 'revoke', ids: string[]) {
+    if (busy) return;
     setError('');
-    try {
-      prepareAcceptedChange(state, {
+    const show = (current: AppState, requireSavedSelection = false) => {
+      const chosen =
+        kind === 'accept'
+          ? ids.filter((id) => !current.rebalance.rejectedLineIds.includes(id))
+          : ids;
+      if (
+        kind === 'accept' &&
+        (!chosen.length ||
+          (requireSavedSelection &&
+            chosen.some(
+              (id) => !current.rebalance.selectedLineIds.includes(id),
+            )))
+      )
+        throw new Error(
+          'Выбор не сохранён. Отметьте позиции повторно и попробуйте принять их ещё раз.',
+        );
+      prepareAcceptedChange(current, {
         kind,
-        ids,
-        expectedRevision: r.acceptedRevision,
+        ids: chosen,
+        expectedRevision: current.rebalance.acceptedRevision,
       });
       setConfirmation({
         kind,
-        ids,
-        expectedRevision: r.acceptedRevision,
-        workspaceRevision: state.workspaceRevision,
-        runId: r.proposal?.runId,
-        snapshotId: state.snapshotId,
+        ids: chosen,
+        expectedRevision: current.rebalance.acceptedRevision,
+        workspaceRevision: current.workspaceRevision,
+        runId: current.rebalance.proposal?.runId,
+        snapshotId: current.snapshotId,
       });
+    };
+    if (saving) {
+      setBusy(true);
+      void (async () => {
+        try {
+          let current = state;
+          // Read barrier: no write/revision change, after all preceding queued saves.
+          await save((s) => {
+            current = s;
+            return {};
+          });
+          show(current, true);
+        } catch (e) {
+          setError(rebalanceMessage(e));
+        } finally {
+          setBusy(false);
+        }
+      })();
+      return;
+    }
+    try {
+      show(state);
     } catch (e) {
       setError(rebalanceMessage(e));
     }
@@ -252,11 +307,29 @@ export function RebalancingPage() {
           </Button>
         </div>
       </header>
-      <div className="metrics metrics-three">
-        <MetricCard label="Предложено строк" value={proposedCount} />
+      <div className="metrics transfer-metrics">
+        <MetricCard
+          label="Сумма перемещений"
+          value={
+            totals.totalAmount === null
+              ? 'Сумма неизвестна'
+              : money(totals.totalAmount)
+          }
+          note="Все активные строки, по ценам MIN/MAX"
+        />
+        <MetricCard
+          label="Принято на сумму"
+          value={
+            totals.acceptedAmount === null
+              ? 'Сумма неизвестна'
+              : money(totals.acceptedAmount)
+          }
+          note={`${totals.acceptedCount} из ${totals.activeCount} активных строк`}
+        />
+        <MetricCard label="Предложено строк" value={totals.proposedCount} />
         <MetricCard label="Принято строк" value={r.accepted.length} />
         <MetricCard
-          label="Отмечено строк"
+          label="Выбрано к принятию"
           value={decisions.selectedLineIds.length}
         />
       </div>
@@ -376,12 +449,7 @@ export function RebalancingPage() {
                   })
                 }
                 onRevoke={(id) => open('revoke', [id])}
-                onAccept={(ids) =>
-                  open(
-                    'accept',
-                    ids.filter((id) => !r.rejectedLineIds.includes(id)),
-                  )
-                }
+                onAccept={(ids) => open('accept', ids)}
                 stale={stale}
                 busy={busy}
                 acceptingDisabled={Boolean(saving)}

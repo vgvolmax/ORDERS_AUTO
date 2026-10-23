@@ -118,14 +118,7 @@ export function RoutesMatrix({
         ненастроенным парам. Сохранённые направления и запреты сохраняются при
         смене режима; их можно изменить в ячейке пары.
       </p>
-      <div
-        className="route-matrix"
-        style={
-          {
-            '--matrix-width': `${180 + branches.length * 160}px`,
-          } as React.CSSProperties
-        }
-      >
+      <div className="route-matrix">
         <VirtualTable rows={rows} columns={columns} getRowKey={(b) => b.id} />
       </div>
       {value.pairs.some(

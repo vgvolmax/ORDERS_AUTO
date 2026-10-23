@@ -9,6 +9,7 @@ import type {
   TransferDocumentLine,
   TransferStockView,
 } from './transferDocuments';
+import { summarizeTransferDocuments } from './transferDocuments';
 
 export function TransferDrawer({
   document: doc,
@@ -49,6 +50,10 @@ export function TransferDrawer({
     .filter((l) => l.selected)
     .map((l) => l.sourceLineId);
   const disabled = stale || busy;
+  const summary = summarizeTransferDocuments([doc]);
+  const selectedAmount = summarizeTransferDocuments([
+    { ...doc, lines: eligible.filter((line) => line.selected) },
+  ]).totalAmount;
   return createPortal(
     <div
       className="drawer-back"
@@ -72,11 +77,27 @@ export function TransferDrawer({
               {doc.fromName} → {doc.toName}
             </h2>
             <p>
-              {doc.skuCount} SKU ·{' '}
-              {doc.totalAmount === null
-                ? 'Сумма неизвестна'
-                : money(doc.totalAmount)}
+              {doc.skuCount} SKU · Принято строк: {summary.acceptedCount} из{' '}
+              {summary.activeCount}
             </p>
+            <div className="transfer-financial-summary">
+              <div aria-label="Сумма перемещения">
+                <small>Сумма перемещения</small>
+                <strong>
+                  {summary.totalAmount === null
+                    ? 'Сумма неизвестна'
+                    : money(summary.totalAmount)}
+                </strong>
+              </div>
+              <div aria-label="Принято на сумму в перемещении">
+                <small>Принято в перемещении</small>
+                <strong>
+                  {summary.acceptedAmount === null
+                    ? 'Сумма неизвестна'
+                    : money(summary.acceptedAmount)}
+                </strong>
+              </div>
+            </div>
             <p>
               Количество рассчитано автоматически. Предложения учитываются в
               заказах только после принятия.
@@ -129,7 +150,7 @@ export function TransferDrawer({
         </p>
         <VirtualTable
           rows={rows}
-          maxHeight="min(55vh, 600px)"
+          maxHeight="100%"
           getRowKey={(l) => l.id}
           emptyMessage={
             doc.lines.length
@@ -234,7 +255,7 @@ export function TransferDrawer({
                   {l.transferId ? (
                     <button
                       className="link"
-                      disabled={busy || saving}
+                      disabled={busy}
                       aria-label={[
                         'Отменить принятие',
                         l.skuCode,
@@ -260,16 +281,30 @@ export function TransferDrawer({
             },
           ]}
         />
-        <div className="drawer-actions">
-          <Button className="secondary" onClick={onClose}>
-            Закрыть карточку
-          </Button>
-          <Button
-            disabled={disabled || saving || !routeSelected.length}
-            onClick={() => onAccept(routeSelected)}
-          >
-            Принять выбранные в перемещении ({routeSelected.length})
-          </Button>
+        <div className="drawer-actions transfer-drawer-actions">
+          <div className="transfer-selection-summary">
+            <strong>Выбрано к принятию: {routeSelected.length}</strong>
+            <span>
+              {selectedAmount === null
+                ? 'Сумма неизвестна'
+                : money(selectedAmount)}
+            </span>
+            {saving && <small role="status">Сохраняем выбор…</small>}
+          </div>
+          <div className="transfer-action-buttons">
+            <Button className="secondary" onClick={onClose}>
+              Закрыть карточку
+            </Button>
+            <Button
+              disabled={disabled || !routeSelected.length}
+              aria-label={`Принять выбранные в перемещении (${routeSelected.length})`}
+              onClick={() => onAccept(routeSelected)}
+            >
+              {busy
+                ? 'Подготовка…'
+                : `Принять выбранные (${routeSelected.length})`}
+            </Button>
+          </div>
         </div>
       </aside>
     </div>,

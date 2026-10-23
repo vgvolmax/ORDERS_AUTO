@@ -58,6 +58,27 @@ export interface TransferDocument {
   totalsByUnit: { unit: string | null; skuCode?: string; qty: number }[];
 }
 
+export function summarizeTransferDocuments(docs: TransferDocument[]) {
+  const lines = docs.flatMap((doc) => doc.lines);
+  const active = lines.filter((line) => line.decision !== 'REJECTED');
+  const accepted = active.filter((line) => line.decision === 'ACCEPTED');
+  const amount = (items: TransferDocumentLine[]) => {
+    if (items.some((line) => line.amount === null)) return null;
+    const value = items.reduce((sum, line) => sum + line.amount!, 0);
+    return Number.isFinite(value) ? value : null;
+  };
+  return {
+    totalAmount: amount(active),
+    acceptedAmount: amount(accepted),
+    selectedAmount: amount(active.filter((line) => line.selected)),
+    activeCount: active.length,
+    acceptedCount: accepted.length,
+    proposedCount: active.length - accepted.length,
+    rejectedCount: lines.length - active.length,
+    selectedCount: active.filter((line) => line.selected).length,
+  };
+}
+
 /** Read-only projection. Opening and filtering never mutate purchasing decisions. */
 export function buildTransferDocuments(
   input: TransferDocumentsInput,

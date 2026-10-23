@@ -603,3 +603,192 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   expect(evidence.consoleErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
 });
+
+for (const { count, width, height } of [
+  { count: 46, width: 1280, height: 720 },
+  { count: 130, width: 1024, height: 768 },
+]) {
+  test(`E2E-09 transfer drawer ${count} rows keeps actions visible and scrolls one viewport`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+    const evidence = observeRuntime(page);
+    await page.context().setOffline(true);
+    await page.setViewportSize({ width, height });
+    await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+    const codes = Array.from(
+      { length: count },
+      (_, i) => `SKU${String(i + 1).padStart(4, '0')}`,
+    );
+    const min = buildWorkbook([
+      [
+        'Код',
+        'Артикул',
+        'Номенклатура',
+        'Количество',
+        'Минимальный остаток',
+        'Максимальный остаток',
+        'Цена',
+      ],
+      ...codes.flatMap((code) => [
+        [
+          code,
+          `Артикул ${code}`,
+          `Длинное название товара: уголок комбинированный PPR НР для инженерных систем ${code}`,
+          36,
+          10,
+          15,
+          100,
+        ],
+        [null, null, 'Егорьевск', 30, 10, 15, null],
+        [null, null, 'Ленина', 6, 10, 15, null],
+      ]),
+    ]);
+    const suppliers = buildWorkbook([
+      [
+        'Контрагент',
+        'Код',
+        'Номенклатура',
+        'Количество',
+        'Стоимость',
+        'Ед. изм.',
+      ],
+      ...codes.map((code) => [
+        'ООО "Терем"',
+        code,
+        `Товар ${code}`,
+        1,
+        100,
+        'шт',
+      ]),
+    ]);
+    for (const [label, name, bytes] of [
+      ['Выбрать файл Отчёт MIN/MAX', 'min.xlsx', min],
+      ['Выбрать файл Отчёт поставщиков', 'sup.xlsx', suppliers],
+    ] as const)
+      await page
+        .getByLabel(label)
+        .setInputFiles({
+          name,
+          mimeType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          buffer: Buffer.from(bytes),
+        });
+    await page.getByRole('button', { name: 'Перейти к потребности' }).click();
+    await page
+      .getByRole('button', { name: 'Ребалансировка', exact: true })
+      .click();
+    await page.getByRole('tab', { name: 'Условия' }).click();
+    await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
+    await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
+    await page
+      .getByRole('button', { name: `Назначить ненастроенным (${count})` })
+      .click();
+    await page.getByRole('button', { name: 'Рассчитать перемещения' }).click();
+    const cell = page.getByRole('button', {
+      name: 'Открыть перемещение Егорьевск → Ленина',
+    });
+    const toast = page.locator('.toast');
+    await expect(toast).toBeVisible();
+    await cell.click();
+    await expect(toast).toBeVisible();
+    const drawer = page.getByRole('dialog', { name: 'Состав перемещения' });
+    const viewport = drawer.locator('.virtual-scroll');
+    await expect(viewport).toHaveCount(1);
+    const button = drawer.getByRole('button', {
+      name: /Принять выбранные в перемещении/,
+    });
+    const expectFooter = async () => {
+      const box = await button.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(height);
+      const toastBox = await toast.boundingBox();
+      if (toastBox) {
+        const close = await drawer
+          .getByRole('button', { name: 'Закрыть', exact: true })
+          .boundingBox();
+        for (const action of [box!, close!]) {
+          const overlapWidth =
+            Math.min(action.x + action.width, toastBox.x + toastBox.width) -
+            Math.max(action.x, toastBox.x);
+          const overlapHeight =
+            Math.min(action.y + action.height, toastBox.y + toastBox.height) -
+            Math.max(action.y, toastBox.y);
+          expect(
+            overlapWidth > 0 && overlapHeight > 0,
+            'Toast must not obscure drawer actions',
+          ).toBe(false);
+        }
+      }
+      const owners = await drawer.locator('*').evaluateAll(
+        (nodes) =>
+          nodes.filter((node) => {
+            const el = node as HTMLElement;
+            return (
+              el.clientWidth > 0 &&
+              el.scrollWidth > el.clientWidth + 1 &&
+              /auto|scroll/.test(getComputedStyle(el).overflowX)
+            );
+          }).length,
+      );
+      expect(owners).toBe(1);
+    };
+    await expectFooter();
+    await expect(drawer.getByLabel('Сумма перемещения')).toContainText(
+      new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2 }).format(
+        count * 900,
+      ),
+    );
+    await drawer
+      .getByRole('checkbox', { name: /Выбрать перемещение SKU0001/ })
+      .check();
+    await expect(
+      drawer.getByText('Выбрано к принятию: 1', { exact: true }),
+    ).toBeVisible();
+    await expect(button).toBeEnabled();
+    await viewport.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth;
+      el.scrollTop = el.scrollHeight;
+    });
+    const lastRow = viewport
+      .getByRole('row')
+      .filter({ hasText: codes.at(-1)! });
+    await expect(lastRow).toHaveCount(1);
+    const column = await viewport
+      .getByRole('columnheader', { name: 'Цена MIN/MAX', exact: true })
+      .boundingBox();
+    const amount = await lastRow.getByRole('cell').nth(5).boundingBox();
+    expect(Math.abs(column!.x - amount!.x)).toBeLessThan(2);
+    await expectFooter();
+    await page.screenshot({
+      path: testInfo.outputPath(`13-transfer-${count}-${width}.png`),
+      fullPage: false,
+    });
+    await button.click();
+    const confirm = page.getByRole('dialog', {
+      name: 'Принять выбранные перемещения',
+    });
+    await expect(confirm).toBeVisible();
+    await confirm
+      .getByRole('button', { name: 'Принять перемещения', exact: true })
+      .click();
+    await expect(confirm).toHaveCount(0);
+    await expect(
+      drawer.getByLabel('Принято на сумму в перемещении'),
+    ).toContainText('900,00');
+    await expectFooter();
+    await drawer.getByRole('button', { name: 'Закрыть карточку' }).click();
+    await expect(cell).toContainText(`Принято: 1 из ${count}`);
+    await expect(cell).not.toContainText('Отклонено: 1');
+    await expect(
+      page.getByText('Принято на сумму', { exact: true }).locator('..'),
+    ).toContainText('900,00');
+    expect(evidence.pageErrors).toEqual([]);
+    expect(evidence.consoleErrors).toEqual([]);
+    expect(evidence.remoteRequests).toEqual([]);
+  });
+}
