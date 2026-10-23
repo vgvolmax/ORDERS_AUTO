@@ -168,6 +168,7 @@ export function prepareDonorPlanChange(
       .map((t) => t.sourceLineId),
   );
   return {
+    toast: null,
     rebalance: {
       ...state.rebalance,
       proposal: next,

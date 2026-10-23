@@ -153,6 +153,12 @@ test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload o
     .toBe(true);
   await second.fill('2');
   await expect(drawer.getByText('Вручную', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      'Изменения не сохранены. Предыдущая версия сеанса сохранена.',
+      { exact: true },
+    ),
+  ).toHaveCount(0);
   await drawer
     .getByLabel('Распределение между выбранными')
     .selectOption('PROPORTIONAL');

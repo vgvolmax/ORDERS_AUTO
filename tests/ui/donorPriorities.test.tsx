@@ -234,10 +234,14 @@ it('publishes a plan only after durable save, retries failure and rejects a comm
     initial.rebalance.proposal,
   );
   expect(published).toBe(0);
+  session.transient({
+    toast: 'Изменения не сохранены. Предыдущая версия сеанса сохранена.',
+  });
   failSave = false;
   await session.commit((s) => prepareDonorPlanChange(s, command, expected));
   expect(session.getState().rebalance.proposal!.allocationRevision).toBe(1);
-  expect(published).toBe(1);
+  expect(published).toBe(2);
+  expect(session.getState().toast).toBeNull();
   await session.commit(
     (s) =>
       prepareAcceptedChange(s, {
