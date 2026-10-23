@@ -142,3 +142,9 @@ If supplier history for one `supplier + skuCode` contains more than one distinct
 ## Расширение20.10.2026: текущая потребность
 
 buildPurchaseDemand(originalPricedDemand,accepted,branchRegistry) формирует PurchaseDemandLine. projectedStock=stock−acceptedOutgoingQty+acceptedIncomingQty; purchaseQty=max(0,Max−projectedStock) при валидном закупочном нормативе; purchaseAmount=null без цены. Исходные deficitQty/stock/status сохраняются; purchaseStatus считается по projectedStock. Общий buildOrderProjection использует purchaseQty для нового input и deficitQty для legacy input; calculatedQty, warnings, amounts, thresholds и unassigned должны использовать одну и ту же текущую базу. Сетевые purchase totals/missing-price counts отдельные от исходных networkDemandAmount. Без accepted поведение эквивалентно исходному.
+
+### Проекция приоритетов ·23.10.2026
+
+allocationPlan.buildDonorAllocationModel строит матрицу SKU/получатель из валидного снимка, текущего proposal и accepted ledger. Потребность: настроенная цель − физический остаток − весь принятый вход, с округлением вниз до шага. План других доноров показан отдельно и не скрывает доступных для явного выбора получателей. Признак priorityRequired относится к автоматической группе, когда её доступного излишка не хватает на остаточную потребность нескольких получателей после предложений других доноров. Принятие таких исходных строк блокируется на доменном уровне, UI-флажки выбора к принятию независимы от приоритетов. Редактирование плана не участвует в purchaseDemand; только последующее принятие меняет потребность, пересмотр заказов и экспорт.
+
+Прогноз матрицы отражает полный proposal, включая ранее отклонённые предложения. Отклонённая часть своего/чужого плана раскрывается отдельно; отклонение предложения не отзывает физический излишек. Результаты и принятие по-прежнему исключают отклонённые source IDs. При цели ниже Max отдельно выводится потребность до настроенной цели и до Max.
