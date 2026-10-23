@@ -17,6 +17,7 @@ export function ResultsTable({
   onReject,
   onRevoke,
   onAccept,
+  onExport,
   stale,
   busy,
   acceptingDisabled = false,
@@ -29,6 +30,7 @@ export function ResultsTable({
   onReject: (id: string) => void;
   onRevoke: (id: string) => void;
   onAccept: (ids: string[]) => void;
+  onExport: (documentId: string) => void;
   stale: boolean;
   busy: boolean;
   acceptingDisabled?: boolean;
@@ -75,6 +77,19 @@ export function ResultsTable({
   );
   const [openedDocument, setOpenedDocument] = useState<TransferDocument | null>(
     null,
+  );
+  const allDocs = useMemo(
+    () => buildTransferDocuments({ ...input, query: '', scope: {} }),
+    [
+      proposal,
+      accepted,
+      registry,
+      policies,
+      skus,
+      snapshot,
+      selected,
+      rejected,
+    ],
   );
   // Keep the parent modal mounted when revoking the last line removes its route.
   // The confirmation can then close before the operator closes the inspector.
@@ -187,7 +202,37 @@ export function ResultsTable({
                 header: 'Отправитель ↓ · получатель →',
                 width: '210px',
                 className: 'transfer-identity',
-                render: (id) => <strong>{names.get(id) ?? id}</strong>,
+                render: (id) => {
+                  const summary = summarizeTransferDocuments(
+                    allDocs.filter((doc) => doc.fromBranchId === id),
+                  );
+                  return (
+                    <div
+                      className="transfer-sender-summary"
+                      role="group"
+                      aria-label={`Итоги отправителя ${names.get(id) ?? id}`}
+                    >
+                      <strong>{names.get(id) ?? id}</strong>
+                      <span>
+                        Всего:{' '}
+                        <b>
+                          {summary.totalAmount === null
+                            ? 'Сумма неизвестна'
+                            : money(summary.totalAmount)}
+                        </b>
+                      </span>
+                      <span>
+                        Выбрано:{' '}
+                        <b>
+                          {summary.selectedAmount === null
+                            ? 'Сумма неизвестна'
+                            : money(summary.selectedAmount)}
+                        </b>
+                      </span>
+                      <small>Все направления, без фильтров</small>
+                    </div>
+                  );
+                },
               },
               ...recipients.map((to) => ({
                 key: to,
@@ -246,6 +291,12 @@ export function ResultsTable({
                           ? 'Сумма неизвестна'
                           : money(summary.acceptedAmount)}
                       </span>
+                      <span>
+                        Выбрано на сумму:{' '}
+                        {summary.selectedAmount === null
+                          ? 'Сумма неизвестна'
+                          : money(summary.selectedAmount)}
+                      </span>
                       {doc.lines.some((l) => l.decision === 'REJECTED') && (
                         <span>
                           Отклонено:{' '}
@@ -274,6 +325,12 @@ export function ResultsTable({
           onReject={onReject}
           onRevoke={onRevoke}
           onAccept={onAccept}
+          onExport={() => onExport(opened.id)}
+          exportCount={
+            allDocs
+              .find((doc) => doc.id === opened.id)
+              ?.lines.filter((line) => line.decision === 'ACCEPTED').length ?? 0
+          }
           onClose={() => setOpenedDocument(null)}
           stale={stale}
           busy={busy}

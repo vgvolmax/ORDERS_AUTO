@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -608,7 +608,7 @@ for (const { count, width, height } of [
   { count: 46, width: 1280, height: 720 },
   { count: 130, width: 1024, height: 768 },
 ]) {
-  test(`E2E-09 transfer drawer ${count} rows keeps actions visible and scrolls one viewport`, async ({
+  test(`E2E-09 transfer drawer ${count} rows fits the screen without scrolling and exports accepted CSV`, async ({
     page,
   }, testInfo) => {
     test.setTimeout(90_000);
@@ -667,14 +667,12 @@ for (const { count, width, height } of [
       ['Выбрать файл Отчёт MIN/MAX', 'min.xlsx', min],
       ['Выбрать файл Отчёт поставщиков', 'sup.xlsx', suppliers],
     ] as const)
-      await page
-        .getByLabel(label)
-        .setInputFiles({
-          name,
-          mimeType:
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          buffer: Buffer.from(bytes),
-        });
+      await page.getByLabel(label).setInputFiles({
+        name,
+        mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer: Buffer.from(bytes),
+      });
     await page.getByRole('button', { name: 'Перейти к потребности' }).click();
     await page
       .getByRole('button', { name: 'Ребалансировка', exact: true })
@@ -699,7 +697,27 @@ for (const { count, width, height } of [
     const button = drawer.getByRole('button', {
       name: /Принять выбранные в перемещении/,
     });
+    const expectNoScroll = () =>
+      expect
+        .poll(() =>
+          drawer.evaluate((root) =>
+            [root, ...root.querySelectorAll('*')].every((node) => {
+              const el = node as HTMLElement;
+              const style = getComputedStyle(el);
+              return !(
+                (/auto|scroll/.test(style.overflowX) &&
+                  el.clientWidth > 0 &&
+                  el.scrollWidth > el.clientWidth + 1) ||
+                (/auto|scroll/.test(style.overflowY) &&
+                  el.clientHeight > 0 &&
+                  el.scrollHeight > el.clientHeight + 1)
+              );
+            }),
+          ),
+        )
+        .toBe(true);
     const expectFooter = async () => {
+      await expectNoScroll();
       const box = await button.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);
@@ -735,7 +753,25 @@ for (const { count, width, height } of [
             );
           }).length,
       );
-      expect(owners).toBe(1);
+      expect(owners).toBe(0);
+      const verticalOwners = await drawer.locator('*').evaluateAll(
+        (nodes) =>
+          nodes.filter((node) => {
+            const el = node as HTMLElement;
+            return (
+              el.clientHeight > 0 &&
+              el.scrollHeight > el.clientHeight + 1 &&
+              /auto|scroll/.test(getComputedStyle(el).overflowY)
+            );
+          }).length,
+      );
+      expect(verticalOwners).toBe(0);
+      const drawerFits = await drawer.evaluate(
+        (el) =>
+          el.scrollHeight <= el.clientHeight + 1 &&
+          el.scrollWidth <= el.clientWidth + 1,
+      );
+      expect(drawerFits).toBe(true);
     };
     await expectFooter();
     await expect(drawer.getByLabel('Сумма перемещения')).toContainText(
@@ -750,24 +786,62 @@ for (const { count, width, height } of [
       drawer.getByText('Выбрано к принятию: 1', { exact: true }),
     ).toBeVisible();
     await expect(button).toBeEnabled();
-    await viewport.evaluate((el) => {
-      el.scrollLeft = el.scrollWidth;
-      el.scrollTop = el.scrollHeight;
-    });
+    await drawer.getByRole('button', { name: 'Последняя страница' }).click();
     const lastRow = viewport
       .getByRole('row')
       .filter({ hasText: codes.at(-1)! });
     await expect(lastRow).toHaveCount(1);
-    const column = await viewport
-      .getByRole('columnheader', { name: 'Цена MIN/MAX', exact: true })
-      .boundingBox();
-    const amount = await lastRow.getByRole('cell').nth(5).boundingBox();
-    expect(Math.abs(column!.x - amount!.x)).toBeLessThan(2);
+    await lastRow.getByRole('checkbox').check();
+    await expect(button).toHaveAccessibleName(
+      'Принять выбранные в перемещении (2)',
+    );
+    await drawer
+      .getByRole('button', {
+        name: `Показать полное название ${codes.at(-1)!}`,
+      })
+      .click();
+    const product = page.getByRole('dialog', {
+      name: `Товар ${codes.at(-1)!}`,
+    });
+    await expect(product).toContainText('для инженерных систем');
+    await page.keyboard.press('Escape');
+    await expect(product).toHaveCount(0);
+    if (width === 1280) {
+      await page.setViewportSize({ width, height: 600 });
+      await expectNoScroll();
+      const shortBox = await button.boundingBox();
+      expect(shortBox!.y + shortBox!.height).toBeLessThanOrEqual(600);
+      await expect
+        .poll(() =>
+          drawer.evaluate((el) => el.scrollHeight <= el.clientHeight + 1),
+        )
+        .toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath('14-transfer-short-1280-600.png'),
+      });
+      await page.setViewportSize({ width, height });
+    }
     await expectFooter();
     await page.screenshot({
       path: testInfo.outputPath(`13-transfer-${count}-${width}.png`),
       fullPage: false,
     });
+    await drawer.getByRole('button', { name: 'Закрыть карточку' }).click();
+    const sender = page.getByRole('group', {
+      name: 'Итоги отправителя Егорьевск',
+    });
+    await expect(sender).toContainText('Выбрано: 1 800,00');
+    await expect(sender).toContainText(
+      new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2 }).format(
+        count * 900,
+      ),
+    );
+    await expect(cell).toContainText('Выбрано на сумму: 1 800,00');
+    await page.screenshot({
+      path: testInfo.outputPath(`15-sender-selected-${count}-${width}.png`),
+      fullPage: true,
+    });
+    await cell.click();
     await button.click();
     const confirm = page.getByRole('dialog', {
       name: 'Принять выбранные перемещения',
@@ -779,14 +853,52 @@ for (const { count, width, height } of [
     await expect(confirm).toHaveCount(0);
     await expect(
       drawer.getByLabel('Принято на сумму в перемещении'),
-    ).toContainText('900,00');
+    ).toContainText('1 800,00');
     await expectFooter();
+    await drawer
+      .getByRole('textbox', { name: 'Поиск по составу перемещения' })
+      .fill('SKU0001');
+    await expect(drawer.getByRole('row')).toHaveCount(2);
+    const downloaded = page.waitForEvent('download');
+    await drawer
+      .getByRole('button', { name: 'Скачать CSV принятых позиций (2)' })
+      .click();
+    const file = await downloaded;
+    expect(file.suggestedFilename()).toMatch(
+      /^Перемещение__Егорьевск__Ленина__.*\.csv$/,
+    );
+    const csv = readFileSync((await file.path())!, 'utf8');
+    expect(
+      csv.startsWith(
+        '\ufeffКод;Артикул;Номенклатура;Отправитель;Получатель;Количество;Ед.;Цена MIN/MAX;Сумма\r\n',
+      ),
+    ).toBe(true);
+    expect(csv).toContain('SKU0001;');
+    expect(csv).toContain(`${codes.at(-1)!};`);
+    expect(csv.split('\r\n')).toHaveLength(4);
+    expect(csv).not.toContain('SKU0002;');
     await drawer.getByRole('button', { name: 'Закрыть карточку' }).click();
-    await expect(cell).toContainText(`Принято: 1 из ${count}`);
+    await expect(cell).toContainText(`Принято: 2 из ${count}`);
     await expect(cell).not.toContainText('Отклонено: 1');
     await expect(
       page.getByText('Принято на сумму', { exact: true }).locator('..'),
-    ).toContainText('900,00');
+    ).toContainText('1 800,00');
+    await page
+      .getByRole('textbox', {
+        name: 'Поиск по коду, артикулу, товару и маршруту',
+      })
+      .fill('SKU0001');
+    await cell.click();
+    const filteredDownload = page.waitForEvent('download');
+    await drawer
+      .getByRole('button', { name: 'Скачать CSV принятых позиций (2)' })
+      .click();
+    const filteredCsv = readFileSync(
+      (await (await filteredDownload).path())!,
+      'utf8',
+    );
+    expect(filteredCsv).toContain(`${codes.at(-1)!};`);
+    expect(filteredCsv.split('\r\n')).toHaveLength(4);
     expect(evidence.pageErrors).toEqual([]);
     expect(evidence.consoleErrors).toEqual([]);
     expect(evidence.remoteRequests).toEqual([]);
