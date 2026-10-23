@@ -103,6 +103,7 @@ it('keeps exact business commands, full-name disclosure, empty search and clear 
   fireEvent.keyDown(document, { key: 'Escape' });
   const search = screen.getByRole('textbox', { name: 'Поиск товара' });
   fireEvent.change(search, { target: { value: 'SKU6' } });
+  expect(search).toHaveAccessibleName('Поиск товара');
   expect(screen.getAllByRole('listitem')).toHaveLength(1);
   expect(screen.getByRole('listitem')).toHaveTextContent('SKU6');
   fireEvent.change(search, { target: { value: 'Отсутствует' } });

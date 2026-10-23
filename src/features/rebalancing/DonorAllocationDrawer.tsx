@@ -114,6 +114,7 @@ export function DonorAllocationDrawer({
           <label>
             Поиск товара
             <SearchInput
+              aria-label="Поиск товара"
               value={query}
               onValueChange={(v) => {
                 setQuery(v);
