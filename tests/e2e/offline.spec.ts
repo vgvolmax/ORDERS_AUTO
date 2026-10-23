@@ -689,7 +689,10 @@ for (const { count, width, height } of [
     const cell = page.getByRole('button', {
       name: 'Открыть перемещение Егорьевск → Ленина',
     });
+    const toast = page.locator('.toast');
+    await expect(toast).toBeVisible();
     await cell.click();
+    await expect(toast).toBeVisible();
     const drawer = page.getByRole('dialog', { name: 'Состав перемещения' });
     const viewport = drawer.locator('.virtual-scroll');
     await expect(viewport).toHaveCount(1);
@@ -703,6 +706,24 @@ for (const { count, width, height } of [
       expect(box!.y).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width).toBeLessThanOrEqual(width);
       expect(box!.y + box!.height).toBeLessThanOrEqual(height);
+      const toastBox = await toast.boundingBox();
+      if (toastBox) {
+        const close = await drawer
+          .getByRole('button', { name: 'Закрыть', exact: true })
+          .boundingBox();
+        for (const action of [box!, close!]) {
+          const overlapWidth =
+            Math.min(action.x + action.width, toastBox.x + toastBox.width) -
+            Math.max(action.x, toastBox.x);
+          const overlapHeight =
+            Math.min(action.y + action.height, toastBox.y + toastBox.height) -
+            Math.max(action.y, toastBox.y);
+          expect(
+            overlapWidth > 0 && overlapHeight > 0,
+            'Toast must not obscure drawer actions',
+          ).toBe(false);
+        }
+      }
       const owners = await drawer.locator('*').evaluateAll(
         (nodes) =>
           nodes.filter((node) => {
@@ -745,7 +766,7 @@ for (const { count, width, height } of [
     await expectFooter();
     await page.screenshot({
       path: testInfo.outputPath(`13-transfer-${count}-${width}.png`),
-      fullPage: true,
+      fullPage: false,
     });
     await button.click();
     const confirm = page.getByRole('dialog', {
