@@ -1,3 +1,4 @@
+import { useDurableDraft } from '../../app/useDurableDraft';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, useModalLayer } from '../../components/Dialog';
@@ -83,9 +84,9 @@ export function DonorAllocationDrawer({
   );
   const unresolved = rows.filter((r) => r.priorityRequired).length;
   const disabled = stale || saving;
-  const submit = (command: DonorPlanCommand) => {
-    void onEdit(command).catch(() => undefined);
-  };
+  const [modeDraft, changeMode] = useDurableDraft(mode, fromBranchId, (next) =>
+    onEdit({ kind: 'mode', fromBranchId, mode: next }),
+  );
   return createPortal(
     <div
       className="drawer-back"
@@ -119,15 +120,9 @@ export function DonorAllocationDrawer({
             <select
               className="input"
               aria-label="Распределение между выбранными"
-              value={mode}
+              value={modeDraft}
               disabled={disabled}
-              onChange={(e) =>
-                submit({
-                  kind: 'mode',
-                  fromBranchId,
-                  mode: e.target.value as DonorSplitMode,
-                })
-              }
+              onChange={(e) => changeMode(e.target.value as DonorSplitMode)}
             >
               <option value="PROPORTIONAL">Пропорционально потребности</option>
               <option value="EQUAL">Поровну</option>
@@ -268,7 +263,7 @@ export function DonorAllocationDrawer({
                       {fmtQty(r.plannedQty)} {r.unit}
                     </strong>
                     <span>
-                      После всех отправлений: <b>{fmtQty(r.after)}</b> · не ниже{' '}
+                      После всех предложений: <b>{fmtQty(r.after)}</b> · не ниже{' '}
                       {fmtQty(r.max)}
                     </span>
                   </div>
@@ -289,7 +284,11 @@ export function DonorAllocationDrawer({
                   return (
                     <div className="donor-receiver">
                       <strong>
-                        Потребность: {fmtQty(c.need)} {r.unit}
+                        Потребность{c.target !== c.max ? ' до цели' : ''}:{' '}
+                        {fmtQty(c.need)} {r.unit}
+                        {c.target !== c.max
+                          ? ` · До MAX ${fmtQty(c.needToMax)}`
+                          : ''}
                       </strong>
                       <small>
                         Остаток {fmtQty(c.stock)} · MIN {fmtQty(c.min)} · MAX{' '}
@@ -301,6 +300,9 @@ export function DonorAllocationDrawer({
                       <small>
                         Принятый вход {fmtQty(c.acceptedIncoming)} · План других{' '}
                         {fmtQty(c.otherPlanned)}
+                        {c.otherPlannedRejected > 0
+                          ? ` (отклонено ${fmtQty(c.otherPlannedRejected)})`
+                          : ''}
                       </small>
                       {c.locked ? (
                         <strong className="success">
@@ -310,20 +312,19 @@ export function DonorAllocationDrawer({
                       ) : (
                         <div className="donor-cell-inputs">
                           <label className="checkbox-control">
-                            <input
-                              type="checkbox"
-                              aria-label={`Приоритет ${r.skuCode} ${recipientName}`}
-                              checked={c.priority}
+                            <PriorityFlag
+                              label={`Приоритет ${r.skuCode} ${recipientName}`}
+                              value={c.priority}
                               disabled={disabled || !c.canAllocate}
-                              onChange={(e) =>
-                                submit({
+                              onCommit={(checked) =>
+                                onEdit({
                                   kind: 'priorities',
                                   skuCode: r.skuCode,
                                   fromBranchId,
                                   recipientIds: r.cells
                                     .filter((v) =>
                                       v.toBranchId === to
-                                        ? e.target.checked
+                                        ? checked
                                         : v.priority,
                                     )
                                     .map((v) => v.toBranchId),
@@ -354,6 +355,9 @@ export function DonorAllocationDrawer({
                       )}
                       <small>
                         Шаг {fmtQty(r.step)} {r.unit}
+                        {c.rejectedQty > 0
+                          ? ` · Отклонено ${fmtQty(c.rejectedQty)} ${r.unit}`
+                          : ''}
                       </small>
                     </div>
                   );
@@ -364,8 +368,22 @@ export function DonorAllocationDrawer({
         </div>
         <div className="drawer-actions transfer-drawer-actions">
           <div className="transfer-selection-summary">
-            <strong>{saving ? 'Сохраняем план…' : 'План сохранён'}</strong>
-            <span>В заказы попадут только принятые перемещения.</span>
+            <strong>
+              {saving
+                ? 'Сохраняем план…'
+                : error
+                  ? 'Последняя правка не сохранена'
+                  : 'План сохранён'}
+            </strong>
+            <span>
+              {rows.some((r) =>
+                r.cells.some(
+                  (c) => c.rejectedQty > 0 || c.otherPlannedRejected > 0,
+                ),
+              )
+                ? 'Прогноз включает отклонённые предложения. К принятию они не отмечаются.'
+                : 'В заказы попадут только принятые перемещения.'}
+            </span>
           </div>
           <div className="transfer-action-buttons">
             <Button className="secondary" onClick={onClose}>
@@ -390,5 +408,28 @@ export function DonorAllocationDrawer({
       </aside>
     </div>,
     document.body,
+  );
+}
+
+function PriorityFlag({
+  label,
+  value,
+  disabled,
+  onCommit,
+}: {
+  label: string;
+  value: boolean;
+  disabled: boolean;
+  onCommit: (checked: boolean) => Promise<void>;
+}) {
+  const [checked, change] = useDurableDraft(value, label, onCommit);
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      disabled={disabled}
+      onChange={(e) => change(e.target.checked)}
+    />
   );
 }

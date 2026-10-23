@@ -12,4 +12,13 @@ export {
   type MovementSummary,
 } from './movementSummary';
 
-export { buildDonorAllocationModel, setDonorPriorities, setDonorQuantity, setDonorSplitMode, assertDonorPrioritiesReady, type AllocationContext, type DonorAllocationRow, type DonorAllocationCell } from './allocationPlan';
+export {
+  buildDonorAllocationModel,
+  setDonorPriorities,
+  setDonorQuantity,
+  setDonorSplitMode,
+  assertDonorPrioritiesReady,
+  type AllocationContext,
+  type DonorAllocationRow,
+  type DonorAllocationCell,
+} from './allocationPlan';

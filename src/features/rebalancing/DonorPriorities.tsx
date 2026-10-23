@@ -78,6 +78,11 @@ export function DonorPriorities({
               const pending = group
                 .map((r) => ({ skuCode: r.skuCode, qty: r.plannedQty }))
                 .filter((r) => r.qty > 0);
+              const rejected = group.flatMap((r) =>
+                r.cells
+                  .filter((c) => c.rejectedQty > 0)
+                  .map((c) => ({ skuCode: r.skuCode, qty: c.rejectedQty })),
+              );
               const accepted =
                 context?.accepted.filter((t) => t.fromBranchId === id) ?? [];
               return (
@@ -88,7 +93,7 @@ export function DonorPriorities({
                 >
                   <strong>{names.get(id) ?? id}</strong>
                   <span>
-                    {group.length} SKU · План: {total(pending)}
+                    {group.length} SKU · Предложения: {total(pending)}
                   </span>
                   <span>
                     Принято: {total(accepted)} · {accepted.length} строк
@@ -99,6 +104,11 @@ export function DonorPriorities({
                       : 'Можно проверить и принять'}
                   </b>
                   <span aria-hidden="true">Открыть →</span>
+                  {rejected.length > 0 && (
+                    <span className="warning-text">
+                      В предложениях отклонено: {total(rejected)}
+                    </span>
+                  )}
                 </button>
               );
             },

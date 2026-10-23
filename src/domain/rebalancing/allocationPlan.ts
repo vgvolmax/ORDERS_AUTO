@@ -32,6 +32,7 @@ export interface AllocationContext {
   snapshot: RebalanceSnapshot;
   proposal: RebalanceProposal;
   accepted: AcceptedTransfer[];
+  rejectedLineIds?: readonly string[];
 }
 const sourceKey = (sku: string, from: string, to: string) =>
   JSON.stringify([sku, from, to]);
@@ -99,7 +100,10 @@ export interface DonorAllocationCell {
   max: number;
   target: number;
   need: number;
+  needToMax: number;
   otherPlanned: number;
+  otherPlannedRejected: number;
+  rejectedQty: number;
   acceptedIncoming: number;
   qty: number;
   acceptedQty: number;
@@ -131,6 +135,10 @@ export function buildDonorAllocationModel(
     prepare(ctx);
   const names = new Map(s.branches.map((b) => [b.id, b.name]));
   const pendingTotals = acceptedTotals(pending);
+  const rejectedSources = new Set(ctx.rejectedLineIds);
+  const rejectedTotals = acceptedTotals(
+    pending.filter((t) => rejectedSources.has(t.sourceLineId)),
+  );
   const pendingBySource = new Map(pending.map((t) => [t.sourceLineId, t]));
   const stocksBySku = new Map<string, typeof s.stocks>();
   for (const stock of s.stocks) {
@@ -191,6 +199,21 @@ export function buildDonorAllocationModel(
             max: r.max!,
             target,
             need,
+            needToMax: quantityFromUnits(
+              stepUnits(
+                Math.max(
+                  0,
+                  sumQuantities([r.max!, -r.stock, -acceptedIncoming]),
+                ),
+                sku.quantityStep!,
+              ),
+              sku.quantityStep!,
+            ),
+            rejectedQty: rejectedSources.has(sourceLineId) ? qty : 0,
+            otherPlannedRejected: sumQuantities([
+              rejectedTotals.incoming.get(receiverKey) ?? 0,
+              -(rejectedSources.has(sourceLineId) ? qty : 0),
+            ]),
             otherPlanned: sumQuantities([
               pendingTotals.incoming.get(receiverKey) ?? 0,
               -qty,
@@ -328,6 +351,13 @@ function replan(
       for (const [to, qty] of Object.entries(d.quantities ?? {})) {
         if (qty !== 0 && !isStepQuantity(qty, step)) fail();
         if (qty < 0 || !Number.isFinite(qty)) fail();
+        const frozen = acceptedBySource.get(
+          sourceKey(code, d.fromBranchId, to),
+        );
+        if (frozen) {
+          if (frozen.qty !== qty) fail();
+          continue;
+        }
         emit(d.fromBranchId, to, stepUnits(qty, step));
       }
     }

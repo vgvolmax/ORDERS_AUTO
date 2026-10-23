@@ -107,9 +107,61 @@ it('shows both split modes in the donor matrix, preserves manual quantities and 
   );
   expect(screen.getByLabelText('Переместить SKU1 Получатель')).toHaveValue(2);
   expect(screen.getByLabelText('Переместить SKU1 Донор Б')).toHaveValue(3);
+  act(() => {
+    fireEvent.change(screen.getByLabelText('Переместить SKU1 Получатель'), {
+      target: { value: '4' },
+    });
+    fireEvent.change(screen.getByLabelText('Переместить SKU1 Получатель'), {
+      target: { value: '3' },
+    });
+  });
+  await waitFor(() =>
+    expect(
+      current.rebalance.proposal!.transfers.find((t) => t.toBranchId === 'b2')!
+        .qty,
+    ).toBe(3),
+  );
+  expect(
+    screen.queryByText(/Количество не сохранено: проверьте шаг/),
+  ).not.toBeInTheDocument();
   await act(async () =>
     fireEvent.click(screen.getByRole('button', { name: 'Готово' })),
   );
+});
+it('responds to a priority flag immediately while saving and restores it after a failed save', async () => {
+  const initial = shortage();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  render(
+    <StoreContext.Provider
+      value={{
+        state: initial,
+        set: () => undefined,
+        commit: async () => {
+          await gate;
+          throw new Error('quota');
+        },
+      }}
+    >
+      <RebalancingPage />
+    </StoreContext.Provider>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Приоритеты Донор А' }));
+  const flag = screen.getByRole('checkbox', {
+    name: 'Приоритет SKU1 Получатель',
+  });
+  fireEvent.click(flag);
+  expect(flag).toBeChecked();
+  expect(flag).toBeDisabled();
+  expect(initial.rebalance.proposal!.allocationRevision).toBeUndefined();
+  await act(async () => release());
+  await waitFor(() => expect(flag).not.toBeChecked());
+  expect(flag).toBeEnabled();
+  expect(
+    screen.getByRole('dialog', { name: 'Приоритеты донора Донор А' }),
+  ).toHaveTextContent('Последняя правка не сохранена');
 });
 it('keeps draft edits outside purchase demand and clears selection when quantities change', () => {
   const s = shortage(),

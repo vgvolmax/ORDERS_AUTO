@@ -92,14 +92,12 @@ test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload o
     ['Выбрать файл Отчёт MIN/MAX', 'priority-min.xlsx', min],
     ['Выбрать файл Отчёт поставщиков', 'priority-sup.xlsx', suppliers],
   ] as const)
-    await page
-      .getByLabel(label)
-      .setInputFiles({
-        name,
-        mimeType:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        buffer: Buffer.from(bytes),
-      });
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: Buffer.from(bytes),
+    });
   await page.getByRole('button', { name: 'Перейти к потребности' }).click();
   await page
     .getByRole('button', { name: 'Ребалансировка', exact: true })
@@ -150,6 +148,9 @@ test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload o
     drawer.getByRole('alert').filter({ hasText: 'MAX' }),
   ).toBeVisible();
   await expect(second).toHaveValue('3');
+  await expect
+    .poll(() => drawer.evaluate((el) => el.scrollHeight <= el.clientHeight + 1))
+    .toBe(true);
   await second.fill('2');
   await expect(drawer.getByText('Вручную', { exact: true })).toBeVisible();
   await drawer
@@ -266,6 +267,33 @@ test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload o
   );
   await expect(first).toHaveValue('3');
   await expect(drawer).toContainText('Принято: 2 шт · зафиксировано');
+  await drawer
+    .getByRole('button', { name: 'К принятию перемещений', exact: true })
+    .click();
+  await page
+    .getByRole('button', {
+      name: 'Открыть перемещение Донор → Первый',
+      exact: true,
+    })
+    .click();
+  await transfer
+    .getByRole('row')
+    .filter({ hasText: 'SKU0001' })
+    .getByRole('button', { name: 'Отклонить', exact: true })
+    .click();
+  await transfer
+    .getByRole('button', { name: 'Закрыть карточку', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Приоритеты', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
+    .click();
+  await expect(drawer).toContainText('Отклонено 3 шт');
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await expectFits();
+  await page.screenshot({
+    path: testInfo.outputPath('21-priorities-rejected-1280-600.png'),
+  });
   await drawer.getByRole('button', { name: 'Готово', exact: true }).click();
   await page
     .getByRole('button', { name: 'Рассчитать перемещения', exact: true })

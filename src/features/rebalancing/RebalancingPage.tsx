@@ -6,7 +6,7 @@ import {
   prepareDonorPlanChange,
   type DonorPlanCommand,
 } from '../../app/rebalanceActions';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useDurableDraft } from '../../app/useDurableDraft';
 import { useStore, type AppState } from '../../app/appStore';
 import { useDerivedState } from '../../app/useDerivedState';
@@ -48,6 +48,7 @@ export function RebalancingPage() {
     r = state.rebalance;
   const [donorId, setDonorId] = useState<string | null>(null);
   const [planSaving, setPlanSaving] = useState(0);
+  const editSequence = useRef(0);
   const [recalculateWarning, setRecalculateWarning] = useState(false);
   const allocationContext = useMemo(
     () =>
@@ -56,9 +57,10 @@ export function RebalancingPage() {
             snapshot: d.snapshot.snapshot,
             proposal: r.proposal,
             accepted: r.accepted,
+            rejectedLineIds: r.rejectedLineIds,
           }
         : null,
-    [r.proposal, d.snapshot, r.accepted, state.snapshotId],
+    [r.proposal, d.snapshot, r.accepted, r.rejectedLineIds, state.snapshotId],
   );
   const allocation = useMemo(() => {
     try {
@@ -103,12 +105,14 @@ export function RebalancingPage() {
       runId: r.proposal.runId,
       acceptedRevision: r.acceptedRevision,
     };
+    const sequence = ++editSequence.current;
     setPlanSaving((n) => n + 1);
     setError('');
     try {
       await save((s) => prepareDonorPlanChange(s, command, expected));
+      if (sequence === editSequence.current) setError('');
     } catch (e) {
-      setError(rebalanceMessage(e));
+      if (sequence === editSequence.current) setError(rebalanceMessage(e));
       throw e;
     } finally {
       setPlanSaving((n) => n - 1);

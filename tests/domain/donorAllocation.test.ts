@@ -95,6 +95,65 @@ const change = (c: ReturnType<typeof context>, p: RebalanceProposal) => ({
 });
 
 describe('operator donor allocation', () => {
+  it('discloses rejected proposals separately and distinguishes target need from Max need', () => {
+    const c = context(true);
+    const rejected = c.proposal.transfers.filter(
+      (t) => t.fromBranchId === 'D2',
+    );
+    const model = buildDonorAllocationModel({
+      ...c,
+      rejectedLineIds: rejected.map((t) => t.sourceLineId),
+    });
+    expect(
+      model
+        .find((r) => r.fromBranchId === 'D2')!
+        .cells.reduce((n, r) => n + r.rejectedQty, 0),
+    ).toBe(6);
+    expect(
+      model
+        .find((r) => r.fromBranchId === 'D1')!
+        .cells.reduce((n, r) => n + r.otherPlannedRejected, 0),
+    ).toBe(6);
+    c.proposal.config.receiverPct = 50;
+    c.proposal.configFingerprint = rebalanceConfigFingerprint(
+      c.proposal.config,
+    );
+    const r = buildDonorAllocationModel(c)[0]!.cells.find(
+      (c) => c.toBranchId === 'R1',
+    )!;
+    expect(r).toMatchObject({ need: 4, needToMax: 8, target: 4.5 });
+  });
+  it('keeps accepted cells of a manual row fixed while changing mode or its remaining draft cells', () => {
+    const c = context();
+    const p = setDonorQuantity(c, '00001', 'D1', 'R1', 3);
+    const line = p.transfers.find((t) => t.toBranchId === 'R1')!;
+    const accepted: AcceptedTransfer[] = [
+      {
+        ...line,
+        transferId: 'manual-accepted',
+        sourceRunId: p.runId,
+        snapshotId: c.snapshot.snapshotId,
+        acceptedAt: p.createdAt,
+        acceptedConfig: p.config,
+      },
+    ];
+    const next = setDonorSplitMode(
+      { ...c, proposal: p, accepted },
+      'D1',
+      'EQUAL',
+    );
+    expect(quantity(next, 'D1', 'R1')).toBe(3);
+    expect(quantity(next, 'D1', 'R2')).toBe(quantity(p, 'D1', 'R2'));
+    const edited = setDonorQuantity(
+      { ...c, proposal: next, accepted },
+      '00001',
+      'D1',
+      'R2',
+      1,
+    );
+    expect(quantity(edited, 'D1', 'R1')).toBe(3);
+    expect(quantity(edited, 'D1', 'R2')).toBe(1);
+  });
   it('requires an explicit decision for competing shortages but not for a single recipient', () => {
     const c = context(),
       row = buildDonorAllocationModel(c).find((r) => r.fromBranchId === 'D1')!;
