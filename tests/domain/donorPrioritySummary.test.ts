@@ -2,6 +2,8 @@ import { expect, it } from 'vitest';
 import { donorTierContext } from '../fixtures/donorTierContext';
 import {
   buildDonorAllocationModel,
+  calculateRebalance,
+  rebalanceConfigFingerprint,
   setDonorPriorityLevels,
 } from '../../src/domain/rebalancing';
 import { buildDonorPrioritySummary } from '../../src/features/rebalancing/donorPrioritySummary';
@@ -87,4 +89,50 @@ it('keeps missing prices unknown and a substep deficit incomplete rather than ro
     rows: buildDonorAllocationModel(f),
   });
   expect(s.groups[0]).toMatchObject({ fullSkuCount: 0, partialSkuCount: 1 });
+});
+
+it('counts other donors once and excludes their rejected contributions to Max', () => {
+  const c = input(100);
+  c.snapshot.branches.push({ id: 'D2', name: 'D2', active: true, aliases: [] });
+  c.snapshot.stocks.push({
+    skuCode: 'SKU',
+    branchId: 'D2',
+    stock: 240,
+    min: 5,
+    max: 10,
+    sourceRow: 9,
+  });
+  c.proposal = {
+    ...c.proposal,
+    ...calculateRebalance(c.snapshot, c.proposal.config, []),
+  };
+  c.proposal = setDonorPriorityLevels(c, 'D', [['R1', 'R2'], ['R3'], []]);
+  const rows = buildDonorAllocationModel(c).filter(
+    (r) => r.fromBranchId === 'D',
+  );
+  expect(buildDonorPrioritySummary({ ...c, rows }).groups[0].fullSkuCount).toBe(
+    1,
+  );
+  const rejected = c.proposal.transfers
+    .filter((t) => t.fromBranchId === 'D2' && t.toBranchId === 'R1')
+    .map((t) => t.sourceLineId);
+  expect(rejected).toHaveLength(1);
+  expect(
+    buildDonorPrioritySummary({ ...c, rows, rejected }).groups[0]
+      .partialSkuCount,
+  ).toBe(1);
+});
+it('does not label a satisfied lower configured target as fully covered to Max', () => {
+  const c = input();
+  c.proposal.config.receiverPct = 50;
+  c.proposal.configFingerprint = rebalanceConfigFingerprint(c.proposal.config);
+  c.proposal = {
+    ...c.proposal,
+    ...calculateRebalance(c.snapshot, c.proposal.config, []),
+  };
+  c.proposal = setDonorPriorityLevels(c, 'D', [['R1'], [], []]);
+  expect(
+    buildDonorPrioritySummary({ ...c, rows: buildDonorAllocationModel(c) })
+      .groups[0],
+  ).toMatchObject({ fullSkuCount: 0, partialSkuCount: 1 });
 });

@@ -128,6 +128,7 @@ export function RebalancingPage() {
     ids: string[];
     expectedRevision: number;
     workspaceRevision: number;
+    workspaceId: string;
     runId: string | undefined;
     snapshotId: string;
     scopeSummary?: AcceptanceScopeSummary;
@@ -297,7 +298,8 @@ export function RebalancingPage() {
         );
       if (
         donorScope &&
-        (current.snapshotId !== state.snapshotId ||
+        (current.workspaceId !== state.workspaceId ||
+          current.snapshotId !== state.snapshotId ||
           current.rebalance.proposal?.runId !== r.proposal?.runId)
       )
         throw new Error('STALE_PROPOSAL');
@@ -370,6 +372,7 @@ export function RebalancingPage() {
         ids: chosen,
         expectedRevision: current.rebalance.acceptedRevision,
         workspaceRevision: current.workspaceRevision,
+        workspaceId: current.workspaceId,
         runId: current.rebalance.proposal?.runId,
         snapshotId: current.snapshotId,
       });
@@ -419,6 +422,7 @@ export function RebalancingPage() {
     try {
       await save((s) => {
         if (
+          s.workspaceId !== confirmation.workspaceId ||
           s.workspaceRevision !== confirmation.workspaceRevision ||
           s.snapshotId !== confirmation.snapshotId ||
           s.rebalance.proposal?.runId !== confirmation.runId

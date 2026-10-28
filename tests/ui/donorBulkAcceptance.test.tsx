@@ -13,6 +13,7 @@ import {
   type AppState,
   type StatePatch,
 } from '../../src/app/appStore';
+import { workspaceFromState } from '../../src/app/workspaceSession';
 import { createWorkspaceSession } from '../../src/app/workspaceSession';
 import {
   createProposal,
@@ -72,7 +73,9 @@ function harness(start: AppState, save: () => Promise<void> = async () => {}) {
   }
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Приоритеты Донор А' }));
-  return () => session.getState();
+  return Object.assign(() => session.getState(), {
+    restore: (state: AppState) => session.restore(workspaceFromState(state)),
+  });
 }
 function preconfigured(two = false) {
   const s = initial(two);
@@ -420,4 +423,63 @@ it('an unrelated successful mode save cannot erase a failed tier intent; retryin
       name: 'Принять выбранные перемещения',
     }),
   ).toBeVisible();
+});
+
+it('rejects an acceptance intent when a restored workspace replaces the same snapshot and run in the queue', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let first = true;
+  const s = preconfigured(),
+    get = harness(s, async () => {
+      if (first) {
+        first = false;
+        await gate;
+      }
+    });
+  fireEvent.change(screen.getByLabelText('Переместить SKU1 Получатель'), {
+    target: { value: '3' },
+  });
+  let restored!: Promise<void>;
+  act(() => {
+    restored = get.restore(s);
+  });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Принять приоритет 1 (1)' }),
+  );
+  await act(async () => {
+    release();
+    await restored;
+  });
+  await waitFor(() =>
+    expect(screen.getByText(/Условия или снимок изменились/)).toBeVisible(),
+  );
+  expect(
+    screen.queryByRole('dialog', { name: 'Принять выбранные перемещения' }),
+  ).not.toBeInTheDocument();
+  expect(get().rebalance.accepted).toEqual([]);
+});
+it('does not commit a confirmation from a workspace replaced with the same revision, snapshot and run', async () => {
+  const s = preconfigured();
+  s.workspaceRevision = 0;
+  const get = harness(s);
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Принять приоритет 1 (1)' }),
+  );
+  const dialog = await screen.findByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+  });
+  await act(async () => {
+    await get.restore(s);
+  });
+  fireEvent.click(
+    within(dialog).getByRole('button', { name: 'Принять перемещения' }),
+  );
+  await waitFor(() =>
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Решения изменились',
+    ),
+  );
+  expect(get().rebalance.accepted).toEqual([]);
 });

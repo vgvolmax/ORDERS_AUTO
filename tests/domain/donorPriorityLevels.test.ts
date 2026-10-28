@@ -7,6 +7,10 @@ import {
   setDonorSplitMode,
   buildDonorAllocationModel,
 } from '../../src/domain/rebalancing/allocationPlan';
+import {
+  calculateRebalance,
+  rebalanceConfigFingerprint,
+} from '../../src/domain/rebalancing';
 import { donorAcceptanceIds } from '../../src/domain/rebalancing';
 
 it.each([
@@ -88,12 +92,10 @@ it('protects manual rows unless overwrite is explicit and never extends accepted
     [],
   ]);
   expect(
-    next.transfers.find(
-      (t) => t.sourceLineId === t.sourceLineId && t.toBranchId === 'R1',
-    )!.qty,
+    next.transfers.find((line) => line.sourceLineId === t.sourceLineId)!.qty,
   ).toBe(5);
 });
-it('validates branch IDs without allowing a priority to bypass a route or missing stock', () => {
+it('validates branch IDs and rejects a stale captured configuration', () => {
   const c = donorTierContext();
   for (const levels of [
     [['D'], [], []],
@@ -143,4 +145,62 @@ it('resolves group acceptance from committed positive nonrejected unaccepted lin
       { fromBranchId: 'D', priority: 0 },
     ),
   ).toEqual([]);
+});
+
+it('skips forbidden or missing priority recipients and keeps the template without blocking the next group', () => {
+  const c = donorTierContext();
+  c.proposal.config.routeConfig = {
+    mode: 'SELECTIVE',
+    pairs: [{ branchAId: 'D', branchBId: 'R2', direction: 'A_TO_B' }],
+  };
+  c.proposal.configFingerprint = rebalanceConfigFingerprint(c.proposal.config);
+  c.proposal = {
+    ...c.proposal,
+    ...calculateRebalance(c.snapshot, c.proposal.config, []),
+  };
+  let p = setDonorPriorityLevels(c, 'D', [['R1'], ['R2'], ['R3']]);
+  expect(tierQuantities(p)).toEqual([0, 60, 0, 0]);
+  expect(p.allocationPriorityLevels?.D?.[0]).toEqual(['R1']);
+  const missing = donorTierContext();
+  missing.snapshot.stocks = missing.snapshot.stocks.filter(
+    (r) => r.branchId !== 'R1',
+  );
+  missing.proposal = {
+    ...missing.proposal,
+    ...calculateRebalance(missing.snapshot, missing.proposal.config, []),
+  };
+  p = setDonorPriorityLevels(missing, 'D', [['R1'], ['R2'], ['R3']]);
+  expect(tierQuantities(p)).toEqual([0, 60, 20, 20]);
+});
+it('keeps the existing explicit donor order on bulk updates and protects manual reservations first', () => {
+  const c = donorTierContext(6, [8, 4]);
+  c.snapshot.branches.push({ id: 'D2', name: 'D2', active: true, aliases: [] });
+  c.snapshot.stocks.push({
+    skuCode: 'SKU',
+    branchId: 'D2',
+    stock: 16,
+    min: 5,
+    max: 10,
+    sourceRow: 9,
+  });
+  c.proposal = {
+    ...c.proposal,
+    ...calculateRebalance(c.snapshot, c.proposal.config, []),
+  };
+  let p = setDonorPriorityLevels(c, 'D2', [['R1'], [], []]);
+  p = setDonorPriorityLevels({ ...c, proposal: p }, 'D', [['R1'], [], []]);
+  expect(tierQuantities(p)).toEqual([2, 4, 0, 0]);
+  p = setDonorPriorityLevels({ ...c, proposal: p }, 'D2', [['R2'], [], []]);
+  expect(tierQuantities(p)).toEqual([6, 0, 0, 0]);
+  expect(p.allocationDecisions!.map((d) => d.fromBranchId)).toEqual([
+    'D2',
+    'D',
+  ]);
+  p = setDonorQuantity({ ...c, proposal: p }, 'SKU', 'D', 'R1', 4);
+  p = setDonorPriorityLevels({ ...c, proposal: p }, 'D2', [['R1'], [], []]);
+  expect(tierQuantities(p)).toEqual([4, 0, 0, 0]);
+  expect(
+    p.transfers.find((t) => t.fromBranchId === 'D2' && t.toBranchId === 'R1')!
+      .qty,
+  ).toBe(4);
 });
