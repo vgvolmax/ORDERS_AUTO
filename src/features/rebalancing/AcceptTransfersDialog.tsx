@@ -3,10 +3,19 @@ import { Dialog } from '../../components/Dialog';
 import { Alert, Button } from '../../components/ui';
 import { VirtualTable } from '../../components/VirtualTable';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
+import { money } from '../demand/DemandPage';
+export interface AcceptanceScopeSummary {
+  donor: string;
+  recipients: string[];
+  skuCount: number;
+  amount: number | null;
+  missingPriceLineCount: number;
+}
 import { fmtQty } from '../demand/DemandPage';
 export function AcceptTransfersDialog({
   kind,
   count,
+  scopeSummary,
   before,
   after,
   clearedEdits,
@@ -17,6 +26,7 @@ export function AcceptTransfersDialog({
 }: {
   kind: 'accept' | 'revoke';
   count: number;
+  scopeSummary?: AcceptanceScopeSummary | undefined;
   before: PurchaseDemandLine[];
   after: PurchaseDemandLine[];
   clearedEdits: number;
@@ -58,12 +68,22 @@ export function AcceptTransfersDialog({
             {busy
               ? 'Сохранение…'
               : kind === 'accept'
-              ? 'Принять перемещения'
-              : 'Отменить принятие'}
+                ? 'Принять перемещения'
+                : 'Отменить принятие'}
           </Button>
         </>
       }
     >
+      {scopeSummary && (
+        <p>
+          Донор: {scopeSummary.donor}. Получатели:{' '}
+          {scopeSummary.recipients.join(', ')}. SKU: {scopeSummary.skuCount}.
+          Сумма:{' '}
+          {scopeSummary.amount === null ? '—' : money(scopeSummary.amount)}.
+          {scopeSummary.missingPriceLineCount > 0 &&
+            ` Без цены: ${scopeSummary.missingPriceLineCount}.`}
+        </p>
+      )}
       <p>Строк: {count}. Изменение текущей закупки:</p>
       <p>Изменённых строк закупки: {changes.length}.</p>
       <VirtualTable

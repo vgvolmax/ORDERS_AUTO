@@ -1,3 +1,5 @@
+import { DonorPriorityPanel } from './DonorPriorityPanel';
+import type { DonorPrioritySummary } from './donorPrioritySummary';
 import { useDurableDraft } from '../../app/useDurableDraft';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -7,7 +9,7 @@ import {
   DonorAllocationCard,
   type DonorRecipient,
 } from './DonorAllocationCard';
-import { Alert, Button, SearchInput } from '../../components/ui';
+import { Alert, Button, SearchInput, Select } from '../../components/ui';
 import type { DonorPlanCommand } from '../../app/rebalanceActions';
 import type { DonorAllocationRow } from '../../domain/rebalancing/allocationPlan';
 import type { DonorSplitMode } from '../../domain/rebalancing/types';
@@ -25,6 +27,9 @@ export function DonorAllocationDrawer({
   stale,
   saving,
   error,
+  summary,
+  accepting,
+  onAccept,
 }: {
   name: string;
   fromBranchId: string;
@@ -37,15 +42,29 @@ export function DonorAllocationDrawer({
   stale: boolean;
   saving: boolean;
   error: string;
+  summary: DonorPrioritySummary;
+  accepting: boolean;
+  onAccept: (priority: 0 | 1 | 2 | null) => void;
 }) {
   const ref = useRef<HTMLElement>(null);
   useModalLayer(ref, onClose);
   const [query, setQuery] = useState(''),
     [onlyShortage, setOnlyShortage] = useState(false);
+  const [coverage, setCoverage] = useState('ALL'),
+    [scope, setScope] = useState<0 | 1 | 2 | null>(null);
+  const group = summary.groups[scope ?? 'all'];
+  const reset = () => {
+    setQuery('');
+    setCoverage('ALL');
+    setScope(null);
+    setOnlyShortage(false);
+  };
   const [product, setProduct] = useState<DonorAllocationRow | null>(null);
   const filtered = rows.filter(
     (r) =>
       (!onlyShortage || r.priorityRequired) &&
+      (scope === null || group.rowCoverage.has(r.skuCode)) &&
+      (coverage === 'ALL' || group.rowCoverage.get(r.skuCode) === coverage) &&
       [r.skuCode, r.name]
         .join(' ')
         .toLocaleLowerCase('ru')
@@ -103,6 +122,16 @@ export function DonorAllocationDrawer({
             режима.
           </p>
         </div>
+        <DonorPriorityPanel
+          summary={summary}
+          recipients={recipients}
+          fromBranchId={fromBranchId}
+          disabled={disabled || accepting}
+          accepting={stale || accepting}
+          onEdit={onEdit}
+          onScope={setScope}
+          onAccept={onAccept}
+        />
         {error && <Alert tone="danger">{error}</Alert>}
         {stale && (
           <Alert tone="warning">
@@ -121,6 +150,35 @@ export function DonorAllocationDrawer({
               }}
             />
           </label>
+          <label>
+            Покрытие до Max
+            <Select
+              aria-label="Покрытие до Max"
+              value={coverage}
+              onChange={(e) => setCoverage(e.target.value)}
+            >
+              <option value="ALL">Все</option>
+              <option value="FULL">С полным покрытием</option>
+              <option value="PARTIAL">Без полного покрытия</option>
+            </Select>
+          </label>
+          {scope !== null && (
+            <span className="donor-filter-scope">
+              Приоритет {scope + 1}
+              <button
+                className="link"
+                aria-label="Сбросить область приоритета"
+                onClick={() => setScope(null)}
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {(query || scope !== null || coverage !== 'ALL' || onlyShortage) && (
+            <button className="link" onClick={reset}>
+              Сбросить фильтры
+            </button>
+          )}
           <label className="checkbox-control">
             <input
               type="checkbox"
@@ -141,7 +199,7 @@ export function DonorAllocationDrawer({
             items={filtered}
             getItemKey={(row) => row.skuCode}
             label="Список перемещений донора"
-            resetKey={`${query}:${onlyShortage}`}
+            resetKey={`${query}:${onlyShortage}:${scope}:${coverage}`}
             emptyMessage="Нет товаров по выбранному фильтру."
             renderItem={(row) => (
               <DonorAllocationCard
@@ -178,7 +236,20 @@ export function DonorAllocationDrawer({
             <Button className="secondary" onClick={onClose}>
               Готово
             </Button>
-            <Button disabled={disabled} onClick={onResults}>
+            <Button
+              disabled={
+                stale || accepting || !summary.groups.all.sourceLineIds.length
+              }
+              onClick={() => onAccept(null)}
+            >
+              Принять все перемещения донора (
+              {summary.groups.all.sourceLineIds.length})
+            </Button>
+            <Button
+              className="secondary"
+              disabled={disabled}
+              onClick={onResults}
+            >
               К принятию перемещений
             </Button>
           </div>

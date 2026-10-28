@@ -36,6 +36,8 @@ export interface RebalanceResult {
   inputFingerprint: string; algorithmVersion: string; transfers: RebalanceTransfer[]; eligibleRecipientKeys: string[];
   uncoveredNeed: UncoveredNeed[]; balances: RebalanceBalance[]; exclusions: RebalanceIssue[];
 }
+export type DonorPriorityLevels = [string[], string[], string[]];
+export interface DonorAcceptanceScope { fromBranchId: string; priority: 0 | 1 | 2 | null }
 export type DonorSplitMode = 'PROPORTIONAL' | 'EQUAL';
 export interface DonorAllocationDecision {
   skuCode: string;
@@ -43,8 +45,10 @@ export interface DonorAllocationDecision {
   recipientIds: string[];
   mode: 'PRIORITY' | 'MANUAL';
   quantities?: Record<string, number>;
+  recipientLevels?: DonorPriorityLevels;
 }
 export interface RebalanceProposal extends RebalanceResult {
+  allocationPriorityLevels?: Record<string, DonorPriorityLevels>;
   allocationRevision?: number;
   allocationDecisions?: DonorAllocationDecision[];
   allocationModes?: Record<string, DonorSplitMode>;

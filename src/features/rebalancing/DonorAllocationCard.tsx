@@ -39,7 +39,9 @@ export function DonorAllocationCard({
                 : r.decisionMode === 'MANUAL'
                   ? 'Вручную'
                   : r.decisionMode === 'PRIORITY'
-                    ? 'Приоритеты заданы'
+                    ? r.individualPriority
+                      ? 'Индивидуальные приоритеты'
+                      : 'Приоритеты заданы'
                     : 'Автоматически'}
             </span>
             <small>
@@ -92,6 +94,9 @@ export function DonorAllocationCard({
                     {fmtQty(c.max)}
                     {c.target !== c.max ? ` · цель ${fmtQty(c.target)}` : ''}
                   </small>
+                  {c.priorityLevel !== undefined && c.priorityLevel > 0 && (
+                    <small>Приоритет {c.priorityLevel + 1}</small>
+                  )}
                   {c.locked ? (
                     <strong className="success donor-card-accepted">
                       Принято: {fmtQty(c.acceptedQty)} {r.unit} · зафиксировано
@@ -100,7 +105,7 @@ export function DonorAllocationCard({
                     <div className="donor-card-inputs">
                       <label className="checkbox-control">
                         <PriorityFlag
-                          label={`Приоритет ${r.skuCode} ${recipient.name}`}
+                          label={`Приоритет 1 ${r.skuCode} ${recipient.name}`}
                           value={c.priority}
                           disabled={disabled || !c.canAllocate}
                           onCommit={(checked) =>
@@ -118,7 +123,7 @@ export function DonorAllocationCard({
                             })
                           }
                         />
-                        Приоритет
+                        Приоритет 1
                       </label>
                       <label>
                         Переместить

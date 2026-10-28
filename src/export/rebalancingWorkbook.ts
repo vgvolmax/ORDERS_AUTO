@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { buildDonorAllocationModel } from '../domain/rebalancing';
 import type { PurchaseDemandLine } from '../domain/purchaseDemand';
 import {
   acceptedEconomicDiagnostics,
@@ -183,6 +184,34 @@ export async function buildRebalancingWorkbook(
     [
       'Приоритеты и ручные количества',
       JSON.stringify(proposal?.allocationDecisions ?? []),
+    ],
+    [
+      'Массовые приоритеты донора',
+      JSON.stringify(proposal?.allocationPriorityLevels ?? {}),
+    ],
+    ...Object.entries(proposal?.allocationPriorityLevels ?? {}).flatMap(
+      ([from, levels]) =>
+        levels.map((ids, i) => [
+          `${branches.get(from) ?? from} · Приоритет ${i + 1}`,
+          ids.map((id) => branches.get(id) ?? id).join(', '),
+        ]),
+    ),
+    [
+      'Индивидуальные исключения',
+      JSON.stringify(
+        proposal
+          ? buildDonorAllocationModel({ snapshot, proposal, accepted })
+              .filter(
+                (row) =>
+                  row.individualPriority || row.decisionMode === 'MANUAL',
+              )
+              .map((row) => ({
+                skuCode: row.skuCode,
+                fromBranchId: row.fromBranchId,
+                mode: row.decisionMode,
+              }))
+          : [],
+      ),
     ],
     ['Версия алгоритма', proposal?.algorithmVersion ?? null],
     ['Исходная ревизия принятых', proposal?.baseAcceptedRevision ?? null],

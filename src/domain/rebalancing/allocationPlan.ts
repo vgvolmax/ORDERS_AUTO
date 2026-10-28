@@ -5,6 +5,8 @@ import {
   routeAllows,
   validateAcceptedLedger,
 } from './constraints';
+import { validateDonorPriorityLevels } from './donorPriorityLevels';
+import type { DonorPriorityLevels } from './types';
 import { allocateFlow } from './flow';
 import {
   isStepQuantity,
@@ -108,6 +110,7 @@ export interface DonorAllocationCell {
   qty: number;
   acceptedQty: number;
   priority: boolean;
+  priorityLevel?: number | undefined;
   locked: boolean;
   canAllocate: boolean;
   sourceLineId: string;
@@ -126,6 +129,7 @@ export interface DonorAllocationRow {
   after: number;
   decisionMode: 'PRIORITY' | 'MANUAL' | 'AUTO';
   priorityRequired: boolean;
+  individualPriority?: boolean;
   cells: DonorAllocationCell[];
 }
 export function buildDonorAllocationModel(
@@ -222,6 +226,9 @@ export function buildDonorAllocationModel(
             qty,
             acceptedQty,
             priority: decision?.recipientIds.includes(r.branchId) ?? false,
+            priorityLevel: decision?.recipientLevels?.findIndex((level) =>
+              level.includes(r.branchId),
+            ),
             locked: acceptedQty > 0,
             canAllocate: acceptedQty === 0 && need > 0,
             sourceLineId,
@@ -247,8 +254,20 @@ export function buildDonorAllocationModel(
         plannedQty,
         after: sumQuantities([donor.stock, -acceptedOutgoing, -plannedQty]),
         decisionMode: decision?.mode ?? 'AUTO',
+        individualPriority: Boolean(
+          decision?.mode === 'PRIORITY' &&
+            decision.recipientLevels &&
+            p.allocationPriorityLevels?.[donor.branchId] &&
+            JSON.stringify(decision.recipientLevels[0]) !==
+              JSON.stringify(
+                p.allocationPriorityLevels[donor.branchId]![0].filter((id) =>
+                  cells.some((c) => c.toBranchId === id),
+                ),
+              ),
+        ),
         priorityRequired:
           !decision &&
+          !p.allocationPriorityLevels?.[donor.branchId] &&
           remaining.length > 1 &&
           sumQuantities(remaining) > availableQty,
         cells,
@@ -362,22 +381,33 @@ function replan(
       }
     }
     for (const d of decisions.filter((d) => d.mode === 'PRIORITY')) {
-      const recipients = d.recipientIds.filter(
-        (to) => !acceptedBySource.has(sourceKey(code, d.fromBranchId, to)),
-      );
+      const canUse = (to: string) =>
+        need.has(to) &&
+        routes.outgoing.get(d.fromBranchId)?.has(to) &&
+        !acceptedBySource.has(sourceKey(code, d.fromBranchId, to));
+      const selected = new Set(d.recipientLevels?.flat());
+      const groups = d.recipientLevels
+        ? [
+            ...d.recipientLevels,
+            [...need.keys()].filter((to) => !selected.has(to)),
+          ]
+        : [d.recipientIds];
       if (
-        recipients.some(
+        !d.recipientLevels &&
+        d.recipientIds.some(
           (to) =>
             !need.has(to) || !routes.outgoing.get(d.fromBranchId)?.has(to),
         )
       )
         fail();
-      const shares = splitAllocation(
-        capacity.get(d.fromBranchId) ?? 0,
-        recipients.map((id) => ({ id, need: need.get(id)! })),
-        proposal.allocationModes?.[d.fromBranchId] ?? 'PROPORTIONAL',
-      );
-      for (const [to, units] of shares) emit(d.fromBranchId, to, units);
+      for (const group of groups) {
+        const shares = splitAllocation(
+          capacity.get(d.fromBranchId) ?? 0,
+          group.filter(canUse).map((id) => ({ id, need: need.get(id)! })),
+          proposal.allocationModes?.[d.fromBranchId] ?? 'PROPORTIONAL',
+        );
+        for (const [to, units] of shares) emit(d.fromBranchId, to, units);
+      }
     }
     const chosen = new Set(decisions.map((d) => d.fromBranchId));
     const donors = [...capacity]
@@ -540,7 +570,12 @@ export function setDonorPriorities(
     ids.some(
       (id) =>
         !row.cells.some(
-          (c) => c.toBranchId === id && (c.canAllocate || c.locked),
+          (c) =>
+            c.toBranchId === id &&
+            (c.canAllocate ||
+              c.locked ||
+              (Boolean(ctx.proposal.allocationPriorityLevels?.[fromBranchId]) &&
+                c.priority)),
         ),
     )
   )
@@ -550,7 +585,77 @@ export function setDonorPriorities(
     fromBranchId,
     recipientIds: ids,
     mode: 'PRIORITY',
+    ...(ctx.proposal.allocationPriorityLevels?.[fromBranchId]
+      ? {
+          recipientLevels: [
+            ids,
+            ...ctx.proposal.allocationPriorityLevels[fromBranchId]!.slice(
+              1,
+            ).map((level) =>
+              level.filter(
+                (id) =>
+                  !ids.includes(id) &&
+                  row.cells.some((c) => c.toBranchId === id),
+              ),
+            ),
+          ] as DonorPriorityLevels,
+        }
+      : {}),
   });
+}
+/** One atomic replan; existing decision order, accepted and protected manual rows survive. */
+export function setDonorPriorityLevels(
+  ctx: AllocationContext,
+  fromBranchId: string,
+  levels: DonorPriorityLevels,
+  overwriteManual = false,
+): RebalanceProposal {
+  const valid = validateDonorPriorityLevels(
+    ctx.snapshot.branches,
+    fromBranchId,
+    levels,
+  );
+  const rows = buildDonorAllocationModel(ctx).filter(
+    (r) => r.fromBranchId === fromBranchId,
+  );
+  if (!rows.length) fail();
+  const decisions = [...(ctx.proposal.allocationDecisions ?? [])];
+  const affected = new Set<string>();
+  for (const row of rows) {
+    const index = decisions.findIndex(
+      (d) => d.skuCode === row.skuCode && d.fromBranchId === fromBranchId,
+    );
+    if (!overwriteManual && index >= 0 && decisions[index]!.mode === 'MANUAL')
+      continue;
+    // Membership records intent for the captured eligible routes. Current need
+    // may be zero only because another donor's accepted transfer covers it;
+    // replan checks the live residual need when distributing quantities.
+    const recipientLevels = valid.map((level) =>
+      level.filter((id) => row.cells.some((c) => c.toBranchId === id)),
+    ) as DonorPriorityLevels;
+    const decision: DonorAllocationDecision = {
+      skuCode: row.skuCode,
+      fromBranchId,
+      mode: 'PRIORITY',
+      recipientIds: recipientLevels[0],
+      recipientLevels,
+    };
+    if (index < 0) decisions.push(decision);
+    else decisions[index] = decision;
+    affected.add(row.skuCode);
+  }
+  return replan(
+    ctx,
+    {
+      ...ctx.proposal,
+      allocationPriorityLevels: {
+        ...ctx.proposal.allocationPriorityLevels,
+        [fromBranchId]: valid,
+      },
+      allocationDecisions: decisions,
+    },
+    affected,
+  );
 }
 export function setDonorQuantity(
   ctx: AllocationContext,

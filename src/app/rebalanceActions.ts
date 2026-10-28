@@ -1,9 +1,13 @@
 import {
   setDonorPriorities,
+  setDonorPriorityLevels,
   setDonorQuantity,
   setDonorSplitMode,
 } from '../domain/rebalancing/allocationPlan';
-import type { DonorSplitMode } from '../domain/rebalancing/types';
+import type {
+  DonorSplitMode,
+  DonorPriorityLevels,
+} from '../domain/rebalancing/types';
 import type { AppState } from './appStore';
 import { derive } from './selectors';
 import {
@@ -109,6 +113,12 @@ export function prepareAcceptedChange(
 
 export type DonorPlanCommand =
   | {
+      kind: 'levels';
+      fromBranchId: string;
+      levels: DonorPriorityLevels;
+      overwriteManual: boolean;
+    }
+  | {
       kind: 'priorities';
       skuCode: string;
       fromBranchId: string;
@@ -143,22 +153,29 @@ export function prepareDonorPlanChange(
     throw new RebalanceError('REVISION_CONFLICT');
   const ctx = { snapshot, proposal, accepted: state.rebalance.accepted };
   const next =
-    command.kind === 'mode'
-      ? setDonorSplitMode(ctx, command.fromBranchId, command.mode)
-      : command.kind === 'priorities'
-        ? setDonorPriorities(
-            ctx,
-            command.skuCode,
-            command.fromBranchId,
-            command.recipientIds,
-          )
-        : setDonorQuantity(
-            ctx,
-            command.skuCode,
-            command.fromBranchId,
-            command.toBranchId,
-            command.qty,
-          );
+    command.kind === 'levels'
+      ? setDonorPriorityLevels(
+          ctx,
+          command.fromBranchId,
+          command.levels,
+          command.overwriteManual,
+        )
+      : command.kind === 'mode'
+        ? setDonorSplitMode(ctx, command.fromBranchId, command.mode)
+        : command.kind === 'priorities'
+          ? setDonorPriorities(
+              ctx,
+              command.skuCode,
+              command.fromBranchId,
+              command.recipientIds,
+            )
+          : setDonorQuantity(
+              ctx,
+              command.skuCode,
+              command.fromBranchId,
+              command.toBranchId,
+              command.qty,
+            );
   const previousQty = new Map(
     proposal.transfers.map((t) => [t.sourceLineId, t.qty]),
   );
