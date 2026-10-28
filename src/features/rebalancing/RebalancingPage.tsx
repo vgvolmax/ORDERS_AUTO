@@ -55,7 +55,10 @@ export function RebalancingPage() {
   const [donorId, setDonorId] = useState<string | null>(null);
   const [planSaving, setPlanSaving] = useState(0);
   const editSequence = useRef(0);
-  const planWriteFailed = useRef(false);
+  const failedPlanEdits = useRef(
+    new Map<string, { workspaceId: string; runId: string }>(),
+  );
+  const editFailureCount = useRef(0);
   const [recalculateWarning, setRecalculateWarning] = useState(false);
   const allocationContext = useMemo(
     () =>
@@ -140,6 +143,14 @@ export function RebalancingPage() {
       acceptedRevision: r.acceptedRevision,
     };
     const sequence = ++editSequence.current;
+    const intentKey = JSON.stringify([
+      state.workspaceId,
+      expected.runId,
+      command.kind,
+      command.fromBranchId,
+      'skuCode' in command ? command.skuCode : null,
+      'toBranchId' in command ? command.toBranchId : null,
+    ]);
     setPlanSaving((n) => n + 1);
     setError('');
     let prepared = false;
@@ -149,15 +160,24 @@ export function RebalancingPage() {
         prepared = true;
         return patch;
       });
-      if (sequence === editSequence.current) {
-        planWriteFailed.current = false;
-        setError('');
-      }
+      failedPlanEdits.current.delete(intentKey);
+      if (sequence === editSequence.current)
+        setError(
+          [...failedPlanEdits.current.values()].some(
+            (f) =>
+              f.workspaceId === state.workspaceId && f.runId === expected.runId,
+          )
+            ? 'План не сохранён. Повторите неудачную правку перед принятием.'
+            : '',
+        );
     } catch (e) {
-      if (sequence === editSequence.current) {
-        if (prepared) planWriteFailed.current = true;
-        setError(rebalanceMessage(e));
-      }
+      editFailureCount.current++;
+      if (prepared)
+        failedPlanEdits.current.set(intentKey, {
+          workspaceId: state.workspaceId,
+          runId: expected.runId,
+        });
+      if (sequence === editSequence.current) setError(rebalanceMessage(e));
       throw e;
     } finally {
       setPlanSaving((n) => n - 1);
@@ -252,11 +272,28 @@ export function RebalancingPage() {
     donorScope?: DonorAcceptanceScope,
   ) {
     if (busy) return;
+    const failureAtIntent = editFailureCount.current,
+      waitsForEdit = planSaving > 0;
     setError('');
     const show = (current: AppState, requireSavedSelection = false) => {
-      if (donorScope && planWriteFailed.current)
+      if (
+        donorScope &&
+        [...failedPlanEdits.current.values()].some(
+          (f) =>
+            f.workspaceId === current.workspaceId &&
+            f.runId === current.rebalance.proposal?.runId,
+        )
+      )
         throw new Error(
           'План не сохранён. Повторите последнюю правку перед принятием.',
+        );
+      if (
+        donorScope &&
+        waitsForEdit &&
+        editFailureCount.current > failureAtIntent
+      )
+        throw new Error(
+          'Правка перед принятием не сохранена. Проверьте восстановленный план и нажмите принять снова.',
         );
       if (
         donorScope &&

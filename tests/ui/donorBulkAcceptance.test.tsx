@@ -325,3 +325,99 @@ it('protects manual rows in a bulk change and overwrites them only when explicit
       );
   }
 });
+it('cancels an acceptance intent queued behind a quantity rejected before persistence', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let first = true;
+  const get = harness(preconfigured(), async () => {
+    if (first) {
+      first = false;
+      await gate;
+    }
+  });
+  fireEvent.change(screen.getByLabelText('Распределение между выбранными'), {
+    target: { value: 'EQUAL' },
+  });
+  fireEvent.change(screen.getByLabelText('Переместить SKU1 Получатель'), {
+    target: { value: '99' },
+  });
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Принять приоритет 1 (1)' }),
+  );
+  await act(async () => release());
+  await waitFor(() =>
+    expect(
+      screen.getByText(/Правка перед принятием не сохранена/),
+    ).toBeVisible(),
+  );
+  expect(
+    screen.queryByRole('dialog', { name: 'Принять выбранные перемещения' }),
+  ).not.toBeInTheDocument();
+  expect(get().rebalance.accepted).toEqual([]);
+  // A new explicit acceptance after seeing rollback is allowed.
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Принять приоритет 1 (1)' }),
+  );
+  expect(
+    await screen.findByRole('dialog', {
+      name: 'Принять выбранные перемещения',
+    }),
+  ).toBeVisible();
+});
+it('an unrelated successful mode save cannot erase a failed tier intent; retrying tiers unblocks acceptance', async () => {
+  let fail = true;
+  const get = harness(preconfigured(), async () => {
+    if (fail) {
+      fail = false;
+      throw Error('quota');
+    }
+  });
+  const edit = () =>
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Настроить приоритет 1' }),
+    );
+  edit();
+  let dialog = screen.getByRole('dialog', {
+    name: 'Подразделения приоритета 1',
+  });
+  fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Донор Б' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Применить' }));
+  await waitFor(() =>
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('quota'),
+  );
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+  fireEvent.change(screen.getByLabelText('Распределение между выбранными'), {
+    target: { value: 'EQUAL' },
+  });
+  await waitFor(() =>
+    expect(get().rebalance.proposal!.allocationModes?.b0).toBe('EQUAL'),
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Принять приоритет 1 (1)' }),
+  );
+  await waitFor(() =>
+    expect(screen.getByText(/План не сохранён/)).toBeVisible(),
+  );
+  expect(
+    screen.queryByRole('dialog', { name: 'Принять выбранные перемещения' }),
+  ).not.toBeInTheDocument();
+  edit();
+  dialog = screen.getByRole('dialog', { name: 'Подразделения приоритета 1' });
+  fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Донор Б' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Применить' }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Подразделения приоритета 1' }),
+    ).not.toBeInTheDocument(),
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Принять приоритет 1 (2)' }),
+  );
+  expect(
+    await screen.findByRole('dialog', {
+      name: 'Принять выбранные перемещения',
+    }),
+  ).toBeVisible();
+});

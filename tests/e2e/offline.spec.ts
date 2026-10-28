@@ -1330,25 +1330,33 @@ test('E2E-11 eight divisions and249SKU keep tier allocation, bulk acceptance and
       .poll(() =>
         drawer.evaluate((root) => {
           const list = root.querySelector('.virtual-list');
-          return (
-            root.scrollHeight <= root.clientHeight + 1 &&
-            [root, ...root.querySelectorAll('*')].every((node) => {
-              const el = node as HTMLElement,
-                css = getComputedStyle(el);
-              return (
-                !(el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) &&
-                !(
-                  node !== list &&
-                  /auto|scroll/.test(css.overflowY) &&
-                  el.clientHeight > 0 &&
-                  el.scrollHeight > el.clientHeight + 1
-                )
-              );
-            })
-          );
+          return [root, ...root.querySelectorAll('*')].flatMap((node) => {
+            const el = node as HTMLElement,
+              css = getComputedStyle(el);
+            const x = el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1;
+            const y =
+              node !== list &&
+              /auto|scroll/.test(css.overflowY) &&
+              el.clientHeight > 0 &&
+              el.scrollHeight > el.clientHeight + 1;
+            const outer =
+              node === root && el.scrollHeight > el.clientHeight + 1;
+            return x || y || outer
+              ? [
+                  {
+                    tag: el.tagName,
+                    class: el.className,
+                    width: el.clientWidth,
+                    scrollWidth: el.scrollWidth,
+                    height: el.clientHeight,
+                    scrollHeight: el.scrollHeight,
+                  },
+                ]
+              : [];
+          });
         }),
       )
-      .toBe(true);
+      .toEqual([]);
   for (const size of [
     { width: 1920, height: 900 },
     { width: 1280, height: 720 },
