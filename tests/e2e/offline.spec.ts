@@ -130,11 +130,11 @@ test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload o
     exact: true,
   });
   await drawer
-    .getByRole('checkbox', { name: 'Приоритет SKU0001 Первый', exact: true })
+    .getByRole('checkbox', { name: 'Приоритет 1 SKU0001 Первый', exact: true })
     .check();
   await expect(first).toHaveValue('6');
   await drawer
-    .getByRole('checkbox', { name: 'Приоритет SKU0001 Второй', exact: true })
+    .getByRole('checkbox', { name: 'Приоритет 1 SKU0001 Второй', exact: true })
     .check();
   await expect(first).toHaveValue('4');
   await expect(second).toHaveValue('2');
@@ -1194,7 +1194,7 @@ for (const { count, width, height } of [
   });
 }
 
-test('E2E-11 continuous cards show seven divisions and keep249SKU editable offline', async ({
+test('E2E-11 eight divisions and249SKU keep tier allocation, bulk acceptance and CSV offline', async ({
   page,
 }, testInfo) => {
   test.setTimeout(120_000);
@@ -1203,6 +1203,7 @@ test('E2E-11 continuous cards show seven divisions and keep249SKU editable offli
   const branches = [
     'Наро-Фоминск',
     'Щурово',
+    'Раменское',
     'Ступино',
     'Электросталь',
     'Егорьевск',
@@ -1270,14 +1271,12 @@ test('E2E-11 continuous cards show seven divisions and keep249SKU editable offli
     ['Выбрать файл Отчёт MIN/MAX', 'card-min.xlsx', min],
     ['Выбрать файл Отчёт поставщиков', 'card-sup.xlsx', suppliers],
   ] as const)
-    await page
-      .getByLabel(label)
-      .setInputFiles({
-        name,
-        mimeType:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        buffer: Buffer.from(bytes),
-      });
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: Buffer.from(bytes),
+    });
   await page.getByRole('button', { name: 'Перейти к потребности' }).click();
   await page
     .getByRole('button', { name: 'Ребалансировка', exact: true })
@@ -1357,6 +1356,11 @@ test('E2E-11 continuous cards show seven divisions and keep249SKU editable offli
     { width: 1280, height: 600 },
   ]) {
     await page.setViewportSize(size);
+    const collapse = drawer.getByRole('button', {
+      name: 'Свернуть подразделения',
+      exact: true,
+    });
+    if (size.height < 850 && (await collapse.count())) await collapse.click();
     for (const branch of branches)
       await expect(
         first.getByRole('group', { name: `Получатель ${branch}`, exact: true }),
@@ -1432,8 +1436,8 @@ test('E2E-11 continuous cards show seven divisions and keep249SKU editable offli
     name: 'Перемещения SKU0002',
     exact: true,
   });
-  await expect(only.getByRole('group')).toHaveCount(7);
-  await expect(only.getByText('Нет потребности или маршрута')).toHaveCount(6);
+  await expect(only.getByRole('group')).toHaveCount(8);
+  await expect(only.getByText('Нет потребности или маршрута')).toHaveCount(7);
   await search.fill('Несуществующий товар');
   await expect(list).toContainText('Нет товаров по выбранному фильтру.');
   await drawer
@@ -1451,6 +1455,210 @@ test('E2E-11 continuous cards show seven divisions and keep249SKU editable offli
     .getByRole('textbox', { name: 'Поиск товара', exact: true })
     .fill('SKU0249');
   await expect(quantity).toHaveValue('2');
+  await drawer
+    .getByRole('button', { name: 'Очистить поиск', exact: true })
+    .click();
+  for (const [rank, branch] of [
+    [1, 'Раменское'],
+    [2, 'Наро-Фоминск'],
+    [3, 'Щурово'],
+  ] as const) {
+    await drawer
+      .getByRole('button', { name: `Настроить приоритет ${rank}`, exact: true })
+      .click();
+    const editor = page.getByRole('dialog', {
+      name: `Подразделения приоритета ${rank}`,
+      exact: true,
+    });
+    await editor.getByRole('checkbox', { name: branch, exact: true }).check();
+    await editor
+      .getByRole('button', { name: 'Применить', exact: true })
+      .click();
+    await expect(editor).toHaveCount(0);
+  }
+  await expect(
+    first.getByLabel('Переместить SKU0001 Раменское', { exact: true }),
+  ).toHaveValue('10');
+  await expect(
+    first.getByLabel('Переместить SKU0001 Наро-Фоминск', { exact: true }),
+  ).toHaveValue('10');
+  await expect(
+    first.getByLabel('Переместить SKU0001 Щурово', { exact: true }),
+  ).toHaveValue('10');
+  const priority1 = drawer.getByRole('region', {
+    name: 'Приоритет 1',
+    exact: true,
+  });
+  await expect(priority1).toContainText('До Max: 247 SKU');
+  await expect(priority1).toContainText('Неполно: 1 SKU');
+  for (const size of [
+    { width: 1920, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+    { width: 1280, height: 600 },
+  ]) {
+    await page.setViewportSize(size);
+    const expand = drawer.getByRole('button', {
+        name: 'Показать подразделения',
+        exact: true,
+      }),
+      collapse = drawer.getByRole('button', {
+        name: 'Свернуть подразделения',
+        exact: true,
+      });
+    if (size.height >= 850 && (await expand.count())) await expand.click();
+    if (size.height < 850 && (await collapse.count())) await collapse.click();
+    await fits();
+    for (const branch of branches)
+      await expect(
+        first.getByRole('group', { name: `Получатель ${branch}`, exact: true }),
+      ).toBeVisible();
+    const cardBox = await first.boundingBox(),
+      actionBox = await footer.boundingBox();
+    expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(actionBox!.y);
+    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(size.height);
+    await page.screenshot({
+      path: testInfo.outputPath(`24-tiers-${size.width}-${size.height}.png`),
+    });
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await priority1
+    .getByRole('button', { name: 'Показать SKU', exact: true })
+    .click();
+  const coverage = drawer.getByRole('combobox', {
+    name: 'Покрытие до Max',
+    exact: true,
+  });
+  await coverage.click();
+  await page.screenshot({
+    path: testInfo.outputPath('24-coverage-select-open.png'),
+  });
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(coverage).toHaveValue('FULL');
+  await expect(
+    drawer.getByRole('status').filter({ hasText: '247 из 249 SKU' }),
+  ).toBeVisible();
+  await coverage.selectOption('PARTIAL');
+  await expect(last).toBeVisible();
+  await expect(quantity).toHaveValue('2');
+  await search.fill('нет такого товара');
+  await drawer
+    .getByRole('button', { name: 'Принять приоритет 1 (248)', exact: true })
+    .click();
+  const confirm = page.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+    exact: true,
+  });
+  await expect(confirm).toContainText('SKU: 248');
+  await confirm.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await drawer
+    .getByRole('button', { name: 'Принять приоритет 1 (248)', exact: true })
+    .click();
+  await confirm
+    .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  await expect(
+    drawer.getByRole('button', {
+      name: 'Принять приоритет 1 (0)',
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(priority1).toContainText('До Max: 247 SKU');
+  await drawer
+    .getByRole('button', { name: 'Сбросить фильтры', exact: true })
+    .click();
+  await drawer
+    .getByRole('button', { name: /Принять все перемещения донора \(\d+\)/ })
+    .click();
+  await confirm
+    .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  await expect(
+    drawer.getByRole('button', {
+      name: 'Принять все перемещения донора (0)',
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page.screenshot({
+    path: testInfo.outputPath('25-tiers-all-accepted.png'),
+  });
+  await drawer.getByRole('button', { name: 'Готово', exact: true }).click();
+  await page.reload();
+  await page
+    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
+    .click();
+  await drawer
+    .getByRole('button', { name: 'Настроить приоритет 1', exact: true })
+    .click();
+  const restored = page.getByRole('dialog', {
+    name: 'Подразделения приоритета 1',
+    exact: true,
+  });
+  await expect(
+    restored.getByRole('checkbox', { name: 'Раменское', exact: true }),
+  ).toBeChecked();
+  await restored.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(
+    drawer.getByRole('button', {
+      name: 'Принять все перемещения донора (0)',
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await drawer
+    .getByRole('button', { name: 'К принятию перемещений', exact: true })
+    .click();
+  await page
+    .getByRole('button', {
+      name: 'Открыть перемещение Донор → Раменское',
+      exact: true,
+    })
+    .click();
+  const transfer = page.getByRole('dialog', {
+    name: 'Состав перемещения',
+    exact: true,
+  });
+  const downloaded = page.waitForEvent('download');
+  await transfer
+    .getByRole('button', {
+      name: 'Скачать CSV принятых позиций (248)',
+      exact: true,
+    })
+    .click();
+  const csv = readFileSync((await (await downloaded).path())!, 'utf8');
+  expect(csv.split('\r\n').filter(Boolean)).toHaveLength(249);
+  expect(csv).toContain('SKU0001;');
+  expect(csv).toContain(';10;шт;');
+  expect(csv).not.toContain('SKU0002;');
+  await transfer
+    .getByRole('button', { name: 'Закрыть карточку', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Раменское', exact: true }).click();
+  await page
+    .getByRole('checkbox', {
+      name: 'Показать покрытые перемещениями',
+      exact: true,
+    })
+    .check();
+  const row = page.getByRole('row').filter({ hasText: 'SKU0001' });
+  await row.getByRole('button', { name: /Учтённые перемещения/ }).click();
+  const popup = page.getByRole('dialog', {
+    name: 'Учтённые перемещения',
+    exact: true,
+  });
+  expect(
+    await popup
+      .getByText('Принятый вход', { exact: true })
+      .evaluate((el) => el.nextElementSibling?.textContent),
+  ).toBe('10');
+  expect(
+    await popup
+      .getByText('Текущая потребность', { exact: true })
+      .evaluate((el) => el.nextElementSibling?.textContent),
+  ).toBe('0');
+  await page.screenshot({
+    path: testInfo.outputPath('26-tier-purchase-popup.png'),
+  });
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.consoleErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);

@@ -56,6 +56,27 @@ function drawer(onEdit = vi.fn(async () => undefined)) {
       stale={false}
       saving={false}
       error=""
+      summary={{
+        levels: [[], [], []],
+        manualCount: 0,
+        individualCount: 0,
+        groups: Object.fromEntries(
+          ['all', 0, 1, 2].map((key) => [
+            key,
+            {
+              totalAmount: 0,
+              acceptedAmount: 0,
+              missingPriceLineCount: 0,
+              fullSkuCount: 0,
+              partialSkuCount: 0,
+              rowCoverage: new Map(),
+              sourceLineIds: [],
+            },
+          ]),
+        ) as unknown as import('../../src/features/rebalancing/donorPrioritySummary').DonorPrioritySummary['groups'],
+      }}
+      accepting={false}
+      onAccept={() => undefined}
     />,
   );
   return onEdit;

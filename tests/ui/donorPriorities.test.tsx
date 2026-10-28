@@ -68,13 +68,13 @@ it('shows both split modes in the donor matrix, preserves manual quantities and 
     expect(current.rebalance.proposal!.allocationModes?.b0).toBe('EQUAL'),
   );
   fireEvent.click(
-    screen.getByRole('checkbox', { name: 'Приоритет SKU1 Донор Б' }),
+    screen.getByRole('checkbox', { name: 'Приоритет 1 SKU1 Донор Б' }),
   );
   await waitFor(() =>
     expect(screen.getByLabelText('Переместить SKU1 Донор Б')).toHaveValue(4),
   );
   fireEvent.click(
-    screen.getByRole('checkbox', { name: 'Приоритет SKU1 Получатель' }),
+    screen.getByRole('checkbox', { name: 'Приоритет 1 SKU1 Получатель' }),
   );
   await waitFor(() =>
     expect(screen.getByLabelText('Переместить SKU1 Получатель')).toHaveValue(3),
@@ -150,7 +150,7 @@ it('responds to a priority flag immediately while saving and restores it after a
   );
   fireEvent.click(screen.getByRole('button', { name: 'Приоритеты Донор А' }));
   const flag = screen.getByRole('checkbox', {
-    name: 'Приоритет SKU1 Получатель',
+    name: 'Приоритет 1 SKU1 Получатель',
   });
   fireEvent.click(flag);
   expect(flag).toBeChecked();

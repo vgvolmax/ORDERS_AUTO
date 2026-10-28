@@ -224,3 +224,8 @@ Fatal import означает только невозможность получ
 ### Editable RebalanceProposal ·23.10.2026
 
 Proposal.transfers — текущий конкретный план до принятия. Необязательные allocationRevision (монотонная ревизия правок), allocationModes: Record<branchId, PROPORTIONAL|EQUAL> и allocationDecisions: Array<{skuCode,fromBranchId,recipientIds,mode:PRIORITY|MANUAL,quantities?:Record<branchId,number>}> сохраняются внутри прежнего workspace schemaVersion1. Отсутствующие поля означают исходный автоматический план; миграция не нужна. Порядок решений задаёт порядок резервирования приоритетных групп. Сначала резервируются весь accepted ledger и ручные группы, затем приоритетные, затем остаток распределяет исходный Min-first flow для автоматических доноров. Исходная eligibleRecipientKeys и captured config неизменны. SourceLineId по-прежнему tuple SKU/from/to; принятый source текущего run неизменяем. Поля balances/uncoveredNeed пересобираются по accepted + pending без двойного учёта. inputFingerprint сохраняет исходные входы расчёта, allocationRevision обозначает последующие правки.
+
+
+### Три массовых приоритета донора ·28.10.2026
+
+В RebalanceProposal добавлено optional allocationPriorityLevels: Record<donorId,[string[],string[],string[]]>. PRIORITY-решения получают optional recipientLevels того же типа; recipientIds отражает первый уровень. Отсутствие recipientLevels сохраняет legacy exclusive-set. Наличие трёх пустых уровней означает явно настроенную группу остальных. SchemaVersion/IndexedDB неизменны; proposal сохраняется целиком. Команда валидирует активные ID, отсутствие donor/self и повторов; меняет решения атомарно и повышает allocationRevision один раз.

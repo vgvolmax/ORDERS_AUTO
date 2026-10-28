@@ -15,6 +15,7 @@ export {
 export {
   buildDonorAllocationModel,
   setDonorPriorities,
+  setDonorPriorityLevels,
   setDonorQuantity,
   setDonorSplitMode,
   assertDonorPrioritiesReady,
@@ -22,3 +23,5 @@ export {
   type DonorAllocationRow,
   type DonorAllocationCell,
 } from './allocationPlan';
+
+export { donorAcceptanceIds } from './donorPriorityLevels';

@@ -1,3 +1,9 @@
+import { buildDonorPrioritySummary } from './donorPrioritySummary';
+import {
+  donorAcceptanceIds,
+  type DonorAcceptanceScope,
+} from '../../domain/rebalancing';
+import type { AcceptanceScopeSummary } from './AcceptTransfersDialog';
 import { Dialog } from '../../components/Dialog';
 import { DonorPriorities } from './DonorPriorities';
 import { DonorAllocationDrawer } from './DonorAllocationDrawer';
@@ -49,6 +55,7 @@ export function RebalancingPage() {
   const [donorId, setDonorId] = useState<string | null>(null);
   const [planSaving, setPlanSaving] = useState(0);
   const editSequence = useRef(0);
+  const planWriteFailed = useRef(false);
   const [recalculateWarning, setRecalculateWarning] = useState(false);
   const allocationContext = useMemo(
     () =>
@@ -74,6 +81,32 @@ export function RebalancingPage() {
       return { rows: [], error: rebalanceMessage(e) };
     }
   }, [allocationContext]);
+  const donorSummary = useMemo(
+    () =>
+      donorId && allocationContext
+        ? buildDonorPrioritySummary({
+            ...allocationContext,
+            fromBranchId: donorId,
+            rows: allocation.rows.filter((row) => row.fromBranchId === donorId),
+            registry: r.registry,
+            policies: r.policies,
+            skus: state.minMax?.skus ?? [],
+            selected: [],
+            rejected: r.rejectedLineIds,
+            query: '',
+            scope: {},
+          })
+        : null,
+    [
+      donorId,
+      allocationContext,
+      allocation.rows,
+      r.registry,
+      r.policies,
+      r.rejectedLineIds,
+      state.minMax?.skus,
+    ],
+  );
   const blockedSources = useMemo(
     () =>
       new Set(
@@ -94,6 +127,7 @@ export function RebalancingPage() {
     workspaceRevision: number;
     runId: string | undefined;
     snapshotId: string;
+    scopeSummary?: AcceptanceScopeSummary;
   } | null>(null);
   async function save(update: (s: AppState) => Partial<AppState>) {
     if (store.commit) await store.commit(update);
@@ -108,11 +142,22 @@ export function RebalancingPage() {
     const sequence = ++editSequence.current;
     setPlanSaving((n) => n + 1);
     setError('');
+    let prepared = false;
     try {
-      await save((s) => prepareDonorPlanChange(s, command, expected));
-      if (sequence === editSequence.current) setError('');
+      await save((s) => {
+        const patch = prepareDonorPlanChange(s, command, expected);
+        prepared = true;
+        return patch;
+      });
+      if (sequence === editSequence.current) {
+        planWriteFailed.current = false;
+        setError('');
+      }
     } catch (e) {
-      if (sequence === editSequence.current) setError(rebalanceMessage(e));
+      if (sequence === editSequence.current) {
+        if (prepared) planWriteFailed.current = true;
+        setError(rebalanceMessage(e));
+      }
       throw e;
     } finally {
       setPlanSaving((n) => n - 1);
@@ -201,18 +246,41 @@ export function RebalancingPage() {
         r.proposal.configFingerprint !==
           rebalanceConfigFingerprint(configDraft)),
   );
-  function open(kind: 'accept' | 'revoke', ids: string[]) {
+  function open(
+    kind: 'accept' | 'revoke',
+    ids: string[],
+    donorScope?: DonorAcceptanceScope,
+  ) {
     if (busy) return;
     setError('');
     const show = (current: AppState, requireSavedSelection = false) => {
-      const chosen =
-        kind === 'accept'
+      if (donorScope && planWriteFailed.current)
+        throw new Error(
+          'План не сохранён. Повторите последнюю правку перед принятием.',
+        );
+      if (
+        donorScope &&
+        (current.snapshotId !== state.snapshotId ||
+          current.rebalance.proposal?.runId !== r.proposal?.runId)
+      )
+        throw new Error('STALE_PROPOSAL');
+      const chosen = donorScope
+        ? donorAcceptanceIds(
+            {
+              proposal: current.rebalance.proposal,
+              accepted: current.rebalance.accepted,
+              rejectedLineIds: current.rebalance.rejectedLineIds,
+            },
+            donorScope,
+          )
+        : kind === 'accept'
           ? ids.filter((id) => !current.rebalance.rejectedLineIds.includes(id))
           : ids;
       if (
         kind === 'accept' &&
         (!chosen.length ||
           (requireSavedSelection &&
+            !donorScope &&
             chosen.some(
               (id) => !current.rebalance.selectedLineIds.includes(id),
             )))
@@ -225,7 +293,42 @@ export function RebalancingPage() {
         ids: chosen,
         expectedRevision: current.rebalance.acceptedRevision,
       });
+      let scopeSummary: AcceptanceScopeSummary | undefined;
+      if (donorScope) {
+        const docs = buildTransferDocuments({
+          proposal: current.rebalance.proposal,
+          accepted: current.rebalance.accepted,
+          registry: current.rebalance.registry,
+          skus: current.minMax?.skus ?? [],
+          policies: current.rebalance.policies,
+          snapshot: null,
+          query: '',
+          scope: {},
+          selected: [],
+          rejected: current.rebalance.rejectedLineIds,
+        })
+          .map((doc) => ({
+            ...doc,
+            lines: doc.lines.filter(
+              (l) =>
+                l.decision === 'PROPOSED' && chosen.includes(l.sourceLineId),
+            ),
+          }))
+          .filter((doc) => doc.lines.length);
+        const lines = docs.flatMap((doc) => doc.lines);
+        scopeSummary = {
+          donor:
+            current.rebalance.registry.find(
+              (b) => b.id === donorScope.fromBranchId,
+            )?.name ?? donorScope.fromBranchId,
+          recipients: docs.map((d) => d.toName),
+          skuCount: new Set(lines.map((l) => l.skuCode)).size,
+          amount: summarizeTransferDocuments(docs).totalAmount,
+          missingPriceLineCount: lines.filter((l) => l.amount === null).length,
+        };
+      }
       setConfirmation({
+        ...(scopeSummary ? { scopeSummary } : {}),
         kind,
         ids: chosen,
         expectedRevision: current.rebalance.acceptedRevision,
@@ -234,7 +337,7 @@ export function RebalancingPage() {
         snapshotId: current.snapshotId,
       });
     };
-    if (saving) {
+    if (saving || planSaving > 0 || donorScope) {
       setBusy(true);
       void (async () => {
         try {
@@ -599,7 +702,7 @@ export function RebalancingPage() {
           )}
         </fieldset>
       </div>
-      {donorId && (
+      {donorId && donorSummary && (
         <DonorAllocationDrawer
           key={`${r.proposal?.runId}:${donorId}`}
           name={r.registry.find((b) => b.id === donorId)?.name ?? donorId}
@@ -609,6 +712,11 @@ export function RebalancingPage() {
           )}
           rows={allocation.rows.filter((r) => r.fromBranchId === donorId)}
           mode={r.proposal?.allocationModes?.[donorId] ?? 'PROPORTIONAL'}
+          summary={donorSummary}
+          accepting={busy}
+          onAccept={(priority) =>
+            open('accept', [], { fromBranchId: donorId, priority })
+          }
           onEdit={editPlan}
           onClose={() => setDonorId(null)}
           onResults={() => {
@@ -645,8 +753,9 @@ export function RebalancingPage() {
           }
         >
           <p>
-            Новый расчёт заменит приоритеты и ручные количества текущего плана.
-            Уже принятые перемещения сохранятся.
+            Новый расчёт заменит три массовых уровня, индивидуальные приоритеты
+            и ручные количества текущего плана. Уже принятые перемещения
+            сохранятся.
           </p>
         </Dialog>
       )}
@@ -654,6 +763,7 @@ export function RebalancingPage() {
         <AcceptTransfersDialog
           kind={confirmation.kind}
           count={confirmation.ids.length}
+          scopeSummary={confirmation.scopeSummary}
           before={d.purchaseDemand}
           after={previewDemand}
           clearedEdits={preview.clearedEditCount}
