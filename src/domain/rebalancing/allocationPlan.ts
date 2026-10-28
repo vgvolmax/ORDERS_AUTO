@@ -261,9 +261,7 @@ export function buildDonorAllocationModel(
             JSON.stringify(decision.recipientLevels[0]) !==
               JSON.stringify(
                 p.allocationPriorityLevels[donor.branchId]![0].filter((id) =>
-                  cells.some(
-                    (c) => c.toBranchId === id && (c.canAllocate || c.locked),
-                  ),
+                  cells.some((c) => c.toBranchId === id),
                 ),
               ),
         ),
@@ -572,7 +570,12 @@ export function setDonorPriorities(
     ids.some(
       (id) =>
         !row.cells.some(
-          (c) => c.toBranchId === id && (c.canAllocate || c.locked),
+          (c) =>
+            c.toBranchId === id &&
+            (c.canAllocate ||
+              c.locked ||
+              (Boolean(ctx.proposal.allocationPriorityLevels?.[fromBranchId]) &&
+                c.priority)),
         ),
     )
   )
@@ -592,9 +595,7 @@ export function setDonorPriorities(
               level.filter(
                 (id) =>
                   !ids.includes(id) &&
-                  row.cells.some(
-                    (c) => c.toBranchId === id && (c.canAllocate || c.locked),
-                  ),
+                  row.cells.some((c) => c.toBranchId === id),
               ),
             ),
           ] as DonorPriorityLevels,
@@ -626,12 +627,11 @@ export function setDonorPriorityLevels(
     );
     if (!overwriteManual && index >= 0 && decisions[index]!.mode === 'MANUAL')
       continue;
+    // Membership records intent for the captured eligible routes. Current need
+    // may be zero only because another donor's accepted transfer covers it;
+    // replan checks the live residual need when distributing quantities.
     const recipientLevels = valid.map((level) =>
-      level.filter((id) =>
-        row.cells.some(
-          (c) => c.toBranchId === id && (c.canAllocate || c.locked),
-        ),
-      ),
+      level.filter((id) => row.cells.some((c) => c.toBranchId === id)),
     ) as DonorPriorityLevels;
     const decision: DonorAllocationDecision = {
       skuCode: row.skuCode,
