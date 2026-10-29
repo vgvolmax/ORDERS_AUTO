@@ -5,7 +5,7 @@ export function useDurableDraft<T>(
   value: T,
   identity: string,
   write: (next: T) => Promise<void>,
-): [T, (next: T) => void] {
+): [T, (next: T) => Promise<void>] {
   const [draft, setDraft] = useState(value);
   const latest = useRef(value),
     owner = useRef(identity),
@@ -31,14 +31,19 @@ export function useDurableDraft<T>(
       pending.current--;
       if (failed && revision === sequence.current) setDraft(latest.current);
     };
+    let operation: Promise<void>;
     try {
-      void write(next).then(
-        () => finish(false),
-        () => finish(true),
-      );
-    } catch {
-      finish(true);
+      operation = write(next);
+    } catch (error) {
+      operation = Promise.reject(error);
     }
+    // Keep ignored event-handler calls safe, while allowing fields that own
+    // their local text draft to observe the original save failure as well.
+    void operation.then(
+      () => finish(false),
+      () => finish(true),
+    );
+    return operation;
   }
   return [draft, change];
 }

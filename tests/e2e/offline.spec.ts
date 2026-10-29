@@ -1752,3 +1752,65 @@ test('E2E-12 extended registry preserves off-page mass routes and long names', a
   expect(evidence.consoleErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
 });
+
+test('E2E-13 monetary threshold rolls back after an offline storage failure and survives retry/reload', async ({
+  page,
+}) => {
+  const { buildMinMaxFixture, buildSupplierFixture } =
+    await import('../fixtures/workbookBuilders');
+  const evidence = observeRuntime(page);
+  await expectOfflineApp(page, resolve('dist/ORDERS_AUTO'));
+  await page.setViewportSize({ width: 1280, height: 720 });
+  for (const [label, name, bytes] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'min.xlsx', buildMinMaxFixture()],
+    ['Выбрать файл Отчёт поставщиков', 'sup.xlsx', buildSupplierFixture()],
+  ] as const) {
+    await page
+      .getByLabel(label)
+      .setInputFiles({
+        name,
+        mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer: Buffer.from(bytes),
+      });
+  }
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  const threshold = page.getByLabel('Порог цены', { exact: true });
+  await expect(threshold).toHaveValue('1000');
+  await expect(
+    page.getByRole('button', { name: 'Рассчитать перемещения', exact: true }),
+  ).toBeEnabled();
+  await page.evaluate(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (
+      ...args: Parameters<IDBObjectStore['put']>
+    ) {
+      if (this.name === 'workspaces') {
+        IDBObjectStore.prototype.put = put;
+        throw new DOMException('Test quota failure', 'QuotaExceededError');
+      }
+      return put.apply(this, args);
+    };
+  });
+  await threshold.fill('5000');
+  await expect(
+    page.getByText('Порог не сохранён. Повторите ввод.', { exact: true }),
+  ).toBeVisible();
+  await expect(threshold).toHaveValue('1000');
+  await threshold.fill('5000');
+  await expect(threshold).toHaveAttribute('aria-busy', 'false');
+  await expect(
+    page.getByText('Порог не сохранён. Повторите ввод.', { exact: true }),
+  ).toHaveCount(0);
+  await page.reload();
+  await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  await expect(page.getByLabel('Порог цены', { exact: true })).toHaveValue(
+    '5000',
+  );
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
