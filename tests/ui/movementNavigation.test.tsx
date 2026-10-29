@@ -71,12 +71,11 @@ it.each([
     await saveWorkspace(workspaceFromState(initial), -1);
     const view = render(<App />);
     await screen.findByRole('heading', { name: branch });
-    if (branch === 'Донор А')
-      fireEvent.click(
-        screen.getByRole('checkbox', {
-          name: 'Показать покрытые перемещениями',
-        }),
-      );
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'Показать покрытые перемещениями',
+      }),
+    );
     fireEvent.click(
       await screen.findByRole('button', {
         name: `Учтённые перемещения SKU1 ${branch}`,

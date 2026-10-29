@@ -314,72 +314,144 @@ details summary { cursor: pointer; }
 .search-clear:hover { background: var(--blue-soft); color: var(--blue); }
 .rebalance-fields .checkbox-control { display: flex; }
 
-/* Donor priority matrix follows the existing full-viewport transfer inspector. */
-.donor-card { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(180px, 1fr) auto; align-items: center; gap: 16px; width: 100%; border: 0; background: transparent; color: inherit; text-align: left; padding: 12px 8px; }
-.donor-card:hover { background: var(--surface-alt, #f2f5fa); }
-.donor-card > * { min-width: 0; overflow-wrap: anywhere; }
-/* Compact donor cards: all divisions inside each SKU; one vertical list. */
-.virtual-list { height: 100%; min-height: 0; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; overflow-anchor: none; }
-.virtual-list-canvas { position: relative; width: 100%; }
-.virtual-list-item { width: 100%; padding-bottom: 8px; }
-.virtual-list-item.is-virtual { position: absolute; top: 0; left: 0; }
-.donor-allocation-list { flex: 1; min-height: 0; }
-.donor-mode-bar { display: flex; gap: 20px; align-items: center; padding: 8px 0; }
-.donor-mode-bar > label { flex: 0 0 300px; display: grid; gap: 3px; font-size: 12px; }
-.donor-mode-bar > p { margin: 0; max-width: 800px; font-size: 12px; color: var(--muted); }
-.donor-matrix-tools { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
-.donor-matrix-tools > label:first-child { flex: 1 1 220px; }
-.donor-result-count { color: var(--muted); font-size: 12px; white-space: nowrap; }
-.donor-allocation-card { border: 1px solid var(--line); border-radius: 7px; background: var(--surface); padding: 10px; font-variant-numeric: tabular-nums; }
-.donor-allocation-card.needs-priorities { border-left: 3px solid var(--warning); padding-left: 8px; }
-.donor-allocation-card-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; margin-bottom: 8px; }
-.donor-card-product { min-width: 0; }
-.donor-card-product > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; font-size: 13px; }
-.donor-status { font-size: 11px; font-weight: 600; }
-.needs-priorities .donor-status { color: var(--warning); }
-.donor-card-product .transfer-product-name { -webkit-line-clamp: 1; font-size: 12px; margin-top: 3px; }
-.donor-card-budget { display: grid; align-content: start; gap: 4px; text-align: right; font-size: 12px; }
-.donor-card-budget > small { font-size: 11px; }
-.donor-recipient-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 136px), 1fr)); gap: 6px; }
-.donor-recipient-card { min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 7px; display: flex; flex-direction: column; gap: 4px; font-size: 11px; background: var(--surface); }
-.donor-recipient-card.is-priority { border-color: var(--blue); background: var(--blue-soft); }
-.donor-recipient-card.is-unavailable { background: #f7f8fa; color: var(--muted); }
-.donor-recipient-card > h3 { font-size: 12px; line-height: 1.3; margin: 0; overflow-wrap: anywhere; }
-.donor-card-need { font-size: 12px; }
-.donor-recipient-card > small { font-size: 10px; line-height: 1.4; }
-.donor-recipient-card.is-unavailable > span { font-size: 11px; margin: auto 0; }
-.donor-card-inputs { display: grid; grid-template-columns: minmax(0, 1fr) 64px; align-items: end; gap: 4px; margin-top: auto; padding-top: 2px; }
-.donor-card-inputs .checkbox-control { min-width: 0; overflow-wrap: anywhere; font-size: 11px; min-height: 30px; padding-bottom: 0; }
-.donor-card-inputs input[type="checkbox"] { margin: 0; flex: 0 0 16px; }
-.donor-card-inputs > label:last-child { display: grid; gap: 2px; width: auto; min-width: 0; font-size: 10px; }
-.donor-card-inputs .input { width: 100%; min-width: 0; padding: 4px 6px; height: 30px; font-size: 12px; }
-.donor-card-inputs [role="alert"] { font-size: 10px; }
-.donor-card-accepted { font-size: 11px; margin-top: auto; }
-@media (max-width: 1100px) { .donor-card { grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr); } .donor-mode-bar { gap: 12px; } .donor-mode-bar > label { flex-basis: 270px; } }
-@media (max-width: 700px) { .donor-allocation-card-head { grid-template-columns: minmax(0, 1fr); gap: 6px; } .donor-card-budget { text-align: left; } .donor-mode-bar { align-items: stretch; flex-direction: column; gap: 6px; } .donor-mode-bar > label { flex: auto; } }
-@media (max-height: 650px) { .donor-allocation-drawer .donor-mode-bar { padding: 4px 0; } .donor-allocation-drawer .donor-matrix-tools { margin-top: 4px; padding: 4px 8px; } }
+/* Shared list virtualization remains available to other workflows. */
+.virtual-list {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+.virtual-list-canvas {
+  position: relative;
+  width: 100%;
+}
+.virtual-list-item {
+  width: 100%;
+  padding-bottom: 8px;
+}
+.virtual-list-item.is-virtual {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
 
-/* Donor tier summaries stay outside the sole SKU list scroller. */
-.donor-priority-panel { padding: 6px 0 0; min-width: 0; }
-.donor-priority-caption { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; margin-bottom: 4px; }
-.donor-priority-caption > strong { font-weight: 500; color: var(--muted); }
-.donor-priority-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.donor-priority-tier { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; background: var(--surface); display: grid; align-content: start; gap: 5px; font-variant-numeric: tabular-nums; }
-.donor-priority-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.donor-priority-title h3 { margin: 0; font-size: 13px; }
-.donor-priority-tier .button { font-size: 11px; padding: 4px 7px; min-height: 28px; white-space: nowrap; }
-.donor-priority-members { display: flex; gap: 4px; align-items: center; min-height: 25px; font-size: 11px; min-width: 0; }
-.donor-priority-chip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; background: var(--blue-soft); border-radius: 4px; padding: 2px 5px; overflow-wrap: anywhere; }
-.donor-priority-chip button { border: 0; color: inherit; background: transparent; font-size: 16px; padding: 0 3px; }
-.donor-priority-chip button:hover { background: var(--line); }
-.donor-priority-chip button:disabled { cursor: default; opacity: .5; }
-.donor-priority-money,.donor-priority-coverage { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; }
-.donor-priority-money strong { font-size: 12px; }
-.donor-priority-actions { display: flex; justify-content: space-between; gap: 5px; }
-.donor-priority-note { margin: 4px 0 0; font-size: 10px; color: var(--muted); }
-.donor-priority-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; margin: 12px 0; }
-.donor-priority-choices .checkbox-control { font-size: 13px; padding: 7px; border: 1px solid var(--line); border-radius: 6px; }
-.donor-filter-scope { font-size: 12px; display: flex; gap: 6px; align-items: center; }
-.donor-allocation-drawer .transfer-action-buttons .button { font-size: 12px; padding: 7px 10px; min-height: 34px; }
-.donor-matrix-tools > label:nth-child(2) { display: grid; gap: 3px; font-size: 12px; }
-@media (max-height: 850px) { .donor-allocation-drawer { top: 8px; right: 8px; width: calc(100vw - 16px); height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); padding: 10px 12px; } .donor-allocation-drawer .drawer-head { margin-bottom: 0; } .donor-allocation-drawer .eyebrow { display: none; } .donor-allocation-drawer .transfer-heading h2 { font-size: 18px; } .donor-allocation-drawer .transfer-heading > p:last-child { margin-top: 2px; } .donor-allocation-drawer .donor-mode-bar { padding: 4px 0; gap: 12px; } .donor-allocation-drawer .donor-mode-bar > label { display: flex; flex: 0 0 470px; align-items: center; gap: 8px; } .donor-mode-bar .input { min-height: 30px; padding: 4px 6px; } .donor-allocation-drawer .transfer-drawer-actions { padding-top: 6px; } .donor-allocation-drawer .transfer-selection-summary { font-size: 12px; } .donor-priority-tier { gap: 3px; padding: 5px 7px; } .donor-priority-tier .button { min-height: 25px; padding: 3px 6px; } .donor-priority-title h3 { font-size: 12px; } .donor-allocation-drawer > .filters { margin-top: 6px; padding: 5px 8px; } }
+/* Route configuration owns its compact viewport; sibling pages keep natural layout. */
+.rebalancing-routes {
+  padding: 12px 24px 12px;
+}
+.rebalancing-routes > header {
+  margin-bottom: 8px;
+  gap: 16px;
+}
+.rebalancing-routes h1 {
+  font-size: 22px;
+  margin: 0 0 3px;
+}
+.rebalancing-routes > header p {
+  font-size: 12px;
+  margin: 0;
+}
+.rebalancing-routes > header .eyebrow {
+  display: none;
+}
+.rebalancing-routes .rebalance-header-actions {
+  gap: 8px;
+}
+.rebalancing-routes .rebalance-header-actions .button {
+  font-size: 12px;
+  padding: 8px 12px;
+  min-height: 34px;
+}
+.rebalancing-page .coverage-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.rebalancing-routes .coverage-metrics {
+  margin: 8px 0;
+  gap: 8px;
+}
+.rebalancing-routes .coverage-metrics .metric {
+  padding: 8px 10px;
+}
+.rebalancing-routes .coverage-metrics .metric strong {
+  margin-top: 3px;
+  font-size: 18px;
+}
+.rebalancing-routes .coverage-metrics .metric small {
+  font-size: 11px;
+}
+.rebalancing-routes .coverage-metrics .link {
+  padding: 0;
+  font-size: 11px;
+}
+.rebalancing-routes .workspace-tabs {
+  margin-bottom: 8px;
+}
+.rebalancing-routes > .alert {
+  margin: 6px 0;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.coverage-quantity {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+.coverage-metrics .metric > strong {
+  font-size: 20px;
+}
+.coverage-metrics .metric > strong small {
+  font-size: 14px;
+  margin-top: 4px;
+  font-weight: 500;
+}
+.skipped-rebalance .section-heading {
+  align-items: center;
+}
+.skipped-rebalance .section-heading .button {
+  font-size: 12px;
+}
+.skipped-rebalance .skip-cell {
+  display: grid;
+  gap: 3px;
+}
+.skipped-rebalance .skip-cell small {
+  font-size: 11px;
+}
+.skipped-rebalance .skip-cell .link {
+  text-align: left;
+  padding: 2px 0;
+}
+@media (max-width: 1100px) {
+  .rebalancing-routes {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .rebalancing-routes > header {
+    gap: 8px;
+  }
+}
+.coverage-metrics .coverage-quantity {
+  font-size: inherit;
+  color: inherit;
+}
+.rebalancing-routes .coverage-metrics .metric > strong {
+  display: flex;
+  align-items: baseline;
+  gap: 5px 10px;
+  flex-wrap: wrap;
+  font-size: 16px;
+}
+.rebalancing-routes .coverage-metrics .metric > strong small {
+  font-size: 12px;
+  margin: 0;
+}
+.rebalancing-routes .coverage-metrics .metric > small {
+  line-height: 14px;
+}
+.rebalancing-routes .coverage-metrics .metric > small br {
+  display: none;
+}
+.rebalancing-routes .coverage-metrics .metric > small .link {
+  margin-left: 5px;
+}

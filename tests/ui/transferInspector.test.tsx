@@ -34,8 +34,8 @@ function initialState() {
     ...state.minMax!.branches.map((branch, i) => ({
       skuCode: '00001',
       branch,
-      stock: [62.5, 60, 10][i]!,
-      min: 20,
+      stock: [62.5, 60, 57.5][i]!,
+      min: 60,
       max: 60,
     })),
   );
@@ -89,7 +89,7 @@ it('shows global and route amounts, keeps selection separate from rejection and 
   state.rebalance.tab = 'results';
   const current = harness(state);
   const metric = (label: string) => screen.getByText(label).parentElement!;
-  expect(metric('Сумма перемещений')).toHaveTextContent('3 500,00');
+  expect(metric('К перемещению')).toHaveTextContent('5 000,00');
   expect(metric('Принято на сумму')).toHaveTextContent('0,00');
   const { drawer } = openRoute();
   expect(within(drawer).getByLabelText('Сумма перемещения')).toHaveTextContent(
@@ -112,7 +112,7 @@ it('shows global and route amounts, keeps selection separate from rejection and 
     ).getByRole('button', { name: 'Принять перемещения' }),
   );
   await waitFor(() => expect(current().rebalance.accepted).toHaveLength(1));
-  expect(metric('Сумма перемещений')).toHaveTextContent('3 500,00');
+  expect(metric('К перемещению')).toHaveTextContent('3 500,00');
   expect(metric('Принято на сумму')).toHaveTextContent('1 500,00');
   expect(
     within(drawer).getByLabelText('Принято на сумму в перемещении'),
@@ -199,8 +199,8 @@ it('accepts only selected positions in the open route and leaves another route s
     )!.purchaseQty,
   ).toBe(35);
   expect(within(drawer).getAllByText('Принято')).toHaveLength(2);
-  expect(screen.getByText('Предложено строк').parentElement).toHaveTextContent(
-    '1',
+  expect(screen.getByText(/Предложено строк по фильтрам:/)).toHaveTextContent(
+    'Предложено строк по фильтрам: 1',
   );
   expect(drawer).toContainElement(document.activeElement as HTMLElement);
   expect(within(drawer).getByText('75 → 60')).toBeVisible();

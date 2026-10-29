@@ -2,7 +2,7 @@ import type { AppState } from './appStore';
 import { normalizeKey } from '../domain/normalize';
 import type { BranchRegistry } from '../domain/rebalancing/types';
 export function createInitialState(patch: Partial<AppState> = {}): AppState {
-  return {
+  const state: AppState = {
     workspaceId: crypto.randomUUID(),
     workspaceRevision: -1,
     snapshotId: crypto.randomUUID(),
@@ -46,15 +46,21 @@ export function createInitialState(patch: Partial<AppState> = {}): AppState {
     },
     ...patch,
   };
+  if (state.rebalance.tab === 'priorities')
+    state.rebalance = { ...state.rebalance, tab: 'routes' };
+  return state;
 }
 export function reconcileRegistry(
   registry: BranchRegistry,
   names: string[],
   id: () => string,
 ): BranchRegistry {
+  const imported = new Set(names.map(normalizeKey));
   const next = registry.map((b) => ({
     ...b,
-    active: false,
+    active:
+      b.active &&
+      [b.name, ...b.aliases].some((name) => imported.has(normalizeKey(name))),
     aliases: [...b.aliases],
   }));
   for (const name of names) {
@@ -63,13 +69,9 @@ export function reconcileRegistry(
         (v) => normalizeKey(v) === normalizeKey(name),
       ),
     );
-    if (matches.length === 1) matches[0]!.active = true;
-    else if (!matches.length)
+    if (!matches.length)
       next.push({ id: id(), name, active: true, aliases: [] });
-    else
-      matches.forEach((b) => {
-        b.active = true;
-      }); // Preserve ambiguity for the snapshot validator, never choose silently.
+    // Preserve existing activity choices and ambiguous aliases; validation handles ambiguity.
   }
   return next;
 }

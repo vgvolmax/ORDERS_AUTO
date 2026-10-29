@@ -83,7 +83,7 @@ it('selection is independent; accept subset, cancel dialog, accept rest, recalcu
     within(dialog).getByRole('button', { name: 'Принять перемещения' }),
   );
   await waitFor(() =>
-    expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('15'),
+    expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('0'),
   );
   fireEvent.keyDown(document, { key: 'Escape' });
   fireEvent.click(
@@ -105,7 +105,7 @@ it('selection is independent; accept subset, cancel dialog, accept rest, recalcu
     ).getByRole('button', { name: 'Отменить принятие' }),
   );
   await waitFor(() =>
-    expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('30'),
+    expect(screen.getByLabelText('Текущая закупка')).toHaveTextContent('15'),
   );
 });
 

@@ -43,9 +43,9 @@ it('summarizes accepted, selected and rejected money without double counting or 
   expect(
     summarizeTransferDocuments(buildTransferDocuments(data)),
   ).toMatchObject({
-    totalAmount: 3500,
+    totalAmount: 5000,
     acceptedAmount: 1500,
-    selectedAmount: 2000,
+    selectedAmount: 3500,
     activeCount: 2,
     acceptedCount: 1,
     selectedCount: 1,
@@ -119,7 +119,7 @@ it('shows accepted rows once and uses all accepted routes without counting accep
   });
   expect(docs[1]!.lines[0]).toMatchObject({
     decision: 'PROPOSED',
-    to: { physical: 10, current: 25, afterLine: 45 },
+    to: { physical: 10, current: 25, afterLine: 60 },
   });
 });
 it('keeps decimal units separate and an incomplete amount unknown, preserving known zero prices', () => {

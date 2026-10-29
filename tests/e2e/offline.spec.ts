@@ -32,295 +32,6 @@ function observeRuntime(page: Page): RuntimeEvidence {
   return evidence;
 }
 
-test('E2E-10 donor priorities split, manual limits, acceptance, CSV and reload offline', async ({
-  page,
-}, testInfo) => {
-  test.setTimeout(90_000);
-  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
-  const evidence = observeRuntime(page);
-  await page.context().setOffline(true);
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
-  const codes = Array.from(
-    { length: 12 },
-    (_, i) => `SKU${String(i + 1).padStart(4, '0')}`,
-  );
-  const min = buildWorkbook([
-    [
-      'Код',
-      'Артикул',
-      'Номенклатура',
-      'Количество',
-      'Минимальный остаток',
-      'Максимальный остаток',
-      'Цена',
-    ],
-    ...codes.flatMap((code) => [
-      [
-        code,
-        code,
-        `Товар с длинным названием для проверки приоритетов ${code}`,
-        66,
-        1,
-        60,
-        100,
-      ],
-      [null, null, 'Донор', 66, 1, 60, null],
-      [null, null, 'Первый', 0, 1, 8, null],
-      [null, null, 'Второй', 0, 1, 4, null],
-    ]),
-  ]);
-  const suppliers = buildWorkbook([
-    [
-      'Контрагент',
-      'Код',
-      'Номенклатура',
-      'Количество',
-      'Стоимость',
-      'Ед. изм.',
-    ],
-    ...codes.map((code) => [
-      'ООО "Терем"',
-      code,
-      `Товар ${code}`,
-      1,
-      100,
-      'шт',
-    ]),
-  ]);
-  for (const [label, name, bytes] of [
-    ['Выбрать файл Отчёт MIN/MAX', 'priority-min.xlsx', min],
-    ['Выбрать файл Отчёт поставщиков', 'priority-sup.xlsx', suppliers],
-  ] as const)
-    await page.getByLabel(label).setInputFiles({
-      name,
-      mimeType:
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      buffer: Buffer.from(bytes),
-    });
-  await page.getByRole('button', { name: 'Перейти к потребности' }).click();
-  await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
-    .click();
-  await page.getByRole('tab', { name: 'Условия' }).click();
-  await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
-  await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
-  await page
-    .getByRole('button', { name: 'Назначить ненастроенным (12)' })
-    .click();
-  await page.getByRole('button', { name: 'Рассчитать перемещения' }).click();
-  await expect(
-    page.getByRole('checkbox', {
-      name: 'Выбрать видимые предложения',
-      exact: true,
-    }),
-  ).toBeDisabled();
-  await page.getByRole('tab', { name: 'Приоритеты', exact: true }).click();
-  await page
-    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
-    .click();
-  const drawer = page.getByRole('dialog', {
-    name: 'Приоритеты донора Донор',
-    exact: true,
-  });
-  const first = drawer.getByLabel('Переместить SKU0001 Первый', {
-    exact: true,
-  });
-  const second = drawer.getByLabel('Переместить SKU0001 Второй', {
-    exact: true,
-  });
-  await drawer
-    .getByRole('checkbox', { name: 'Приоритет 1 SKU0001 Первый', exact: true })
-    .check();
-  await expect(first).toHaveValue('6');
-  await drawer
-    .getByRole('checkbox', { name: 'Приоритет 1 SKU0001 Второй', exact: true })
-    .check();
-  await expect(first).toHaveValue('4');
-  await expect(second).toHaveValue('2');
-  await drawer
-    .getByLabel('Распределение между выбранными')
-    .selectOption('EQUAL');
-  await expect(first).toHaveValue('3');
-  await expect(second).toHaveValue('3');
-  await second.fill('4');
-  await expect(
-    drawer.getByRole('alert').filter({ hasText: 'MAX' }),
-  ).toBeVisible();
-  await expect(second).toHaveValue('3');
-  await expect
-    .poll(() => drawer.evaluate((el) => el.scrollHeight <= el.clientHeight + 1))
-    .toBe(true);
-  await second.fill('2');
-  await expect(drawer.getByText('Вручную', { exact: true })).toBeVisible();
-  await expect(
-    page.getByText(
-      'Изменения не сохранены. Предыдущая версия сеанса сохранена.',
-      { exact: true },
-    ),
-  ).toHaveCount(0);
-  await drawer
-    .getByLabel('Распределение между выбранными')
-    .selectOption('PROPORTIONAL');
-  await expect(first).toHaveValue('3');
-  await expect(second).toHaveValue('2');
-  const expectFits = async () => {
-    await expect
-      .poll(() =>
-        drawer.evaluate((root) => {
-          const list = root.querySelector('.virtual-list');
-          return (
-            root.scrollHeight <= root.clientHeight + 1 &&
-            [root, ...root.querySelectorAll('*')].every((node) => {
-              const el = node as HTMLElement,
-                css = getComputedStyle(el);
-              return (
-                !(el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) &&
-                !(
-                  node !== list &&
-                  /auto|scroll/.test(css.overflowY) &&
-                  el.clientHeight > 0 &&
-                  el.scrollHeight > el.clientHeight + 1
-                )
-              );
-            })
-          );
-        }),
-      )
-      .toBe(true);
-    const box = await drawer
-      .getByRole('button', { name: 'К принятию перемещений', exact: true })
-      .boundingBox();
-    expect(box!.y + box!.height).toBeLessThanOrEqual(
-      page.viewportSize()!.height,
-    );
-  };
-  for (const size of [
-    { width: 1280, height: 720 },
-    { width: 1024, height: 768 },
-    { width: 1280, height: 600 },
-  ]) {
-    await page.setViewportSize(size);
-    await expectFits();
-    await page.screenshot({
-      path: testInfo.outputPath(
-        `20-priorities-${size.width}-${size.height}.png`,
-      ),
-    });
-  }
-  await page.setViewportSize({ width: 1280, height: 720 });
-  const productSearch = drawer.getByRole('textbox', {
-    name: 'Поиск товара',
-    exact: true,
-  });
-  await productSearch.fill('SKU0012');
-  await expect(drawer.getByText('SKU0001', { exact: true })).toHaveCount(0);
-  await expect(drawer.getByText('SKU0012', { exact: true })).toBeVisible();
-  await productSearch.fill('');
-  await expect(second).toHaveValue('2');
-  await drawer
-    .getByRole('button', { name: 'К принятию перемещений', exact: true })
-    .click();
-  await page
-    .getByRole('button', {
-      name: 'Открыть перемещение Донор → Второй',
-      exact: true,
-    })
-    .click();
-  const transfer = page.getByRole('dialog', {
-    name: 'Состав перемещения',
-    exact: true,
-  });
-  await transfer
-    .getByRole('checkbox', {
-      name: 'Выбрать перемещение SKU0001 Донор → Второй',
-      exact: true,
-    })
-    .check();
-  await transfer
-    .getByRole('button', {
-      name: 'Принять выбранные в перемещении (1)',
-      exact: true,
-    })
-    .click();
-  await page
-    .getByRole('button', { name: 'Принять перемещения', exact: true })
-    .click();
-  const downloaded = page.waitForEvent('download');
-  await transfer
-    .getByRole('button', {
-      name: 'Скачать CSV принятых позиций (1)',
-      exact: true,
-    })
-    .click();
-  const csv = readFileSync((await (await downloaded).path())!, 'utf8');
-  expect(csv).toContain(';2;шт;');
-  expect(csv).not.toContain('SKU0002;');
-  await transfer
-    .getByRole('button', { name: 'Закрыть карточку', exact: true })
-    .click();
-  await page.getByRole('button', { name: 'Второй', exact: true }).click();
-  await expect(
-    page.getByRole('row').filter({ hasText: 'SKU0001' }),
-  ).toContainText('2');
-  await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
-    .click();
-  await page.getByRole('tab', { name: 'Приоритеты', exact: true }).click();
-  await expect(
-    page.getByText('Сеанс сохранён на этом компьютере', { exact: true }),
-  ).toBeVisible();
-  await page.reload();
-  await page
-    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
-    .click();
-  await expect(drawer.getByLabel('Распределение между выбранными')).toHaveValue(
-    'PROPORTIONAL',
-  );
-  await expect(first).toHaveValue('3');
-  await expect(drawer).toContainText('Принято: 2 шт · зафиксировано');
-  await drawer
-    .getByRole('button', { name: 'К принятию перемещений', exact: true })
-    .click();
-  await page
-    .getByRole('button', {
-      name: 'Открыть перемещение Донор → Первый',
-      exact: true,
-    })
-    .click();
-  await transfer
-    .getByRole('row')
-    .filter({ hasText: 'SKU0001' })
-    .getByRole('button', { name: 'Отклонить', exact: true })
-    .click();
-  await transfer
-    .getByRole('button', { name: 'Закрыть карточку', exact: true })
-    .click();
-  await page.getByRole('tab', { name: 'Приоритеты', exact: true }).click();
-  await page
-    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
-    .click();
-  await expect(drawer).toContainText('Отклонено 3 шт');
-  await page.setViewportSize({ width: 1280, height: 600 });
-  await expectFits();
-  await page.screenshot({
-    path: testInfo.outputPath('21-priorities-rejected-1280-600.png'),
-  });
-  await drawer.getByRole('button', { name: 'Готово', exact: true }).click();
-  await page
-    .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
-    .click();
-  await expect(
-    page.getByRole('dialog', { name: 'Пересчитать перемещения?', exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Сохранить текущий план', exact: true })
-    .click();
-  expect(evidence.pageErrors).toEqual([]);
-  expect(evidence.consoleErrors).toEqual([]);
-  expect(evidence.remoteRequests).toEqual([]);
-});
-
 async function expectOfflineApp(
   page: Page,
   packageDirectory: string,
@@ -584,9 +295,9 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
       'Максимальный остаток',
       'Цена',
     ],
-    ['SKU1', 'A1', 'Товар для перемещения', 165, 20, 60, 100],
+    ['SKU1', 'A1', 'Товар для перемещения', 150, 20, 60, 100],
     [null, null, 'Донор А', 75, 20, 60, null],
-    [null, null, 'Донор Б', 80, 20, 60, null],
+    [null, null, 'Донор Б', 65, 20, 60, null],
     [null, null, 'Получатель', 10, 20, 60, null],
   ]);
   const suppliers = buildWorkbook([
@@ -625,18 +336,31 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     .click();
   await page.getByRole('tab', { name: 'Маршруты' }).click();
   await page.getByLabel('Режим маршрутов').selectOption('SELECTIVE');
-  await page.getByLabel('Маршрут Донор А → Получатель').selectOption('A_TO_B');
-  await expect(page.getByLabel('Маршрут Получатель → Донор А')).toHaveValue(
-    'B_TO_A',
+  const pairA = page.getByRole('button', {
+    name: /^Маршрут Донор А → Получатель:/,
+  });
+  await pairA.click();
+  const routeDialog = page.getByRole('dialog', {
+    name: 'Направление: Донор А ↔ Получатель',
+    exact: true,
+  });
+  await routeDialog
+    .getByRole('radio', { name: 'Донор А → Получатель', exact: true })
+    .check();
+  await routeDialog
+    .getByRole('button', { name: 'Применить', exact: true })
+    .click();
+  await expect(pairA).toHaveAccessibleName(
+    'Маршрут Донор А → Получатель: Донор А → Получатель',
   );
+  await expect(
+    page.getByRole('button', { name: /^Маршрут Получатель → Донор А:/ }),
+  ).toHaveAccessibleName('Маршрут Получатель → Донор А: Донор А → Получатель');
   await page.getByLabel('Режим маршрутов').selectOption('ALL_ALLOWED');
-  await expect(page.getByLabel('Маршрут Донор А → Получатель')).toHaveValue(
-    'A_TO_B',
+  await expect(pairA).toHaveAccessibleName(
+    'Маршрут Донор А → Получатель: Донор А → Получатель',
   );
-  await expect(page.getByLabel('Маршрут Получатель → Донор А')).toHaveValue(
-    'B_TO_A',
-  );
-  await expect(page.getByLabel('Маршрут Донор А → Получатель')).toBeEnabled();
+  await expect(pairA).toBeEnabled();
   await page.screenshot({
     path: testInfo.outputPath('04-routes-1280.png'),
     fullPage: true,
@@ -648,6 +372,10 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await expect(receiverTarget).toHaveValue('95');
   await page.keyboard.press('ArrowRight');
   await expect(receiverTarget).toHaveValue('100');
+  // Goal30 minus stock10 =20, exactly covered by donor surpluses15+5.
+  await page.keyboard.press('Home');
+  for (let step = 0; step < 5; step++) await page.keyboard.press('ArrowRight');
+  await expect(receiverTarget).toHaveValue('25');
   await page
     .getByLabel('Получатель', { exact: true })
     .selectOption('BELOW_MAX');
@@ -841,7 +569,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     report = new ExcelJS.Workbook();
   await report.xlsx.load(await readWorkbook((await exported.path())!));
   expect(report.getWorksheet('Принятые')!.getCell('D2').value).toBe(15);
-  expect(report.getWorksheet('Предложения')!.getCell('D2').value).toBe(20);
+  expect(report.getWorksheet('Предложения')!.getCell('D2').value).toBe(5);
   await page.getByRole('button', { name: 'Загрузить новые отчёты' }).click();
   await page.getByRole('button', { name: 'Начать новый сеанс' }).click();
   await expect(
@@ -1194,29 +922,23 @@ for (const { count, width, height } of [
   });
 }
 
-test('E2E-11 eight divisions and249SKU keep tier allocation, bulk acceptance and CSV offline', async ({
-  page,
-}, testInfo) => {
-  test.setTimeout(120_000);
+const coverageBranches = [
+  'Донор А',
+  'Донор Б',
+  'Первый',
+  'Второй',
+  'Склад 5',
+  'Склад 6',
+  'Склад 7',
+  'Склад 8',
+  'Склад 9',
+];
+
+async function importFullCoverageFixture(
+  page: Page,
+  branchNames = coverageBranches,
+) {
   const { buildWorkbook } = await import('../fixtures/workbookBuilders');
-  const evidence = observeRuntime(page);
-  const branches = [
-    'Наро-Фоминск',
-    'Щурово',
-    'Раменское',
-    'Ступино',
-    'Электросталь',
-    'Егорьевск',
-    'Ленина',
-    'Подразделение с длинным названием',
-  ];
-  const codes = Array.from(
-    { length: 249 },
-    (_, i) => `SKU${String(i + 1).padStart(4, '0')}`,
-  );
-  await page.context().setOffline(true);
-  await page.setViewportSize({ width: 1920, height: 900 });
-  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
   const min = buildWorkbook([
     [
       'Код',
@@ -1227,27 +949,27 @@ test('E2E-11 eight divisions and249SKU keep tier allocation, bulk acceptance and
       'Максимальный остаток',
       'Цена',
     ],
-    ...codes.flatMap((code, index) => [
-      [
-        code,
-        code,
-        `Штуцер для присоединения счётчика воды PPR25 с длинным названием ${code}`,
-        48,
-        5,
-        10,
-        100,
-      ],
-      [null, null, 'Донор', 48, 5, 10, null],
-      ...branches.map((branch, i) => [
-        null,
-        null,
-        branch,
-        index === 1 && i > 0 ? 10 : 0,
-        5,
-        10,
-        null,
-      ]),
-    ]),
+    ...['FULL1', 'FULL2', 'SKIP14'].flatMap((code) => {
+      const firstDonor = code === 'SKIP14' ? 16 : 18;
+      return [
+        [
+          code,
+          `Артикул ${code}`,
+          `Товар полного покрытия ${code}`,
+          firstDonor + 16 + (branchNames.length - 4) * 10,
+          1,
+          10,
+          100,
+        ],
+        [null, null, 'Донор А', firstDonor, 1, 10, null],
+        [null, null, 'Донор Б', 16, 1, 10, null],
+        [null, null, 'Первый', 0, 1, 8, null],
+        [null, null, 'Второй', 0, 1, 6, null],
+        ...branchNames
+          .slice(4)
+          .map((branch) => [null, null, branch, 10, 1, 10, null]),
+      ];
+    }),
   ]);
   const suppliers = buildWorkbook([
     [
@@ -1258,414 +980,766 @@ test('E2E-11 eight divisions and249SKU keep tier allocation, bulk acceptance and
       'Стоимость',
       'Ед. изм.',
     ],
-    ...codes.map((code) => [
-      'ООО "Терем"',
+    ...['FULL1', 'FULL2', 'SKIP14'].map((code) => [
+      'ИП Баранов Роман Борисович',
       code,
-      `Товар ${code}`,
+      `Товар полного покрытия ${code}`,
       1,
       100,
       'шт',
     ]),
   ]);
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
   for (const [label, name, bytes] of [
-    ['Выбрать файл Отчёт MIN/MAX', 'card-min.xlsx', min],
-    ['Выбрать файл Отчёт поставщиков', 'card-sup.xlsx', suppliers],
-  ] as const)
+    ['Выбрать файл Отчёт MIN/MAX', 'full-coverage-min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'full-coverage-sup.xlsx', suppliers],
+  ] as const) {
     await page.getByLabel(label).setInputFiles({
       name,
       mimeType:
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       buffer: Buffer.from(bytes),
     });
+  }
   await page.getByRole('button', { name: 'Перейти к потребности' }).click();
   await page
     .getByRole('button', { name: 'Ребалансировка', exact: true })
     .click();
+  await page.getByRole('tab', { name: 'Маршруты', exact: true }).click();
+}
+
+async function expectRouteFrameFits(page: Page) {
+  const frame = page.getByRole('region', {
+    name: 'Настройка маршрутов',
+    exact: true,
+  });
+  await expect
+    .poll(() =>
+      frame.evaluate((root) => {
+        const main = root.closest('main')!;
+        const table = root.querySelector('table')!;
+        const errors: string[] = [];
+        const viewport = {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        };
+        for (const [name, el] of [
+          ['page', document.scrollingElement!],
+          ['body', document.body],
+          ['main', main],
+          ['frame', root],
+          ['table', table],
+        ] as const) {
+          const node = el as HTMLElement;
+          if (node.scrollWidth > node.clientWidth)
+            errors.push(
+              `${name}: horizontal overflow ${node.scrollWidth}/${node.clientWidth}`,
+            );
+          if (node.scrollHeight > node.clientHeight)
+            errors.push(
+              `${name}: vertical overflow ${node.scrollHeight}/${node.clientHeight}`,
+            );
+          if (
+            ['page', 'body', 'main'].includes(name) &&
+            /hidden|clip/.test(
+              `${getComputedStyle(node).overflowX} ${getComputedStyle(node).overflowY}`,
+            )
+          ) {
+            errors.push(`${name}: clipped overflow`);
+          }
+        }
+        for (const el of [
+          root,
+          table,
+          ...root.querySelectorAll(
+            'button,input,select,th,td,.routes-legend,.routes-pagination',
+          ),
+        ]) {
+          const box = el.getBoundingClientRect();
+          if (
+            box.left < 0 ||
+            box.top < 0 ||
+            box.right > viewport.width ||
+            box.bottom > viewport.height
+          ) {
+            errors.push(
+              `${el.tagName} ${el.getAttribute('aria-label') ?? el.className}: outside viewport`,
+            );
+          }
+        }
+        if (window.scrollX !== 0 || window.scrollY !== 0)
+          errors.push('page scrolled');
+        return errors;
+      }),
+    )
+    .toEqual([]);
+}
+
+async function expectRouteDialogFits(page: Page) {
+  const dialog = page.getByRole('dialog');
+  await expect
+    .poll(() =>
+      dialog.evaluate((root) => {
+        const errors: string[] = [];
+        for (const el of [root, root.querySelector('.modal-body')!]) {
+          const node = el as HTMLElement;
+          if (
+            node.scrollWidth > node.clientWidth ||
+            node.scrollHeight > node.clientHeight
+          )
+            errors.push(`${node.className}: overflow`);
+        }
+        for (const el of [
+          root,
+          ...root.querySelectorAll('button,input,label'),
+        ]) {
+          const box = el.getBoundingClientRect();
+          if (
+            box.left < 0 ||
+            box.top < 0 ||
+            box.right > innerWidth ||
+            box.bottom > innerHeight
+          )
+            errors.push(`${el.tagName}: outside viewport`);
+        }
+        for (const button of root.querySelectorAll('button')) {
+          const box = button.getBoundingClientRect();
+          if (
+            !button.contains(
+              document.elementFromPoint(
+                box.left + box.width / 2,
+                box.top + box.height / 2,
+              ),
+            )
+          )
+            errors.push(`${button.textContent}: covered`);
+        }
+        return errors;
+      }),
+    )
+    .toEqual([]);
+}
+
+async function setPairDirection(
+  page: Page,
+  from: string,
+  to: string,
+  label: string,
+) {
+  await page
+    .getByRole('button', { name: new RegExp(`^Маршрут ${from} → ${to}:`) })
+    .click();
+  const dialog = page.getByRole('dialog', {
+    name: `Направление: ${from} ↔ ${to}`,
+    exact: true,
+  });
+  await dialog.getByRole('radio', { name: label, exact: true }).check();
+  await dialog.getByRole('button', { name: 'Применить', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
+async function configureFullCoverage(page: Page) {
+  await page.getByLabel('Режим маршрутов').selectOption('SELECTIVE');
+  // A can reach both receivers, but B can only reach Second: the joint flow
+  // must reserve A's8 for First and use B's6 for Second.
+  await setPairDirection(page, 'Донор А', 'Первый', 'Донор А → Первый');
+  await setPairDirection(page, 'Донор А', 'Второй', 'Донор А → Второй');
+  await setPairDirection(page, 'Донор Б', 'Второй', 'Донор Б → Второй');
   await page.getByRole('tab', { name: 'Условия', exact: true }).click();
   await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
   await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
   await page
-    .getByRole('button', { name: 'Назначить ненастроенным (249)', exact: true })
+    .getByRole('button', { name: 'Назначить ненастроенным (3)', exact: true })
     .click();
   await page
     .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
     .click();
-  await page.getByRole('tab', { name: 'Приоритеты', exact: true }).click();
-  const open = page.getByRole('button', {
-    name: 'Приоритеты Донор',
-    exact: true,
-  });
-  await open.focus();
-  await page.keyboard.press('Enter');
-  const drawer = page.getByRole('dialog', {
-    name: 'Приоритеты донора Донор',
-    exact: true,
-  });
-  const list = drawer.getByRole('list', {
-    name: 'Список перемещений донора',
-    exact: true,
-  });
-  const first = drawer.getByRole('article', {
-    name: 'Перемещения SKU0001',
-    exact: true,
-  });
-  await expect(first).toBeVisible();
-  await expect(list.getByRole('listitem').first()).toHaveAttribute(
-    'aria-setsize',
-    '249',
-  );
-  expect(await list.getByRole('listitem').count()).toBeLessThan(40);
+}
+
+function coverageMetric(page: Page, label: string) {
+  return page
+    .locator('.coverage-metrics .metric')
+    .filter({ has: page.getByText(label, { exact: true }) });
+}
+
+test('E2E-10 nine-branch route matrix fits, edits pairs and groups, and preserves disabled directions offline', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const evidence = observeRuntime(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await importFullCoverageFixture(page);
   await expect(
-    drawer.getByRole('button', { name: 'Следующие получатели', exact: true }),
+    page.getByRole('tab', { name: 'Приоритеты', exact: true }),
   ).toHaveCount(0);
-  await expect(
-    drawer.getByRole('button', { name: 'Следующие товары', exact: true }),
-  ).toHaveCount(0);
-  const footer = drawer.getByRole('button', {
-    name: 'К принятию перемещений',
+  const matrix = page.getByRole('table', {
+    name: 'Матрица маршрутов',
     exact: true,
   });
-  const fits = () =>
-    expect
-      .poll(() =>
-        drawer.evaluate((root) => {
-          const list = root.querySelector('.virtual-list');
-          return [root, ...root.querySelectorAll('*')].flatMap((node) => {
-            const el = node as HTMLElement,
-              css = getComputedStyle(el);
-            const x = el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1;
-            const y =
-              node !== list &&
-              /auto|scroll/.test(css.overflowY) &&
-              el.clientHeight > 0 &&
-              el.scrollHeight > el.clientHeight + 1;
-            const outer =
-              node === root && el.scrollHeight > el.clientHeight + 1;
-            return x || y || outer
-              ? [
-                  {
-                    tag: el.tagName,
-                    class: el.className,
-                    width: el.clientWidth,
-                    scrollWidth: el.scrollWidth,
-                    height: el.clientHeight,
-                    scrollHeight: el.scrollHeight,
-                  },
-                ]
-              : [];
-          });
-        }),
-      )
-      .toEqual([]);
-  for (const size of [
-    { width: 1920, height: 900 },
-    { width: 1280, height: 720 },
-    { width: 1024, height: 768 },
-    { width: 1280, height: 600 },
-  ]) {
-    await page.setViewportSize(size);
-    const collapse = drawer.getByRole('button', {
-      name: 'Свернуть подразделения',
-      exact: true,
-    });
-    if (size.height < 850 && (await collapse.count())) await collapse.click();
-    for (const branch of branches)
-      await expect(
-        first.getByRole('group', { name: `Получатель ${branch}`, exact: true }),
-      ).toBeVisible();
-    await fits();
-    const cardBox = await first.boundingBox(),
-      listBox = await list.boundingBox(),
-      actionBox = await footer.boundingBox();
-    expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(
-      listBox!.x + listBox!.width + 1,
+  const pair = page.getByRole('button', { name: /^Маршрут Донор А → Первый:/ });
+  const reversePair = page.getByRole('button', {
+    name: /^Маршрут Первый → Донор А:/,
+  });
+  for (const height of [720, 600]) {
+    await page.setViewportSize({ width: 1280, height });
+    await expect(matrix.locator('tbody tr')).toHaveCount(9);
+    await expect(matrix.locator('thead th')).toHaveCount(10);
+    await expect(matrix.getByRole('button', { name: /^Маршрут / })).toHaveCount(
+      72,
     );
-    expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(actionBox!.y);
-    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(size.height);
-    expect(
-      (await first
-        .getByLabel('Переместить SKU0001 Наро-Фоминск', { exact: true })
-        .boundingBox())!.width,
-    ).toBeGreaterThanOrEqual(45);
+    await expectRouteFrameFits(page);
+    await pair.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', {
+      name: 'Направление: Донор А ↔ Первый',
+      exact: true,
+    });
+    await expect(
+      dialog.getByRole('radio', { name: 'В обе стороны', exact: true }),
+    ).toBeChecked();
+    await expectRouteDialogFits(page);
+    const close = dialog.getByRole('button', {
+      name: 'Закрыть окно',
+      exact: true,
+    });
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(
+      dialog.getByRole('button', { name: 'Применить', exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(close).toBeFocused();
+    await dialog.getByRole('radio', { name: 'Запрещено', exact: true }).check();
+    await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+    await expect(pair).toBeFocused();
+    await expect(pair).toHaveText('↔');
+    const groupTrigger = page.getByRole('button', {
+      name: 'Настроить направления Донор А, строка',
+      exact: true,
+    });
+    await groupTrigger.focus();
+    await page.keyboard.press('Enter');
+    await expectRouteDialogFits(page);
+    await expect(page.getByRole('dialog')).toContainText(
+      'Будет изменено пар: 8',
+    );
+    await expect(
+      page
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Применить', exact: true }),
+    ).toBeDisabled();
     await page.screenshot({
-      path: testInfo.outputPath(`22-cards-${size.width}-${size.height}.png`),
+      path: testInfo.outputPath(`20-route-group-1280-${height}.png`),
     });
-  }
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await first
-    .getByRole('button', { name: 'Показать товар SKU0001', exact: true })
-    .click();
-  await expect(
-    page.getByRole('dialog', { name: 'Товар SKU0001', exact: true }),
-  ).toContainText('Штуцер');
-  await page.keyboard.press('Escape');
-  await expect(
-    first.getByRole('button', { name: 'Показать товар SKU0001', exact: true }),
-  ).toBeFocused();
-  const last = drawer.getByRole('article', {
-    name: 'Перемещения SKU0249',
-    exact: true,
-  });
-  const scrollLast = () =>
-    expect
-      .poll(async () => {
-        await list.evaluate((el) => {
-          el.scrollTop = el.scrollHeight;
-        });
-        return await last.count();
-      })
-      .toBe(1);
-  await scrollLast();
-  const quantity = last.getByLabel('Переместить SKU0249 Наро-Фоминск', {
-    exact: true,
-  });
-  await quantity.fill('999');
-  await expect(
-    drawer.getByRole('alert').filter({ hasText: 'MAX' }),
-  ).toBeVisible();
-  await quantity.fill('2');
-  await expect(last).toContainText('Вручную');
-  await expect(footer).toBeEnabled();
-  expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  await fits();
-  await page.screenshot({ path: testInfo.outputPath('23-cards-last-249.png') });
-  await list.evaluate((el) => {
-    el.scrollTop = 0;
-  });
-  await expect(first).toBeVisible();
-  await scrollLast();
-  await expect(quantity).toHaveValue('2');
-  const search = drawer.getByRole('textbox', {
-    name: 'Поиск товара',
-    exact: true,
-  });
-  await search.fill('SKU0002');
-  const only = drawer.getByRole('article', {
-    name: 'Перемещения SKU0002',
-    exact: true,
-  });
-  await expect(only.getByRole('group')).toHaveCount(8);
-  await expect(only.getByText('Нет потребности или маршрута')).toHaveCount(7);
-  await search.fill('Несуществующий товар');
-  await expect(list).toContainText('Нет товаров по выбранному фильтру.');
-  await drawer
-    .getByRole('button', { name: 'Очистить поиск', exact: true })
-    .click();
-  await expect(first).toBeVisible();
-  await expect(search).toBeFocused();
-  await drawer.getByRole('button', { name: 'Готово', exact: true }).click();
-  await expect(open).toBeFocused();
-  await page.reload();
-  await page
-    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
-    .click();
-  await drawer
-    .getByRole('textbox', { name: 'Поиск товара', exact: true })
-    .fill('SKU0249');
-  await expect(quantity).toHaveValue('2');
-  await drawer
-    .getByRole('button', { name: 'Очистить поиск', exact: true })
-    .click();
-  for (const [rank, branch] of [
-    [1, 'Раменское'],
-    [2, 'Наро-Фоминск'],
-    [3, 'Щурово'],
-  ] as const) {
-    await drawer
-      .getByRole('button', { name: `Настроить приоритет ${rank}`, exact: true })
-      .click();
-    const editor = page.getByRole('dialog', {
-      name: `Подразделения приоритета ${rank}`,
-      exact: true,
-    });
-    await editor.getByRole('checkbox', { name: branch, exact: true }).check();
-    await editor
-      .getByRole('button', { name: 'Применить', exact: true })
-      .click();
-    await expect(editor).toHaveCount(0);
-  }
-  await expect(
-    first.getByLabel('Переместить SKU0001 Раменское', { exact: true }),
-  ).toHaveValue('10');
-  await expect(
-    first.getByLabel('Переместить SKU0001 Наро-Фоминск', { exact: true }),
-  ).toHaveValue('10');
-  await expect(
-    first.getByLabel('Переместить SKU0001 Щурово', { exact: true }),
-  ).toHaveValue('10');
-  const priority1 = drawer.getByRole('region', {
-    name: 'Приоритет 1',
-    exact: true,
-  });
-  await expect(priority1).toContainText('До Max: 247 SKU');
-  await expect(priority1).toContainText('Неполно: 1 SKU');
-  for (const size of [
-    { width: 1920, height: 900 },
-    { width: 1280, height: 720 },
-    { width: 1024, height: 768 },
-    { width: 1280, height: 600 },
-  ]) {
-    await page.setViewportSize(size);
-    const expand = drawer.getByRole('button', {
-        name: 'Показать подразделения',
-        exact: true,
-      }),
-      collapse = drawer.getByRole('button', {
-        name: 'Свернуть подразделения',
-        exact: true,
-      });
-    if (size.height >= 850 && (await expand.count())) await expand.click();
-    if (size.height < 850 && (await collapse.count())) await collapse.click();
-    await fits();
-    for (const branch of branches)
-      await expect(
-        first.getByRole('group', { name: `Получатель ${branch}`, exact: true }),
-      ).toBeVisible();
-    const cardBox = await first.boundingBox(),
-      actionBox = await footer.boundingBox();
-    expect(cardBox!.y + cardBox!.height).toBeLessThanOrEqual(actionBox!.y);
-    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(size.height);
+    await page.keyboard.press('Escape');
+    await expect(groupTrigger).toBeFocused();
+    await expectRouteFrameFits(page);
     await page.screenshot({
-      path: testInfo.outputPath(`24-tiers-${size.width}-${size.height}.png`),
+      path: testInfo.outputPath(`20-route-matrix-1280-${height}.png`),
     });
   }
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await priority1
-    .getByRole('button', { name: 'Показать SKU', exact: true })
-    .click();
-  const coverage = drawer.getByRole('combobox', {
-    name: 'Покрытие до Max',
+  await setPairDirection(page, 'Донор А', 'Первый', 'Донор А → Первый');
+  await expect(pair).toHaveText('→');
+  await expect(reversePair).toHaveText('←');
+  await expect(pair).toHaveAccessibleName(
+    'Маршрут Донор А → Первый: Донор А → Первый',
+  );
+  await expect(reversePair).toHaveAccessibleName(
+    'Маршрут Первый → Донор А: Донор А → Первый',
+  );
+  await expect(pair).toHaveClass(/routes-oneway/);
+  await setPairDirection(page, 'Донор А', 'Первый', 'Запрещено');
+  await expect(pair).toHaveText('×');
+  await expect(pair).toHaveClass(/routes-blocked/);
+  await expect(reversePair).toHaveText('×');
+  await setPairDirection(page, 'Донор А', 'Первый', 'В обе стороны');
+  await expect(pair).toHaveClass(/routes-both/);
+
+  const participation = matrix.getByRole('checkbox', {
+    name: 'Участие Склад 9',
     exact: true,
   });
-  await coverage.click();
-  await page.screenshot({
-    path: testInfo.outputPath('24-coverage-select-open.png'),
-  });
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
-  await expect(coverage).toHaveValue('FULL');
-  await expect(
-    drawer.getByRole('status').filter({ hasText: '247 из 249 SKU' }),
-  ).toBeVisible();
-  await coverage.selectOption('PARTIAL');
-  await expect(last).toBeVisible();
-  await expect(quantity).toHaveValue('2');
-  await search.fill('нет такого товара');
-  await drawer
-    .getByRole('button', { name: 'Принять приоритет 1 (248)', exact: true })
-    .click();
-  const confirm = page.getByRole('dialog', {
-    name: 'Принять выбранные перемещения',
+  await expect(participation).toHaveCount(2);
+  await participation.first().uncheck();
+  for (const checkbox of await participation.all())
+    await expect(checkbox).not.toBeChecked();
+  const disabledHeader = matrix.getByRole('button', {
+    name: 'Настроить направления Склад 9, строка',
     exact: true,
   });
-  await expect(confirm).toContainText('SKU: 248');
-  await confirm.getByRole('button', { name: 'Отмена', exact: true }).click();
-  await drawer
-    .getByRole('button', { name: 'Принять приоритет 1 (248)', exact: true })
-    .click();
-  await confirm
-    .getByRole('button', { name: 'Принять перемещения', exact: true })
-    .click();
-  await expect(
-    drawer.getByRole('button', {
-      name: 'Принять приоритет 1 (0)',
-      exact: true,
-    }),
-  ).toBeDisabled();
-  await expect(priority1).toContainText('До Max: 247 SKU');
-  await drawer
-    .getByRole('button', { name: 'Сбросить фильтры', exact: true })
-    .click();
-  await drawer
-    .getByRole('button', { name: /Принять все перемещения донора \(\d+\)/ })
-    .click();
-  await confirm
-    .getByRole('button', { name: 'Принять перемещения', exact: true })
-    .click();
-  await expect(
-    drawer.getByRole('button', {
-      name: 'Принять все перемещения донора (0)',
-      exact: true,
-    }),
-  ).toBeDisabled();
-  await page.screenshot({
-    path: testInfo.outputPath('25-tiers-all-accepted.png'),
+  await expect(disabledHeader).toBeDisabled();
+  await expect(disabledHeader.locator('xpath=ancestor::th')).toHaveClass(
+    'routes-header-inactive',
+  );
+  const disabledPair = matrix.getByRole('button', {
+    name: /^Маршрут Донор А → Склад 9:/,
   });
-  await drawer.getByRole('button', { name: 'Готово', exact: true }).click();
-  await page.reload();
-  await page
-    .getByRole('button', { name: 'Приоритеты Донор', exact: true })
-    .click();
-  await drawer
-    .getByRole('button', { name: 'Настроить приоритет 1', exact: true })
-    .click();
-  const restored = page.getByRole('dialog', {
-    name: 'Подразделения приоритета 1',
-    exact: true,
-  });
-  await expect(
-    restored.getByRole('checkbox', { name: 'Раменское', exact: true }),
-  ).toBeChecked();
-  await restored.getByRole('button', { name: 'Отмена', exact: true }).click();
-  await expect(
-    drawer.getByRole('button', {
-      name: 'Принять все перемещения донора (0)',
-      exact: true,
-    }),
-  ).toBeDisabled();
-  await drawer
-    .getByRole('button', { name: 'К принятию перемещений', exact: true })
-    .click();
+  await expect(disabledPair).toBeDisabled();
+  await expect(disabledPair).toHaveText('↔');
+  await expect(disabledPair).toHaveClass(/routes-disabled/);
+  expect(
+    await disabledPair.evaluate((el) => Number(getComputedStyle(el).opacity)),
+  ).toBeLessThan(1);
   await page
     .getByRole('button', {
-      name: 'Открыть перемещение Донор → Раменское',
+      name: 'Настроить направления Донор А, столбец',
       exact: true,
     })
     .click();
+  const group = page.getByRole('dialog', {
+    name: 'Направления: Донор А',
+    exact: true,
+  });
+  await expect(group).toContainText('Будет изменено пар: 7');
+  await group
+    .getByRole('radio', {
+      name: 'Только получает: остальные → Донор А',
+      exact: true,
+    })
+    .check();
+  await group.getByRole('button', { name: 'Применить', exact: true }).click();
+  await expect(pair).toHaveText('←');
+  await expect(reversePair).toHaveText('→');
+  await participation.last().check();
+  for (const checkbox of await participation.all())
+    await expect(checkbox).toBeChecked();
+  await expect(disabledPair).toBeEnabled();
+  await expect(disabledPair).toHaveText('↔');
+  await expect(disabledHeader.locator('xpath=ancestor::th')).toHaveClass(
+    'routes-header-active',
+  );
+  await page.getByLabel('Режим маршрутов').selectOption('SELECTIVE');
+  await expect(pair).toHaveText('←');
+  await expect(
+    page.getByRole('button', { name: /^Маршрут Первый → Второй:/ }),
+  ).toHaveText('×');
+
+  // Narrow-screen fallback paginates rather than losing any row or column.
+  await page.setViewportSize({ width: 1024, height: 768 });
+  for (const axis of ['строка', 'столбец'] as const) {
+    const seen = new Set<string>();
+    const next = page.getByRole('button', {
+      name: axis === 'строка' ? 'Следующие строки' : 'Следующие столбцы',
+      exact: true,
+    });
+    for (let i = 0; i < coverageBranches.length; i++) {
+      await expectRouteFrameFits(page);
+      const labels = await matrix
+        .getByRole('button', {
+          name: new RegExp(`^Настроить направления .+, ${axis}$`),
+        })
+        .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')!));
+      labels.forEach((label) =>
+        seen.add(
+          label.replace('Настроить направления ', '').replace(`, ${axis}`, ''),
+        ),
+      );
+      if (!(await next.count()) || (await next.isDisabled())) break;
+      await next.click();
+    }
+    expect([...seen].sort()).toEqual([...coverageBranches].sort());
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(
+    page.getByText('Сеанс сохранён на этом компьютере', { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(pair).toHaveText('←');
+  await expect(page.getByLabel('Режим маршрутов')).toHaveValue('SELECTIVE');
+  await expectRouteFrameFits(page);
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
+test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets survive disabling and revoke offline', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const evidence = observeRuntime(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await importFullCoverageFixture(page);
+  await configureFullCoverage(page);
+  await expect(
+    coverageMetric(page, 'К перемещению').locator('.coverage-quantity'),
+  ).toHaveText('28 шт');
+  const skippedMetric = coverageMetric(page, 'Не распределено');
+  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('14 шт');
+  await expect(skippedMetric).toContainText('1 400,00');
+  await expect(skippedMetric).toContainText('1 SKU');
+  await expect(coverageMetric(page, 'Принято на сумму')).toContainText('0,00');
+  await expect(
+    page.getByRole('heading', {
+      name: 'Перемещения по направлениям · 2',
+      exact: true,
+    }),
+  ).toBeVisible();
+  // A trial flow of12 is diagnostic only: there is no partial SKIP14 line.
+  const resultsQuery = page.getByRole('textbox', {
+    name: 'Поиск по коду, артикулу, товару и маршруту',
+    exact: true,
+  });
+  await resultsQuery.fill('SKIP14');
+  await expect(
+    page.getByRole('button', { name: /^Открыть перемещение / }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('checkbox', {
+      name: 'Выбрать видимые предложения',
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await resultsQuery.fill('');
+  await skippedMetric
+    .getByRole('button', { name: 'Показать список', exact: true })
+    .click();
+  const skipped = page.getByRole('region', {
+    name: 'Нераспределённые артикулы',
+    exact: true,
+  });
+  await expect(
+    skipped.getByRole('heading', {
+      name: 'Не распределено · 1 SKU',
+      exact: true,
+    }),
+  ).toBeVisible();
+  const skippedRow = skipped.getByRole('row').filter({ hasText: 'SKIP14' });
+  await expect(skippedRow).toContainText('Нужно: 14');
+  await expect(skippedRow).toContainText('Можно доставить: 12');
+  await expect(skippedRow).toContainText('Не хватает: 2');
+  await expect(skippedRow).toContainText('Недостаточно излишка сверх Max');
+  await expect(skippedRow).toContainText('1 400,00');
+  await skipped
+    .getByRole('textbox', {
+      name: 'Поиск нераспределённого товара',
+      exact: true,
+    })
+    .fill('FULL1');
+  await expect(skippedRow).toHaveCount(0);
+  await skipped
+    .getByRole('textbox', {
+      name: 'Поиск нераспределённого товара',
+      exact: true,
+    })
+    .fill('SKIP14');
+  await skippedRow
+    .getByRole('button', { name: 'Потребность подразделений · 2', exact: true })
+    .click();
+  const reason = page.getByRole('dialog', {
+    name: 'Не распределено · Артикул SKIP14',
+    exact: true,
+  });
+  await expect(
+    reason.getByRole('row').filter({ hasText: 'Первый' }),
+  ).toContainText('8');
+  await expect(
+    reason.getByRole('row').filter({ hasText: 'Второй' }),
+  ).toContainText('6');
+  await page.screenshot({
+    path: testInfo.outputPath('21-skipped-whole-need.png'),
+  });
+  await page.keyboard.press('Escape');
+  await skipped
+    .getByRole('button', { name: 'К перемещениям', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Не распределено · 1 SKU', exact: true })
+    .click();
+  await expect(skipped).toBeVisible();
+  await skipped
+    .getByRole('button', { name: 'К перемещениям', exact: true })
+    .click();
+
+  const route = page.getByRole('button', {
+    name: 'Открыть перемещение Донор А → Первый',
+    exact: true,
+  });
+  await expect(route).toContainText('2 SKU');
+  await expect(route).toContainText('16 шт');
+  await route.click();
   const transfer = page.getByRole('dialog', {
     name: 'Состав перемещения',
     exact: true,
   });
-  const downloaded = page.waitForEvent('download');
+  await expect(
+    transfer.getByRole('row').filter({ hasText: 'SKIP14' }),
+  ).toHaveCount(0);
+  const fullRow = transfer.getByRole('row').filter({ hasText: 'FULL1' });
+  await expect(fullRow).toContainText('18 → 10');
+  await expect(fullRow).toContainText('0 → 8');
+  await fullRow.getByRole('checkbox').check();
   await transfer
     .getByRole('button', {
-      name: 'Скачать CSV принятых позиций (248)',
+      name: 'Принять выбранные в перемещении (1)',
       exact: true,
     })
     .click();
-  const csv = readFileSync((await (await downloaded).path())!, 'utf8');
-  expect(csv.split('\r\n').filter(Boolean)).toHaveLength(249);
-  expect(csv).toContain('SKU0001;');
-  expect(csv).toContain(';10;шт;');
-  expect(csv).not.toContain('SKU0002;');
-  await transfer
-    .getByRole('button', { name: 'Закрыть карточку', exact: true })
+  const confirmation = page.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+    exact: true,
+  });
+  await expect(confirmation).toContainText('Строк: 1');
+  await expect(
+    confirmation.getByRole('row').filter({ hasText: 'FULL1' }),
+  ).toContainText('8 → 0');
+  await confirmation
+    .getByRole('button', { name: 'Отмена', exact: true })
     .click();
-  await page.getByRole('button', { name: 'Раменское', exact: true }).click();
+  await expect(fullRow).toContainText('Предложено');
+  await transfer
+    .getByRole('button', {
+      name: 'Принять выбранные в перемещении (1)',
+      exact: true,
+    })
+    .click();
+  await confirmation
+    .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  await expect(fullRow.getByText('Принято', { exact: true })).toBeVisible();
+  await expect(
+    transfer.getByRole('row').filter({ hasText: 'FULL2' }),
+  ).toContainText('Предложено');
+  const csvDownload = page.waitForEvent('download');
+  await transfer
+    .getByRole('button', {
+      name: 'Скачать CSV принятых позиций (1)',
+      exact: true,
+    })
+    .click();
+  const csv = readFileSync((await (await csvDownload).path())!, 'utf8');
+  expect(csv).toContain('FULL1;');
+  expect(csv).toContain(';8;шт;100;800');
+  expect(csv).not.toContain('FULL2;');
+  expect(csv).not.toContain('SKIP14;');
+  expect(csv.split('\r\n').filter(Boolean)).toHaveLength(2);
+  await page.keyboard.press('Escape');
+  await expect(
+    coverageMetric(page, 'К перемещению').locator('.coverage-quantity'),
+  ).toHaveText('20 шт');
+  await expect(coverageMetric(page, 'Принято на сумму')).toContainText(
+    '800,00',
+  );
+  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('14 шт');
+
+  await page.getByRole('button', { name: 'Первый', exact: true }).click();
   await page
     .getByRole('checkbox', {
       name: 'Показать покрытые перемещениями',
       exact: true,
     })
     .check();
-  const row = page.getByRole('row').filter({ hasText: 'SKU0001' });
-  await row.getByRole('button', { name: /Учтённые перемещения/ }).click();
+  const coveredRow = page.getByRole('row').filter({ hasText: 'FULL1' });
+  await coveredRow
+    .getByRole('button', { name: /Учтённые перемещения/ })
+    .click();
   const popup = page.getByRole('dialog', {
     name: 'Учтённые перемещения',
     exact: true,
   });
-  expect(
-    await popup
+  for (const [label, value] of [
+    ['Без перемещений', '8'],
+    ['Принятый вход', '8'],
+    ['Текущая потребность', '0'],
+  ]) {
+    await expect(
+      popup
+        .getByText(label!, { exact: true })
+        .locator('xpath=following-sibling::dd[1]'),
+    ).toHaveText(value!);
+  }
+  await expect(popup).toContainText('Донор А → Первый');
+  await expect(popup).not.toContainText('FULL2');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+  const firstOrderColumn = await page
+    .getByRole('columnheader', { name: 'Первый', exact: true })
+    .evaluate((el) => Array.from(el.parentElement!.children).indexOf(el));
+  const firstOrder = page
+    .locator('table.matrix tbody tr')
+    .filter({ hasText: 'ИП Баранов Роман Борисович' })
+    .locator('td')
+    .nth(firstOrderColumn - 1)
+    .getByRole('button');
+  await firstOrder.click();
+  const order = page.getByRole('dialog');
+  await expect(
+    order.getByLabel('Количество FULL1', { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    order.getByLabel('Количество FULL2', { exact: true }),
+  ).toHaveValue('8');
+  await expect(
+    order.getByLabel('Количество SKIP14', { exact: true }),
+  ).toHaveValue('8');
+  await page.keyboard.press('Escape');
+
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await expect(
+    page.getByText('Сеанс сохранён на этом компьютере', { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(coverageMetric(page, 'Принято на сумму')).toContainText(
+    '800,00',
+  );
+  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('14 шт');
+  await route.click();
+  await expect(
+    transfer.getByRole('row').filter({ hasText: 'FULL1' }),
+  ).toContainText('Принято');
+  await expect(
+    transfer.getByRole('row').filter({ hasText: 'FULL2' }),
+  ).toContainText('Предложено');
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Маршруты', exact: true }).click();
+  await page
+    .getByRole('table', { name: 'Матрица маршрутов', exact: true })
+    .getByRole('checkbox', { name: 'Участие Первый', exact: true })
+    .first()
+    .uncheck();
+  await expect(
+    page.getByText(/Предложения устарели после изменения условий/),
+  ).toBeVisible();
+  await expect(coverageMetric(page, 'Принято на сумму')).toContainText(
+    '800,00',
+  );
+  await page.getByRole('button', { name: 'Первый', exact: true }).click();
+  await page
+    .getByRole('row')
+    .filter({ hasText: 'FULL1' })
+    .getByRole('button', { name: /Учтённые перемещения/ })
+    .click();
+  await expect(
+    popup
       .getByText('Принятый вход', { exact: true })
-      .evaluate((el) => el.nextElementSibling?.textContent),
-  ).toBe('10');
-  expect(
-    await popup
+      .locator('xpath=following-sibling::dd[1]'),
+  ).toHaveText('8');
+  await expect(
+    popup
       .getByText('Текущая потребность', { exact: true })
-      .evaluate((el) => el.nextElementSibling?.textContent),
-  ).toBe('0');
+      .locator('xpath=following-sibling::dd[1]'),
+  ).toHaveText('0');
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Результаты', exact: true }).click();
+  await route.click();
+  await expect(
+    transfer.getByRole('row').filter({ hasText: 'FULL1' }),
+  ).toContainText('Принято');
+  await expect(
+    transfer
+      .getByRole('row')
+      .filter({ hasText: 'FULL2' })
+      .getByRole('checkbox'),
+  ).toBeDisabled();
+  const stillAcceptedDownload = page.waitForEvent('download');
+  await transfer
+    .getByRole('button', {
+      name: 'Скачать CSV принятых позиций (1)',
+      exact: true,
+    })
+    .click();
+  expect(
+    readFileSync((await (await stillAcceptedDownload).path())!, 'utf8'),
+  ).toBe(csv);
+  await transfer
+    .getByRole('button', { name: /Отменить принятие FULL1/ })
+    .click();
+  const revoke = page.getByRole('dialog', {
+    name: 'Отменить принятие перемещения',
+    exact: true,
+  });
+  await expect(revoke).toBeVisible();
+  await revoke
+    .getByRole('button', { name: 'Отменить принятие', exact: true })
+    .click();
+  await expect(revoke).toHaveCount(0);
+  await expect(
+    transfer.getByRole('row').filter({ hasText: 'FULL1' }),
+  ).toContainText('Предложено');
+  await page.keyboard.press('Escape');
+  await expect(coverageMetric(page, 'Принято на сумму')).toContainText('0,00');
+  await page.getByRole('button', { name: 'Первый', exact: true }).click();
+  await expect(
+    page.getByRole('row').filter({ hasText: 'FULL1' }),
+  ).toContainText('8');
+  await expect(
+    page
+      .getByRole('row')
+      .filter({ hasText: 'FULL1' })
+      .getByRole('button', { name: /Учтённые перемещения/ }),
+  ).toHaveCount(0);
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
+test('E2E-12 extended registry preserves off-page mass routes and long names', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  const evidence = observeRuntime(page);
+  await page.setViewportSize({ width: 1280, height: 600 });
+  const extra = 'Подразделение с очень длинным названием инженерного склада';
+  await importFullCoverageFixture(page, [
+    ...coverageBranches,
+    'Склад 10',
+    'Склад 11',
+    extra,
+  ]);
+  const nav = page.getByRole('navigation', { name: 'Страницы матрицы' });
+  await expect(nav).toBeVisible();
+  await expectRouteFrameFits(page);
+  await page
+    .getByRole('button', {
+      name: 'Настроить направления Донор А, строка',
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole('dialog', {
+    name: 'Направления: Донор А',
+    exact: true,
+  });
+  await expect(dialog).toContainText('Будет изменено пар: 11');
+  await dialog
+    .getByRole('radio', {
+      name: 'Только отправляет: Донор А → остальные',
+      exact: true,
+    })
+    .check();
+  await dialog.getByRole('button', { name: 'Применить', exact: true }).click();
+  const nextColumns = page.getByRole('button', { name: 'Следующие столбцы' });
+  while (await nextColumns.isEnabled()) await nextColumns.click();
+  const lastPair = page.getByRole('button', {
+    name: new RegExp(`^Маршрут Донор А → ${extra}:`),
+  });
+  await expect(lastPair).toHaveText('→');
+  await lastPair.click();
+  const lastDialog = page.getByRole('dialog', {
+    name: `Направление: Донор А ↔ ${extra}`,
+    exact: true,
+  });
+  await expect(
+    lastDialog.getByRole('radio', { name: `Донор А → ${extra}`, exact: true }),
+  ).toBeChecked();
+  await expectRouteDialogFits(page);
+  await page.keyboard.press('Escape');
+  await expect(lastPair).toBeFocused();
+  const nextRows = page.getByRole('button', { name: 'Следующие строки' });
+  while (await nextRows.isEnabled()) await nextRows.click();
+  await expect(
+    page.getByRole('button', {
+      name: `Настроить направления ${extra}, строка`,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expectRouteFrameFits(page);
   await page.screenshot({
-    path: testInfo.outputPath('26-tier-purchase-popup.png'),
+    path: testInfo.outputPath('routes-extended-long-names.png'),
   });
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.consoleErrors).toEqual([]);
