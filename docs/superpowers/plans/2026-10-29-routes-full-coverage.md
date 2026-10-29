@@ -1,6 +1,6 @@
 # Маршруты и полное распределение артикула — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Заменить ручные приоритеты автоматическим полным покрытием SKU и компактной настройкой маршрутов.
 **Architecture:** Сохраняем чистый сетевой flow и accepted-only закупку. Результат расчёта содержит структурированные пропуски; физический снимок сохраняет выключенные подразделения. UI настраивает пары атомарно через прежнюю CAS-очередь.
@@ -37,11 +37,11 @@
 **Consumes:** существующие allocateFlow/quantity helpers и approved spec.
 **Produces:** shared result and signature interfaces above; pure all-or-nothing plan, stable accepted validation.
 
-- [ ] Write tests/fullSkuCoverage.test.ts: need8+6/surplus12 -> transfers[], needed14/deliverable12/missing2; multi-donor8+6 ->14; route bottleneck20/4 ->0; disconnected graph one shortage ->0; all inbound blocked excludes receiver; fractional0.3/step0.2 ->0; invalid selected row ->0; accepted5 leaves9; permutations stable.
-- [ ] Run focused tests and observe RED assertions against legacy partial behavior.
-- [ ] Implement exact full coverage gate and structured diagnostic result; capture active signature and bump algorithm. Preserve inactive physical rows and enforce participation for new additions; version/signature guards do not block historical revoke/no-op.
-- [ ] Add accept/revoke tests for old algorithm and inactive accepted side, watch RED then GREEN. Remove obsolete manual allocation tests; revise old partial fixtures only where current rule explicitly changes expectation, retaining physical, precision, flow and acceptance regressions with fully feasible data.
-- [ ] Run domain suite, typecheck; root later runs full integrated suite/build. Commit coherent domain change.
+- [x] Write tests/fullSkuCoverage.test.ts: need8+6/surplus12 -> transfers[], needed14/deliverable12/missing2; multi-donor8+6 ->14; route bottleneck20/4 ->0; disconnected graph one shortage ->0; all inbound blocked excludes receiver; fractional0.3/step0.2 ->0; invalid selected row ->0; accepted5 leaves9; permutations stable.
+- [x] Run focused tests and observe RED assertions against legacy partial behavior.
+- [x] Implement exact full coverage gate and structured diagnostic result; capture active signature and bump algorithm. Preserve inactive physical rows and enforce participation for new additions; version/signature guards do not block historical revoke/no-op.
+- [x] Add accept/revoke tests for old algorithm and inactive accepted side, watch RED then GREEN. Remove obsolete manual allocation tests; revise old partial fixtures only where current rule explicitly changes expectation, retaining physical, precision, flow and acceptance regressions with fully feasible data.
+- [x] Run domain suite, typecheck; root later runs full integrated suite/build. Commit coherent domain change.
 
 ### Task 2: Компактная матрица и массовые направления
 
@@ -49,11 +49,11 @@
 **Consumes:** existing RouteConfig/BranchRegistry; shared callback above.
 **Produces:** full9×9 readable matrix, pair/group editor and participation control with persisted callbacks.
 
-- [ ] Write failing pure tests: reversed pair orientation; row/column group sender/receiver semantics, inactive untouched, no diagonal/duplicates, no mutation.
-- [ ] Implement pure setRouteDirection and setBranchRoutes helpers with explicit typed inputs.
-- [ ] Write failing RTL workflow: four labeled choices, atomic apply/cancel, mirrored arrow, active checkbox both axes, disabled connections, row and column group scope independent of page.
-- [ ] Implement compact semantic matrix using common Dialog/Button; red×/green↔/blue→←/muted disabled, textual legend and accessible full pair names, viewport-aware axis pages beyond9 without dropping branches. Modal radio choices, focus/escape/restore via shared Dialog.
-- [ ] Run focused domain+UI tests; root adds native geometry assertions. Commit route-only change.
+- [x] Write failing pure tests: reversed pair orientation; row/column group sender/receiver semantics, inactive untouched, no diagonal/duplicates, no mutation.
+- [x] Implement pure setRouteDirection and setBranchRoutes helpers with explicit typed inputs.
+- [x] Write failing RTL workflow: four labeled choices, atomic apply/cancel, mirrored arrow, active checkbox both axes, disabled connections, row and column group scope independent of page.
+- [x] Implement compact semantic matrix using common Dialog/Button; red×/green↔/blue→←/muted disabled, textual legend and accessible full pair names, viewport-aware axis pages beyond9 without dropping branches. Modal radio choices, focus/escape/restore via shared Dialog.
+- [x] Run focused domain+UI tests; root adds native geometry assertions. Commit route-only change.
 
 ### Task 3: Сохранения и удаление ручного workflow
 
@@ -61,10 +61,10 @@
 **Consumes:** Task1 algorithm/signature guards; Task2 registry callback.
 **Produces:** three tabs, stale legacy plans, queued config/registry changes, independent selected acceptance.
 
-- [ ] Add RED tests for legacy `tab:priorities` -> routes while preserving ledger/proposal; current plan with activity change -> stale; accepted side deactivated -> unchanged purchase and revoke possible.
-- [ ] Remove donor edit commands, drawers/links/blockedSources priority computation and dead UI/styles; retain legacy DTO fields for reading history. New calculation version is mandatory before further accepting a legacy proposal.
-- [ ] Wire registry callback into existing durable queue; protect workspace/run identity and wait before calculate/accept. Add failure/reload race tests.
-- [ ] Run focused workflow/persistence suite and typecheck; commit integration.
+- [x] Add RED tests for legacy `tab:priorities` -> routes while preserving ledger/proposal; current plan with activity change -> stale; accepted side deactivated -> unchanged purchase and revoke possible.
+- [x] Remove donor edit commands, drawers/links/blockedSources priority computation and dead UI/styles; retain legacy DTO fields for reading history. New calculation version is mandatory before further accepting a legacy proposal.
+- [x] Wire registry callback into existing durable queue; protect workspace/run identity and wait before calculate/accept. Add failure/reload race tests.
+- [x] Run focused workflow/persistence suite and typecheck; commit integration.
 
 ### Task 4: Пропуски, KPI и XLSX
 
@@ -72,10 +72,10 @@
 **Consumes:** Task1 skipped records and existing transferDocuments.
 **Produces:** pending amount/quantity and skipped full need, structured list/receiver details and XLSX sheet.
 
-- [ ] Add RED tests: skipped14 rather than shortfall2; unknown money stays unknown; mixed units separate; pending excludes accepted-source/rejected and is independent of query.
-- [ ] Implement one pure summary projection and list using SearchInput/VirtualTable, receiver detail Dialog; no-results/no-plan/no-skips/stale states; dashboard link opens list without adding priority tab.
-- [ ] Add RED workbook test reading generated XLSX: skipped SKU/recipient needs/deliverable/missing/reason/full-need amount; unknown price blank; no active manual-priority parameters. Implement export and keep CSV accepted-only.
-- [ ] Run focused UI/projection/export tests and typecheck; commit.
+- [x] Add RED tests: skipped14 rather than shortfall2; unknown money stays unknown; mixed units separate; pending excludes accepted-source/rejected and is independent of query.
+- [x] Implement one pure summary projection and list using SearchInput/VirtualTable, receiver detail Dialog; no-results/no-plan/no-skips/stale states; dashboard link opens list without adding priority tab.
+- [x] Add RED workbook test reading generated XLSX: skipped SKU/recipient needs/deliverable/missing/reason/full-need amount; unknown price blank; no active manual-priority parameters. Implement export and keep CSV accepted-only.
+- [x] Run focused UI/projection/export tests and typecheck; commit.
 
 ### Task 5: Контракты, браузер и whole-branch review
 
@@ -83,7 +83,14 @@
 **Consumes:** integrated Tasks1–4.
 **Produces:** new PR, green unit/typecheck/build/native evidence, reviewed branch, no merge.
 
-- [ ] Update contracts with29.10 precedence; mark superseded priority specs/plans rather than silently keeping contradictory current rules. Remove dead manual E2E scenarios and replace with current automatic full-coverage flow.
-- [ ] Chrome file:// import9branches -> configure group/pair/disable -> calculate full and skipped SKU -> no partial lines -> inspect skip metrics -> select/accept -> order/popover/CSV -> reload -> deactivate accepted side -> revoke. Geometry1280×720/1280×600,1024fallback, overflow assertion on actual route frame and page, open edit dialogs, extended registry/long names/zoom.
-- [ ] Run typecheck, all Vitest, build/package and native E2E (CI fallback if host Chrome unavailable), premium static audit. Keep actual command output.
-- [ ] Request one fresh whole-branch code review, fix important findings with regression RED→GREEN and full suite, then publish branch/PR. Verify exact-head CI and PR open/auto-merge off. No merge.
+- [x] Update contracts with29.10 precedence; mark superseded priority specs/plans rather than silently keeping contradictory current rules. Remove dead manual E2E scenarios and replace with current automatic full-coverage flow.
+- [x] Chrome file:// import9branches -> configure group/pair/disable -> calculate full and skipped SKU -> no partial lines -> inspect skip metrics -> select/accept -> order/popover/CSV -> reload -> deactivate accepted side -> revoke. Geometry1280×720/1280×600,1024fallback, overflow assertion on actual route frame and page, open edit dialogs, extended registry/long names/zoom.
+- [x] Run typecheck, all Vitest, build/package and native E2E (CI fallback if host Chrome unavailable), premium static audit. Keep actual command output.
+- [x] Request one fresh whole-branch code review, fix important findings with regression RED→GREEN and full suite, then publish branch/PR. Verify exact-head CI and PR open/auto-merge off. No merge.
+
+
+## Итог выполнения29.10.2026
+
+Реализовано в PR33 без мержа. Independent review выявило source-import gap и противоречивую отрицательную сумму; оба исправлены тестами RED→GREEN. Дополнительно native Chrome показал необходимость уплотнения шапки/ограничения sidebar и навигации по страницам stale состава в E2E. Assertions на9подразделений, overflow и disabled сохранены.
+
+Проверка кода42f32372d60462d80e4c8874f726df28b4bd82ca: native CI201 (run40874400727) успешно завершил typecheck,303Vitest/61file, offline build/package/reproducibility,9Chrome file:// сценариев и production audit. Матрица9×9 проверена на1280×720/600, расширенный12реестр с длинными названиями — без потери off-page массовой настройки. Текущий документ отмечает завершённые шаги, не меняя проверенный runtime. Отдельный benchmark больших реальных импортов не проводился; никаких новых performance claims нет.
