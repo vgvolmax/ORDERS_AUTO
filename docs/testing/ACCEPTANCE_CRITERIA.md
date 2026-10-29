@@ -1,3 +1,5 @@
+> **Правила29.10.2026 имеют приоритет:** полное покрытие SKU и маршруты по согласованной `2026-10-29-routes-full-coverage-design.md`. Частичное распределение и ручные приоритеты23–28.10 ниже — исторические и заменены уточнением в конце документа.
+
 > **Rebalancing20.10.2026:** для изменённой функции действуют уточнения в конце этого документа и `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md`; исторические правила03.09 в конфликтующей части заменены. PR1 реализует только домен, остальная интеграция — PR2.
 
 # ORDERS_AUTO — Acceptance Criteria
@@ -203,3 +205,10 @@ UI:6SKU/7подразделений одновременно в карточка
 ### Три массовых приоритета донора ·28.10.2026
 
 Уровни1→2→3→остальные проверены обоими режимами и дробным шагом; manual/accepted/legacy и общий резерв сохраняются. Coverage исключает rejected и дедуплицирует accepted; неизвестная цена не превращается в0. UI проверяет multi-select/move/remove/cancel/manual overwrite, coverage+scope+search, независимое принятие и durable success/failure barrier. Native file:// E2E249SKU/8получателей на1920×900/1280×720/1280×600/1024×768 проверяет геометрию, принятие, reload, CSV и popup текущей потребности.
+
+
+### Регрессии полного покрытия ·29.10.2026
+
+Новые нормативные тесты заменяют partial/manual priority сценарии: surplus12/need8+6 ->0 и skipped14/12/2; совместные доноры8+6 ->14; маршрутизируемый cut при суммарном запасе20 ->0; полностью закрытый вход исключён намеренно; шаг0.2 при need0.3 ->0. Известные невалидные выбранные строки не дают false full. Денежный порог полного кандидата не скрывает диагностическую нехватку частичного trial flow.
+
+Legacy tab/algorithm/signature, inactive physical+accepted/revoke, частичное принятие полного proposal, pending/rejected/accepted dedup, unknown money/разные единицы, сохранение активности при замене импорта и CAS failure обязательны. Low-level exhaustive flow tests сохранены для диагностического максимума. Chrome file:// проверяет9×9/геометрию1280×720/600, Dialog pair/group, active state, automatic coverage/skip list, acceptance/orders/popup/CSV/reload. Прежние E2E приоритетов заменяются; unrelated supplier/portable/offline/readonly-transfer проверки сохраняются.
