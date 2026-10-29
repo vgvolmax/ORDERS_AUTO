@@ -1,3 +1,5 @@
+> **Исторический документ:** ручные приоритеты отменены пользователем29.10.2026. Текущая спецификация: `docs/superpowers/specs/2026-10-29-routes-full-coverage-design.md`.
+
 # Compact donor priority cards
 
 Operator request23.10.2026, image(3).png: replace paged sparse matrix with a continuous compact SKU list; all divisions visible inside each card. User selected cards; the old narrower matrix still wastes empty cells, independent route cards lose the shared donor budget.

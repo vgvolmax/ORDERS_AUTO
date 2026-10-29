@@ -27,7 +27,9 @@ interface IndexedRow {
   rowNumber: number;
 }
 
-export function parseMinMaxWorkbook(input: ArrayBuffer): ParseResult<MinMaxDataset> {
+export function parseMinMaxWorkbook(
+  input: ArrayBuffer,
+): ParseResult<MinMaxDataset> {
   try {
     const rows = readFirstSheetRows(input);
     const header = findHeader(rows);
@@ -41,6 +43,11 @@ export function parseMinMaxWorkbook(input: ArrayBuffer): ParseResult<MinMaxDatas
     const data: MinMaxDataset = { skus: [], branchStocks: [], branches: [] };
     const issues: ValidationIssue[] = [];
     const seenSkuBranch = new Set<string>();
+    const malformedBranches: {
+      skuCode: string;
+      branch: string;
+      row: number;
+    }[] = [];
 
     for (let index = header.rowIndex + 1; index < rows.length; ) {
       const parentRow = rows[index]!;
@@ -67,6 +74,19 @@ export function parseMinMaxWorkbook(input: ArrayBuffer): ParseResult<MinMaxDatas
       // Coded category/group rows in the 1C report have no branch children.
       // They are intentionally ignored rather than becoming fake SKU records.
       if (branchRows.length > 0) {
+        for (const child of children) {
+          if (
+            isBranchIdentity(child.row, header.columns) &&
+            !isBranchRow(child.row, header.columns)
+          ) {
+            malformedBranches.push({
+              skuCode: code,
+              branch: normalizeText(child.row[header.columns.name]),
+              row: child.rowNumber,
+            });
+          }
+        }
+
         const sku = {
           code,
           article:
@@ -74,7 +94,9 @@ export function parseMinMaxWorkbook(input: ArrayBuffer): ParseResult<MinMaxDatas
               ? normalizeText(parentRow[header.columns.article]) || null
               : null,
           name: normalizeText(parentRow[header.columns.name]),
-          reportedTotalStock: parseOptionalNumber(parentRow[header.columns.stock]),
+          reportedTotalStock: parseOptionalNumber(
+            parentRow[header.columns.stock],
+          ),
           referencePrice:
             header.columns.price >= 0
               ? parseOptionalNumber(parentRow[header.columns.price])
@@ -128,7 +150,11 @@ export function parseMinMaxWorkbook(input: ArrayBuffer): ParseResult<MinMaxDatas
           data.branchStocks.push({ skuCode: code, branch, stock, min, max });
           branchTotal += stock;
 
-          if (!data.branches.some((item) => normalizeKey(item) === normalizedBranch)) {
+          if (
+            !data.branches.some(
+              (item) => normalizeKey(item) === normalizedBranch,
+            )
+          ) {
             data.branches.push(branch);
           }
         }
@@ -149,6 +175,19 @@ export function parseMinMaxWorkbook(input: ArrayBuffer): ParseResult<MinMaxDatas
 
       index = nextIndex;
     }
+
+    const knownBranches = new Set(data.branches.map(normalizeKey));
+    for (const item of malformedBranches)
+      if (knownBranches.has(normalizeKey(item.branch))) {
+        issues.push({
+          severity: 'ERROR',
+          code: 'INVALID_BRANCH_VALUES',
+          skuCode: item.skuCode,
+          branch: item.branch,
+          row: item.row,
+          message: `Некорректные числовые данные остатка или MIN/MAX: ${item.skuCode} / ${item.branch}`,
+        });
+      }
 
     if (data.skus.length === 0) {
       return fatal('NO_SKU_BLOCKS', 'В отчёте не найдены товарные блоки.');
@@ -171,7 +210,8 @@ function findHeader(
 ): { rowIndex: number; columns: MinMaxColumns } | null {
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const normalized = rows[rowIndex]!.map(normalizeKey);
-    const exact = (name: string) => normalized.findIndex((cell) => cell === name);
+    const exact = (name: string) =>
+      normalized.findIndex((cell) => cell === name);
     const contains = (name: string) =>
       normalized.findIndex((cell) => cell.includes(name));
 
@@ -199,7 +239,7 @@ function findHeader(
   return null;
 }
 
-function isBranchRow(row: unknown[], columns: MinMaxColumns): boolean {
+function isBranchIdentity(row: unknown[], columns: MinMaxColumns): boolean {
   if (normalizeText(row[columns.code])) {
     return false;
   }
@@ -210,6 +250,11 @@ function isBranchRow(row: unknown[], columns: MinMaxColumns): boolean {
     return false;
   }
 
+  return true;
+}
+
+function isBranchRow(row: unknown[], columns: MinMaxColumns): boolean {
+  if (!isBranchIdentity(row, columns)) return false;
   return [columns.stock, columns.min, columns.max].every((column) => {
     const value = row[column];
     return parseOptionalNumber(value) !== null || normalizeText(value) === '';

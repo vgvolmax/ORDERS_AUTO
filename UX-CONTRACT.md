@@ -1,3 +1,5 @@
+> **29.10.2026:** правила ручных приоритетов ниже заменены разделом «Маршруты и полное покрытие» в конце. Для этой функции действует согласованная routes-full-coverage спецификация.
+
 # UX Contract
 
 ## Product and source ownership
@@ -88,3 +90,16 @@ Canonical owner: components/VirtualList.tsx для non-tabular list virtualizati
 ### Три массовых приоритета донора ·28.10.2026
 
 Источник бизнес-правил: утверждённый docs/superpowers/specs/2026-10-23-donor-priority-tiers-design.md. Настройки уровней локальны до применения и сохраняются общей CAS-очередью; отмена ничего не меняет. Перенос подразделения атомарный, ручные строки защищены по умолчанию, после удаления фокус возвращается в настройку карточки. Нативный select покрытия использует прежний platform popup. Поиск, покрытие и область временные и не сужают принятие/суммы. Принятие группы/всего донора ждёт сохранение; при ошибке записи старый план не принимается. Общий AcceptTransfersDialog сохраняет предметную валидацию и подтверждение влияния на закупку.
+
+
+## Маршруты и полное покрытие ·29.10.2026
+
+RoutesMatrix и чистый routeEditing владеют matrix/pair/group; управление открывается общим Dialog с сохранением cancel/focus/Escape/inert поведения. Каждая кнопка пары имеет stable full accessible name;4radio direction choices исключают циклическую мутацию по клику. Native Select остаётся только для общего режима. Флажки участия на обеих осях синхронны; неактивные клетки/массовые кнопки disabled, checkbox включения доступен. Направления выключенных не стираются. Массовая операция relative to branch name затрагивает все active пары, включая off-page;3tabs priorities removed.
+
+Для9подразделений scoped compact parent и30px matrix rows вмещают экран1280×720/600 без page/table scroll. ResizeObserver учитывает доступный viewport и предупреждения; для большего реестра/long names/zoom доступны страницы обеих осей. Другие страницы приложения не обрезаются и сохраняют свой scroll owner.
+
+Все записи маршрутов/участия используют useDurableDraft→workspaceSession CAS. Расчёт/принятие используют committed очередь, не optimistic input. Отказ записи откатывает draft, сохраняет бизнес-состояние и допускает повтор. Registry signature + algorithm + snapshot/config version проверяются в домене, а не только кнопками. При изменении participation предыдущий proposal stale; accepted продолжает учитываться и допускает revoke. Legacy tab normalizes to routes, legacy partial plan needs explicit recalc; история не теряется. Новый импорт сохраняет настройки выключенных существующих подразделений, отсутствующие выключает, новые включает.
+
+Дашборд pending/accepted/skipped независим от поиска. «Не распределено» показывает весь пропущенный объём, а missing — только подробности; разные единицы отдельно. Skipped list использует общий SearchInput/VirtualTable/Dialog, понятные no-plan/no-results/legacy/stale состояния и readonly receiver breakdown. Data/money exclusions остаются отдельными. CSV остаётся accepted-only; XLSX содержит обе таблицы пропусков. Старые donor drawers/commands/summaries и связанный CSS удалены. Evidence: fullSkuCoverage, routeEditing/routesMatrix, legacyRebalance/fullCoverageWorkflow/fullCoverageSummary и текущие Chrome E2E.
+
+Короткий route viewport: вторичное пояснение шапки доступно в результатах, маршрутная шапка компактна; sidebar получает flex-вариант только при main.rebalancing-routes. Прокруткой списка подразделений продолжает владеть branch-nav, высота sidebar не увеличивает document. Поиск результатов имеет явное стабильное доступное имя при появлении кнопки очистки.

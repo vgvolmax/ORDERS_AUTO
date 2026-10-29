@@ -47,7 +47,7 @@ function state() {
     ...s.rebalance,
     registry: data.branches,
     policies: [{ skuCode: '00001', unit: 'шт', quantityStep: 1 }],
-    config: config(),
+    config: config({ receiverPct: 25 }),
   };
   s.rebalance.proposal = createProposal(s);
   return s;

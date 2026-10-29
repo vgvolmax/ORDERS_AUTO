@@ -1,0 +1,306 @@
+.routes-editor {
+  --routes-row-height: 30px;
+  min-width: 0;
+  font-size: 12px;
+}
+.routes-tools {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 6px;
+}
+.routes-mode {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  min-height: 30px;
+}
+.routes-mode > label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.routes-mode .input {
+  width: auto;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+.routes-mode > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.routes-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  min-height: 18px;
+  font-size: 11px;
+}
+.routes-legend > span:last-child {
+  color: var(--muted);
+}
+.routes-grid {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: clip;
+  background: var(--surface);
+}
+.routes-grid th,
+.routes-grid td {
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.routes-grid tr > :last-child {
+  border-right: 0;
+}
+.routes-grid tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.routes-grid thead th {
+  height: 52px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+.routes-grid tbody th,
+.routes-grid td {
+  height: var(--routes-row-height);
+}
+.routes-identity-column {
+  width: 156px;
+}
+.routes-corner {
+  color: var(--muted);
+  font-weight: 500 !important;
+  background: #f7f8fa;
+}
+.routes-header-active {
+  background: var(--blue-soft);
+}
+.routes-header-inactive {
+  background: #f7f8fa;
+  color: var(--muted);
+}
+.routes-branch {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px;
+}
+.routes-branch > input {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+.routes-branch-column {
+  flex-direction: column-reverse;
+  justify-content: center;
+  gap: 1px;
+  padding: 2px 3px;
+}
+.routes-branch-button.button {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 3px;
+  padding: 0 2px;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
+}
+.routes-branch-button > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 14px;
+}
+.routes-branch-column .routes-branch-button {
+  height: 30px;
+  text-align: center;
+  align-items: center;
+}
+.routes-branch-column .routes-branch-button > span {
+  -webkit-line-clamp: 2;
+}
+.routes-branch-button > small {
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 10px;
+}
+.routes-branch-button.button:hover:enabled {
+  background: #dce8ff;
+  text-decoration: underline;
+}
+.routes-branch-button.button:active:enabled {
+  background: #cbdcff;
+}
+.routes-branch-button.button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.routes-cell.button {
+  display: block;
+  width: 100%;
+  height: calc(var(--routes-row-height) - 1px);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1;
+  box-shadow: none;
+}
+.routes-cell.routes-blocked,
+.routes-legend > .routes-blocked {
+  color: var(--danger);
+  background: #fcecef;
+}
+.routes-cell.routes-both,
+.routes-legend > .routes-both {
+  color: var(--success, #176b3a);
+  background: #eaf5ee;
+}
+.routes-cell.routes-oneway,
+.routes-legend > .routes-oneway {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+.routes-legend > .routes-blocked,
+.routes-legend > .routes-both,
+.routes-legend > .routes-oneway {
+  background: transparent;
+}
+.routes-cell.button:hover:enabled {
+  filter: brightness(0.94);
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.routes-cell.button:active:enabled {
+  filter: brightness(0.88);
+}
+.routes-cell.button:disabled {
+  color: var(--muted);
+  background: #f1f3f5;
+  opacity: 0.55;
+  cursor: default;
+}
+.routes-cell.button:focus-visible,
+.routes-branch-button.button:focus-visible,
+.routes-branch > input:focus-visible {
+  outline-offset: -3px;
+}
+.routes-diagonal {
+  display: block;
+  text-align: center;
+  color: var(--muted);
+  background: #f7f8fa;
+  line-height: calc(var(--routes-row-height) - 1px);
+}
+.routes-pagination {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding-top: 4px;
+  min-height: 32px;
+}
+.routes-axis-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.routes-axis-pages > span {
+  margin-right: 4px;
+}
+.routes-axis-pages .button {
+  min-height: 24px;
+  width: 27px;
+  padding: 1px 3px;
+}
+.routes-stale-pairs {
+  color: var(--warning);
+  margin: 3px 0 0;
+  font-size: 11px;
+}
+.routes-direction-dialog {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.routes-direction-dialog > p {
+  margin: 8px 0 12px;
+}
+.routes-direction-dialog fieldset {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin: 0;
+  min-width: 0;
+}
+.routes-direction-dialog legend {
+  padding: 0 5px;
+  font-weight: 600;
+}
+.routes-direction-dialog fieldset > label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.routes-direction-dialog fieldset > label:hover {
+  background: var(--blue-soft);
+}
+.routes-direction-dialog input {
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+.routes-direction-dialog .routes-dialog-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 0;
+}
+.modal-surface:has(.routes-direction-dialog) .modal-heading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .routes-identity-column {
+    width: 116px;
+  }
+  .routes-mode > span {
+    flex-basis: 100%;
+  }
+}

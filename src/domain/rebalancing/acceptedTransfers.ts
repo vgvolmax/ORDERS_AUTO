@@ -1,79 +1,214 @@
-import { assertDonorPrioritiesReady } from './allocationPlan';
-import { assertConfig, assertSnapshot, acceptedTotals, rebalanceConfigFingerprint, validateAcceptedLedger } from './constraints';
+import { ALGORITHM_VERSION } from './calculate';
+import {
+  assertConfig,
+  assertSnapshot,
+  acceptedTotals,
+  branchParticipationFingerprint,
+  rebalanceConfigFingerprint,
+  validateAcceptedLedger,
+} from './constraints';
 import { moneyGreaterThan, receiverTarget, sumQuantities } from './numbers';
 import { acceptedEconomicDiagnostics } from './economics';
-import { RebalanceError, stockKey, type AcceptTransfersInput, type RevokeTransfersInput, type AcceptedTransferChange, type AcceptedTransfer, type RebalanceSnapshot } from './types';
+import {
+  RebalanceError,
+  stockKey,
+  type AcceptTransfersInput,
+  type RevokeTransfersInput,
+  type AcceptedTransferChange,
+  type AcceptedTransfer,
+  type RebalanceSnapshot,
+} from './types';
 
 function revision(current: number, expected: number): void {
-  if (!Number.isSafeInteger(current) || current < 0 || current !== expected || current >= Number.MAX_SAFE_INTEGER) throw new RebalanceError('REVISION_CONFLICT');
+  if (
+    !Number.isSafeInteger(current) ||
+    current < 0 ||
+    current !== expected ||
+    current >= Number.MAX_SAFE_INTEGER
+  )
+    throw new RebalanceError('REVISION_CONFLICT');
 }
-function change(snapshot: RebalanceSnapshot, current: AcceptedTransfer[], next: AcceptedTransfer[], keys: string[], currentRevision: number): AcceptedTransferChange {
+function change(
+  snapshot: RebalanceSnapshot,
+  current: AcceptedTransfer[],
+  next: AcceptedTransfer[],
+  keys: string[],
+  currentRevision: number,
+): AcceptedTransferChange {
   const nextAccepted = keys.length ? next : current;
-  return { nextAccepted, changedSkuBranchKeys: [...new Set(keys)].sort(), nextRevision: currentRevision + (keys.length ? 1 : 0), diagnostics: acceptedEconomicDiagnostics(snapshot, nextAccepted) };
+  return {
+    nextAccepted,
+    changedSkuBranchKeys: [...new Set(keys)].sort(),
+    nextRevision: currentRevision + (keys.length ? 1 : 0),
+    diagnostics: acceptedEconomicDiagnostics(snapshot, nextAccepted),
+  };
 }
-const contextKeys = (t: AcceptedTransfer): string[] => [stockKey(t.skuCode, t.fromBranchId), stockKey(t.skuCode, t.toBranchId)];
-function assertLedger(input: { snapshot: AcceptTransfersInput['snapshot']; currentAccepted: AcceptedTransfer[] }): void {
+const contextKeys = (t: AcceptedTransfer): string[] => [
+  stockKey(t.skuCode, t.fromBranchId),
+  stockKey(t.skuCode, t.toBranchId),
+];
+function assertLedger(input: {
+  snapshot: AcceptTransfersInput['snapshot'];
+  currentAccepted: AcceptedTransfer[];
+}): void {
   assertSnapshot(input.snapshot);
   const issues = validateAcceptedLedger(input.snapshot, input.currentAccepted);
-  if (issues.length) throw new RebalanceError('INVALID_ACCEPTED_LEDGER', issues);
+  if (issues.length)
+    throw new RebalanceError('INVALID_ACCEPTED_LEDGER', issues);
 }
 
-export function acceptTransfers(input: AcceptTransfersInput): AcceptedTransferChange {
-  revision(input.currentRevision, input.expectedRevision); assertLedger(input);
+export function acceptTransfers(
+  input: AcceptTransfersInput,
+): AcceptedTransferChange {
+  revision(input.currentRevision, input.expectedRevision);
+  assertLedger(input);
   const p = input.currentProposal;
-  if (p.snapshotId !== input.snapshot.snapshotId || !p.runId || p.baseAcceptedRevision > input.currentRevision)
+  if (
+    p.snapshotId !== input.snapshot.snapshotId ||
+    !p.runId ||
+    p.baseAcceptedRevision > input.currentRevision
+  )
     throw new RebalanceError('STALE_PROPOSAL');
   const proposalById = new Map(p.transfers.map((t) => [t.sourceLineId, t]));
-  if (proposalById.size !== p.transfers.length) throw new RebalanceError('STALE_PROPOSAL');
+  if (proposalById.size !== p.transfers.length)
+    throw new RebalanceError('STALE_PROPOSAL');
   const selected = [...new Set(input.selectedLineIds)].map((id) => {
-    const line = proposalById.get(id); if (!line) throw new RebalanceError('STALE_PROPOSAL'); return line;
+    const line = proposalById.get(id);
+    if (!line) throw new RebalanceError('STALE_PROPOSAL');
+    return line;
   });
-  const existingBySource = new Map(input.currentAccepted.map((t) => [JSON.stringify([t.sourceRunId, t.sourceLineId]), t]));
+  const existingBySource = new Map(
+    input.currentAccepted.map((t) => [
+      JSON.stringify([t.sourceRunId, t.sourceLineId]),
+      t,
+    ]),
+  );
   const existingIds = new Set(input.currentAccepted.map((t) => t.transferId));
   const additions: AcceptedTransfer[] = [];
   for (const t of selected) {
-    const existing = existingBySource.get(JSON.stringify([p.runId, t.sourceLineId]));
+    const existing = existingBySource.get(
+      JSON.stringify([p.runId, t.sourceLineId]),
+    );
     if (existing) {
-      if (existing.skuCode !== t.skuCode || existing.fromBranchId !== t.fromBranchId || existing.toBranchId !== t.toBranchId || existing.qty !== t.qty)
+      if (
+        existing.skuCode !== t.skuCode ||
+        existing.fromBranchId !== t.fromBranchId ||
+        existing.toBranchId !== t.toBranchId ||
+        existing.qty !== t.qty
+      )
         throw new RebalanceError('TRANSFER_ID_CONFLICT');
       continue;
     }
     const id = input.transferIdBySourceLineId[t.sourceLineId];
-    if (!id || existingIds.has(id)) throw new RebalanceError('TRANSFER_ID_CONFLICT');
+    if (!id || existingIds.has(id))
+      throw new RebalanceError('TRANSFER_ID_CONFLICT');
     existingIds.add(id);
-    additions.push({ transferId: id, sourceRunId: p.runId, sourceLineId: t.sourceLineId, skuCode: t.skuCode, fromBranchId: t.fromBranchId, toBranchId: t.toBranchId, qty: t.qty,
-      snapshotId: input.snapshot.snapshotId, acceptedAt: input.acceptedAt, acceptedConfig: structuredClone(p.config) });
+    additions.push({
+      transferId: id,
+      sourceRunId: p.runId,
+      sourceLineId: t.sourceLineId,
+      skuCode: t.skuCode,
+      fromBranchId: t.fromBranchId,
+      toBranchId: t.toBranchId,
+      qty: t.qty,
+      snapshotId: input.snapshot.snapshotId,
+      acceptedAt: input.acceptedAt,
+      acceptedConfig: structuredClone(p.config),
+    });
   }
-  if (!additions.length) return change(input.snapshot, input.currentAccepted, input.currentAccepted, [], input.currentRevision);
+  if (!additions.length)
+    return change(
+      input.snapshot,
+      input.currentAccepted,
+      input.currentAccepted,
+      [],
+      input.currentRevision,
+    );
+  if (
+    p.algorithmVersion !== ALGORITHM_VERSION ||
+    p.participationFingerprint !==
+      branchParticipationFingerprint(input.snapshot.branches)
+  )
+    throw new RebalanceError('STALE_PROPOSAL');
+  const active = new Set(
+    input.snapshot.branches.filter((b) => b.active).map((b) => b.id),
+  );
+  if (
+    additions.some(
+      (t) => !active.has(t.fromBranchId) || !active.has(t.toBranchId),
+    )
+  )
+    throw new RebalanceError('INVALID_TRANSFER_BATCH');
   assertConfig(p.config);
-  if (p.configFingerprint !== input.currentConfigFingerprint || p.configFingerprint !== rebalanceConfigFingerprint(p.config)) throw new RebalanceError('STALE_PROPOSAL');
+  if (
+    p.configFingerprint !== input.currentConfigFingerprint ||
+    p.configFingerprint !== rebalanceConfigFingerprint(p.config)
+  )
+    throw new RebalanceError('STALE_PROPOSAL');
   const eligible = new Set(p.eligibleRecipientKeys);
-  if (additions.some((t) => !eligible.has(stockKey(t.skuCode, t.toBranchId)))) throw new RebalanceError('INVALID_TRANSFER_BATCH');
+  if (additions.some((t) => !eligible.has(stockKey(t.skuCode, t.toBranchId))))
+    throw new RebalanceError('INVALID_TRANSFER_BATCH');
   const next = [...input.currentAccepted, ...additions];
   const issues = validateAcceptedLedger(input.snapshot, next);
   if (issues.length) throw new RebalanceError('INVALID_TRANSFER_BATCH', issues);
-  assertDonorPrioritiesReady({ snapshot: input.snapshot, proposal: p, accepted: input.currentAccepted }, additions.map((t) => t.sourceLineId));
-  const totals = acceptedTotals(next), skus = new Map(input.snapshot.skus.map((s) => [s.skuCode, s]));
-  const stocks = new Map(input.snapshot.stocks.map((s) => [stockKey(s.skuCode, s.branchId), s]));
+  const totals = acceptedTotals(next),
+    skus = new Map(input.snapshot.skus.map((s) => [s.skuCode, s]));
+  const stocks = new Map(
+    input.snapshot.stocks.map((s) => [stockKey(s.skuCode, s.branchId), s]),
+  );
   const addedSkus = new Set(additions.map((t) => t.skuCode));
   for (const t of additions) {
-    const key = stockKey(t.skuCode, t.toBranchId), to = stocks.get(key)!;
-    if (sumQuantities([to.stock, totals.incoming.get(key) ?? 0]) > receiverTarget(to.min!, to.max!, p.config.receiverPct)) throw new RebalanceError('INVALID_TRANSFER_BATCH');
+    const key = stockKey(t.skuCode, t.toBranchId),
+      to = stocks.get(key)!;
+    if (
+      sumQuantities([to.stock, totals.incoming.get(key) ?? 0]) >
+      receiverTarget(to.min!, to.max!, p.config.receiverPct)
+    )
+      throw new RebalanceError('INVALID_TRANSFER_BATCH');
   }
   for (const code of addedSkus) {
     const price = skus.get(code)!.referencePrice;
     if (p.config.unitPriceFilter.enabled || p.config.skuAmountFilter.enabled) {
-      if (price === null || !Number.isFinite(price) || price < 0) throw new RebalanceError('INVALID_TRANSFER_BATCH');
-      if (p.config.unitPriceFilter.enabled && !moneyGreaterThan(1, price, p.config.unitPriceFilter.threshold)) throw new RebalanceError('INVALID_TRANSFER_BATCH');
-      const runQty = sumQuantities(next.filter((t) => t.sourceRunId === p.runId && t.skuCode === code).map((t) => t.qty));
-      if (p.config.skuAmountFilter.enabled && !moneyGreaterThan(runQty, price, p.config.skuAmountFilter.threshold)) throw new RebalanceError('INVALID_TRANSFER_BATCH');
+      if (price === null || !Number.isFinite(price) || price < 0)
+        throw new RebalanceError('INVALID_TRANSFER_BATCH');
+      if (
+        p.config.unitPriceFilter.enabled &&
+        !moneyGreaterThan(1, price, p.config.unitPriceFilter.threshold)
+      )
+        throw new RebalanceError('INVALID_TRANSFER_BATCH');
+      const runQty = sumQuantities(
+        next
+          .filter((t) => t.sourceRunId === p.runId && t.skuCode === code)
+          .map((t) => t.qty),
+      );
+      if (
+        p.config.skuAmountFilter.enabled &&
+        !moneyGreaterThan(runQty, price, p.config.skuAmountFilter.threshold)
+      )
+        throw new RebalanceError('INVALID_TRANSFER_BATCH');
     }
   }
-  return change(input.snapshot, input.currentAccepted, next, additions.flatMap(contextKeys), input.currentRevision);
+  return change(
+    input.snapshot,
+    input.currentAccepted,
+    next,
+    additions.flatMap(contextKeys),
+    input.currentRevision,
+  );
 }
 
-export function revokeTransfers(input: RevokeTransfersInput): AcceptedTransferChange {
-  revision(input.currentRevision, input.expectedRevision); assertLedger(input);
-  const ids = new Set(input.transferIds), removed = input.currentAccepted.filter((t) => ids.has(t.transferId));
-  return change(input.snapshot, input.currentAccepted, input.currentAccepted.filter((t) => !ids.has(t.transferId)), removed.flatMap(contextKeys), input.currentRevision);
+export function revokeTransfers(
+  input: RevokeTransfersInput,
+): AcceptedTransferChange {
+  revision(input.currentRevision, input.expectedRevision);
+  assertLedger(input);
+  const ids = new Set(input.transferIds),
+    removed = input.currentAccepted.filter((t) => ids.has(t.transferId));
+  return change(
+    input.snapshot,
+    input.currentAccepted,
+    input.currentAccepted.filter((t) => !ids.has(t.transferId)),
+    removed.flatMap(contextKeys),
+    input.currentRevision,
+  );
 }

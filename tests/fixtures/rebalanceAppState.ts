@@ -16,7 +16,7 @@ export function rebalanceAppState() {
     branchStocks: branches.map((branch, i) => ({
       skuCode: 'SKU1',
       branch,
-      stock: [75, 80, 10][i]!,
+      stock: [75, 95, 10][i]!,
       min: 20,
       max: 60,
     })),

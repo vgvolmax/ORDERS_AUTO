@@ -1,5 +1,5 @@
+import { skippedReasonLabel } from '../features/rebalancing/skippedRebalance';
 import ExcelJS from 'exceljs';
-import { buildDonorAllocationModel } from '../domain/rebalancing';
 import type { PurchaseDemandLine } from '../domain/purchaseDemand';
 import {
   acceptedEconomicDiagnostics,
@@ -173,47 +173,63 @@ export async function buildRebalancingWorkbook(
       i.sourceRow,
       i.message,
     ]);
+  const skippedSheet = sheet('Не распределено', [
+    'Код',
+    'Товар',
+    'Ед.',
+    'Вся потребность',
+    'Можно доставить',
+    'Не хватает',
+    'Цена MIN/MAX, ₽',
+    'Сумма всей потребности, ₽',
+    'Причина',
+  ]);
+  const skippedRecipients = sheet('Получатели пропущенных', [
+    'Код',
+    'Подразделение',
+    'Ед.',
+    'Нужно',
+    'Можно доставить',
+    'Не хватает',
+  ]);
+  for (const skipped of proposal?.skippedSkus ?? []) {
+    const sku = skus.get(skipped.skuCode),
+      price = sku?.referencePrice ?? null;
+    skippedSheet.addRow([
+      skipped.skuCode,
+      sku?.name ?? skipped.skuCode,
+      sku?.unit ?? null,
+      skipped.neededQty,
+      skipped.deliverableQty,
+      skipped.missingQty,
+      price,
+      price === null ? null : price * skipped.neededQty,
+      skippedReasonLabel[skipped.reason],
+    ]);
+    for (const recipient of skipped.recipients)
+      skippedRecipients.addRow([
+        skipped.skuCode,
+        branches.get(recipient.branchId) ?? recipient.branchId,
+        sku?.unit ?? null,
+        recipient.neededQty,
+        recipient.deliverableQty,
+        Math.max(0, recipient.neededQty - recipient.deliverableQty),
+      ]);
+  }
+  skippedSheet.getColumn(7).numFmt = '#,##0.00';
+  skippedSheet.getColumn(8).numFmt = '#,##0.00';
   const parameters = sheet('Параметры', ['Параметр', 'Значение']);
   parameters.addRows([
     ['Снимок', snapshot.snapshotId],
     ['Сеанс', input.workspaceId],
     ['Выгружено в', input.exportedAt],
     ['Расчёт', proposal?.runId ?? null],
-    ['Ревизия плана', proposal?.allocationRevision ?? 0],
-    ['Режимы распределения', JSON.stringify(proposal?.allocationModes ?? {})],
-    [
-      'Приоритеты и ручные количества',
-      JSON.stringify(proposal?.allocationDecisions ?? []),
-    ],
-    [
-      'Массовые приоритеты донора',
-      JSON.stringify(proposal?.allocationPriorityLevels ?? {}),
-    ],
-    ...Object.entries(proposal?.allocationPriorityLevels ?? {}).flatMap(
-      ([from, levels]) =>
-        levels.map((ids, i) => [
-          `${branches.get(from) ?? from} · Приоритет ${i + 1}`,
-          ids.map((id) => branches.get(id) ?? id).join(', '),
-        ]),
-    ),
-    [
-      'Индивидуальные исключения',
-      JSON.stringify(
-        proposal
-          ? buildDonorAllocationModel({ snapshot, proposal, accepted })
-              .filter(
-                (row) =>
-                  row.individualPriority || row.decisionMode === 'MANUAL',
-              )
-              .map((row) => ({
-                skuCode: row.skuCode,
-                fromBranchId: row.fromBranchId,
-                mode: row.decisionMode,
-              }))
-          : [],
-      ),
-    ],
     ['Версия алгоритма', proposal?.algorithmVersion ?? null],
+    [
+      'Правило распределения',
+      'Только полное покрытие артикула по всей сети; ручные приоритеты отсутствуют',
+    ],
+    ['Участие подразделений', proposal?.participationFingerprint ?? null],
     ['Исходная ревизия принятых', proposal?.baseAcceptedRevision ?? null],
     ['Отпечаток входов', proposal?.inputFingerprint ?? null],
     ['Получатель', input.config.recipientTrigger],

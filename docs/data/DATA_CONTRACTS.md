@@ -1,3 +1,5 @@
+> **Правила29.10.2026 имеют приоритет:** полное покрытие SKU и маршруты по согласованной `2026-10-29-routes-full-coverage-design.md`. Частичное распределение и ручные приоритеты23–28.10 ниже — исторические и заменены уточнением в конце документа.
+
 > **Rebalancing20.10.2026:** для изменённой функции действуют уточнения в конце этого документа и `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md`; исторические правила03.09 в конфликтующей части заменены. PR1 реализует только домен, остальная интеграция — PR2.
 
 # ORDERS_AUTO — Data Contracts
@@ -231,3 +233,12 @@ Proposal.transfers — текущий конкретный план до при�
 В RebalanceProposal добавлено optional allocationPriorityLevels: Record<donorId,[string[],string[],string[]]>. PRIORITY-решения получают optional recipientLevels того же типа; recipientIds отражает первый уровень. Отсутствие recipientLevels сохраняет legacy exclusive-set. Наличие трёх пустых уровней означает явно настроенную группу остальных. SchemaVersion/IndexedDB неизменны; proposal сохраняется целиком. Команда валидирует активные ID, отсутствие donor/self и повторов; меняет решения атомарно и повышает allocationRevision один раз.
 
 Состав recipientLevels определяется исходной допустимостью SKU/получателя и маршрутом, а не текущим положительным остатком потребности. Принятый вход другого донора может временно закрыть потребность, но не удаляет сохранённый приоритет. После отмены принятия следующий явный пересчёт использует тот же порядок уровней; индивидуальные исключения первого уровня сохраняются. Актуальная потребность проверяется при распределении количества.
+
+
+### Полное покрытие ·29.10.2026
+
+`RebalanceResult` получает optional `skippedSkus: SkippedRebalanceSku[]` и `participationFingerprint:string`. Каждая пропущенная запись содержит skuCode, neededQty (вся остаточная потребность), deliverableQty (диагностический максимум), missingQty (их разность), reason INSUFFICIENT_SURPLUS/ROUTE_LIMIT/QUANTITY_STEP и recipients[{branchId,neededQty,deliverableQty}]. Диагностический поток никогда не входит в transfers. `RebalanceSnapshot.validationIssues?:RebalanceIssue[]` сохраняет сведения об исключённых/неоднозначных строках адаптера: известная невалидная выбранная потребность не должна давать ложное полное покрытие. Невалидные physical rows не возвращаются в принятый журнал.
+
+Валидные physical rows не удаляются из snapshot только из-за inactive. Участие проверяется отдельно для новых потоков/принятий; исторический ledger использует собственные сохранённые условия. Новые proposal имеют algorithmVersion `full-sku-network-flow-v3`, захватывают каноническую сигнатуру ID/active и не содержат allocation-полей. Старые optional allocation DTO читаются только как история; runtime setters/модели удалены. Старый tab priorities нормализуется в routes. Отсутствующая версия/сигнатура блокирует новые добавления, но не исторический no-op/revoke. SchemaVersion1 и IndexedDBv2 сохраняются.
+
+`INVALID_BRANCH_VALUES` — source error для узнаваемого подразделения с нечисловым остатком/MIN/MAX в XLSX. Парсер сохраняет SKU/название подразделения/номер строки; адаптер передаёт её в validationIssues, чтобы отсутствующая невалидная строка не давала ложного full coverage. Служебные подписи не становятся подразделениями.

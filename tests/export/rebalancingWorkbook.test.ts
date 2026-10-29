@@ -43,10 +43,12 @@ it('separates accepted from remaining proposals and exports current purchase tot
     'Предложения',
     'Сводка',
     'Исключения',
+    'Не распределено',
+    'Получатели пропущенных',
     'Параметры',
   ]);
   expect(wb.getWorksheet('Принятые')!.getCell('D2').value).toBe(15);
-  expect(wb.getWorksheet('Предложения')!.getCell('D2').value).toBe(20);
+  expect(wb.getWorksheet('Предложения')!.getCell('D2').value).toBe(35);
   expect(wb.getWorksheet('Принятые')!.getCell('F2').value).toBeNull();
   expect(wb.getWorksheet('Принятые')!.getCell('G2').value).toBeNull();
   const summary = wb.getWorksheet('Сводка')!;
@@ -69,4 +71,36 @@ it('supplier CSV/XLSX share the accepted projection; manual quantity remains the
     );
     expect(wb.getWorksheet('Получатель')!.getCell('D2').value).toBe(qty);
   }
+});
+
+it('exports whole skipped need and route feasibility separately with recipient breakdown', async () => {
+  const s = rebalanceAppState();
+  s.minMax!.branchStocks[0]!.stock = 67;
+  s.minMax!.branchStocks[1]!.stock = 65;
+  s.minMax!.branchStocks[2]!.stock = 46;
+  s.minMax!.branchStocks[2]!.min = 50;
+  s.rebalance.proposal = createProposal(s);
+  const d = derive(s),
+    wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(
+    await buildRebalancingWorkbook({
+      snapshot: d.snapshot!.snapshot,
+      config: s.rebalance.config,
+      proposal: s.rebalance.proposal,
+      accepted: [],
+      purchaseDemand: d.purchaseDemand,
+      issues: [],
+      workspaceId: s.workspaceId,
+      exportedAt: '2026-10-29T10:00:00Z',
+    }),
+  );
+  const skipped = wb.getWorksheet('Не распределено');
+  expect(skipped).toBeDefined();
+  expect(skipped!.getRow(2).values).toEqual(
+    expect.arrayContaining(['SKU1', 14, 12, 2, 1400]),
+  );
+  expect(wb.getWorksheet('Получатели пропущенных')!.getRow(2).values).toEqual(
+    expect.arrayContaining(['SKU1', 'Получатель', 14, 12, 2]),
+  );
+  expect(wb.getWorksheet('Предложения')!.rowCount).toBe(1);
 });

@@ -1,9 +1,12 @@
 export * from './types';
 export { validateRebalanceSnapshot } from './validation';
 export { acceptTransfers, revokeTransfers } from './acceptedTransfers';
-export { rebalanceConfigFingerprint } from './constraints';
+export {
+  rebalanceConfigFingerprint,
+  branchParticipationFingerprint,
+} from './constraints';
 export { buildRouteIndex } from './routes';
-export { calculateRebalance } from './calculate';
+export { calculateRebalance, ALGORITHM_VERSION } from './calculate';
 export { acceptedEconomicDiagnostics } from './economics';
 export {
   buildMovementSummary,
@@ -11,17 +14,3 @@ export {
   type MovementSummaryInput,
   type MovementSummary,
 } from './movementSummary';
-
-export {
-  buildDonorAllocationModel,
-  setDonorPriorities,
-  setDonorPriorityLevels,
-  setDonorQuantity,
-  setDonorSplitMode,
-  assertDonorPrioritiesReady,
-  type AllocationContext,
-  type DonorAllocationRow,
-  type DonorAllocationCell,
-} from './allocationPlan';
-
-export { donorAcceptanceIds } from './donorPriorityLevels';

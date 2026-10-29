@@ -1,3 +1,5 @@
+> **Исторический документ:** ручные приоритеты отменены пользователем29.10.2026. Текущая спецификация: `docs/superpowers/specs/2026-10-29-routes-full-coverage-design.md`.
+
 # Donor priority cards Implementation Plan
 
 > **For agentic workers:** Use superpowers:executing-plans inline; one fresh whole-branch reviewer at end.

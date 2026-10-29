@@ -1,3 +1,5 @@
+> **Исторический документ:** ручные приоритеты отменены пользователем29.10.2026. Текущая спецификация: `docs/superpowers/specs/2026-10-29-routes-full-coverage-design.md`.
+
 # План реализации: три приоритета донора
 
 Spec: `docs/superpowers/specs/2026-10-23-donor-priority-tiers-design.md` (утверждено).
