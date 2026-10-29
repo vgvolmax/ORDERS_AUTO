@@ -1630,12 +1630,19 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   await expect(
     transfer.getByRole('row').filter({ hasText: 'FULL1' }),
   ).toContainText('Принято');
-  await expect(
-    transfer
-      .getByRole('row')
-      .filter({ hasText: 'FULL2' })
-      .getByRole('checkbox'),
-  ).toBeDisabled();
+  const unacceptedRow = transfer.getByRole('row').filter({ hasText: 'FULL2' });
+  // A stale-plan banner can leave room for one row; use the real composition pages.
+  if ((await unacceptedRow.count()) === 0)
+    await transfer
+      .getByRole('button', { name: 'Следующая страница', exact: true })
+      .click();
+  await expect(unacceptedRow.getByRole('checkbox')).toBeDisabled();
+  const firstPage = transfer.getByRole('button', {
+    name: 'Первая страница',
+    exact: true,
+  });
+  if (await firstPage.isEnabled()) await firstPage.click();
+
   const stillAcceptedDownload = page.waitForEvent('download');
   await transfer
     .getByRole('button', {
