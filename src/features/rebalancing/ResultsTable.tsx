@@ -146,7 +146,11 @@ export function ResultsTable({
       <div className="filters">
         <label className="filter-search">
           Поиск по коду, артикулу, товару и маршруту
-          <SearchInput value={query} onValueChange={onQuery} />
+          <SearchInput
+            aria-label="Поиск по коду, артикулу, товару и маршруту"
+            value={query}
+            onValueChange={onQuery}
+          />
         </label>
         <span>Выбрано к принятию: {selectedIds.length}</span>
         <Button

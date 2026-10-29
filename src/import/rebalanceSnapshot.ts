@@ -31,7 +31,8 @@ export function createRebalanceSnapshot(
   const blockedSourceKeys = new Set<string>();
   for (const issue of input.sourceIssues ?? [])
     if (
-      issue.code === 'DUPLICATE_SKU_BRANCH' &&
+      (issue.code === 'DUPLICATE_SKU_BRANCH' ||
+        issue.code === 'INVALID_BRANCH_VALUES') &&
       issue.skuCode &&
       issue.branch
     ) {

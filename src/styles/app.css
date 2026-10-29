@@ -455,3 +455,18 @@ details summary { cursor: pointer; }
 .rebalancing-routes .coverage-metrics .metric > small .link {
   margin-left: 5px;
 }
+/* Keep the nine-branch route workspace visible at 1280×600. */
+.rebalancing-routes { padding-top: 8px; padding-bottom: 8px; }
+.rebalancing-routes > header { margin-bottom: 6px; align-items: center; }
+.rebalancing-routes > header p { display: none; }
+.rebalancing-routes .coverage-metrics { margin: 6px 0; }
+.rebalancing-routes .workspace-tabs { margin: 8px 0; }
+.rebalancing-routes .workspace-tabs button { padding: 6px 4px; }
+/* The existing branch list owns sidebar scrolling; chrome must not lengthen the page. */
+.shell:has(.rebalancing-routes) .sidebar { display: flex; flex-direction: column; min-height: 0; }
+.shell:has(.rebalancing-routes) .sidebar .brand,
+.shell:has(.rebalancing-routes) .sidebar > button,
+.shell:has(.rebalancing-routes) .sidebar nav > button,
+.shell:has(.rebalancing-routes) .sidebar nav > .nav-label { flex-shrink: 0; }
+.shell:has(.rebalancing-routes) .sidebar nav { flex: 1; min-height: 0; }
+.shell:has(.rebalancing-routes) .sidebar .branch-nav { flex: 1; min-height: 0; }

@@ -142,7 +142,9 @@ export function SkippedRebalanceList({
                     <div className="skip-cell">
                       <span>{skippedReasonLabel[r.reason]}</span>
                       <strong>
-                        {price == null || !Number.isFinite(price * r.neededQty)
+                        {price == null ||
+                        price < 0 ||
+                        !Number.isFinite(price * r.neededQty)
                           ? 'Сумма неизвестна'
                           : money(price * r.neededQty)}
                       </strong>

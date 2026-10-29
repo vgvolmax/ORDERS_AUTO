@@ -148,3 +148,68 @@ it('keeps accepted purchasing and revoke available after disabling its donor and
       .purchaseQty,
   ).toBe(50);
 });
+
+it('keeps the result search name stable while typing and clearing', async () => {
+  const { useState } = await import('react');
+  const { fireEvent } = await import('@testing-library/react');
+  const initial = rebalanceAppState();
+  initial.rebalance.proposal = createProposal(initial);
+  initial.rebalance.tab = 'results';
+  function Harness() {
+    const [state, set] = useState(initial);
+    return (
+      <StoreContext.Provider
+        value={{
+          state,
+          set: (p) =>
+            set((s) => ({ ...s, ...(typeof p === 'function' ? p(s) : p) })),
+        }}
+      >
+        <RebalancingPage />
+      </StoreContext.Provider>
+    );
+  }
+  render(<Harness />);
+  const name = 'Поиск по коду, артикулу, товару и маршруту';
+  fireEvent.change(screen.getByRole('textbox', { name }), {
+    target: { value: 'SKU1' },
+  });
+  expect(screen.getByRole('textbox', { name })).toHaveValue(
+    'SKU1',
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Очистить поиск' }));
+  expect(screen.getByRole('textbox', { name })).toHaveValue('');
+  expect(screen.getByRole('textbox', { name })).toHaveFocus();
+});
+
+it('treats a negative raw price as unknown consistently in skipped details', async () => {
+  const { SkippedRebalanceList } = await import(
+    '../../src/features/rebalancing/SkippedRebalanceList'
+  );
+  const initial = rebalanceAppState();
+  const proposal = {
+    ...createProposal(initial),
+    skippedSkus: [
+      {
+        skuCode: 'SKU1',
+        neededQty: 14,
+        deliverableQty: 12,
+        missingQty: 2,
+        reason: 'INSUFFICIENT_SURPLUS' as const,
+        recipients: [],
+      },
+    ],
+  };
+  render(
+    <SkippedRebalanceList
+      proposal={proposal}
+      skus={[{ ...initial.minMax!.skus[0]!, referencePrice: -10 }]}
+      registry={initial.rebalance.registry}
+      policies={initial.rebalance.policies}
+      stale={false}
+      onBack={() => undefined}
+    />,
+  );
+  expect(screen.getByText('Сумма неизвестна')).toBeVisible();
+  expect(screen.queryByText(/−?[-]140,00/)).not.toBeInTheDocument();
+});
