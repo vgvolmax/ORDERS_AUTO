@@ -471,7 +471,8 @@ details summary { cursor: pointer; }
 .transfer-drawer .virtual-scroll { overflow: auto; overscroll-behavior: contain; }
 .transfer-table-frame .virtual-table { min-width: 0; }
 .transfer-matrix .virtual-row { isolation: isolate; }
-.transfer-matrix .transfer-identity { z-index: 2; background: #f7f8fa; background-clip: border-box; box-shadow: 1px 0 0 var(--line); }
+/* The opaque surface must cover the row, not only the centered summary. */
+.transfer-matrix .transfer-identity { align-self: stretch; display: flex; align-items: center; z-index: 2; background: #f7f8fa; background-clip: border-box; box-shadow: 1px 0 0 var(--line); }
 .transfer-matrix .virtual-header .transfer-identity { z-index: 3; }
 .decision-list .decision { gap: 0; padding: 0; align-items: center; }
 .decision-list .decision p { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
