@@ -156,6 +156,7 @@ export function RoutesMatrix({
     <div
       className={`routes-branch routes-branch-${axis === 'строка' ? 'row' : 'column'}`}
     >
+      <label className="routes-active-toggle">
       <input
         type="checkbox"
         checked={branch.active}
@@ -171,6 +172,7 @@ export function RoutesMatrix({
           )
         }
       />
+      </label>
       <Button
         className="routes-branch-button"
         aria-label={`Настроить направления ${branch.name}, ${axis}`}

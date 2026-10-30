@@ -132,6 +132,9 @@ export function ResultsTable({
     )
     .map((t) => t.sourceLineId);
   const eligibleIds = new Set(eligible.map((l) => l.sourceLineId));
+  const hiddenSelectedCount = selectedIds.filter(
+    (id) => !eligibleIds.has(id),
+  ).length;
   return (
     <>
       {(scope.skuCode || scope.branchId) && (
@@ -161,6 +164,11 @@ export function ResultsTable({
           />
         </label>
         <span>Выбрано к принятию: {selectedIds.length}</span>
+        {hiddenSelectedCount > 0 && (
+          <small className="selection-scope" role="status">
+            Скрыто фильтрами: {hiddenSelectedCount}
+          </small>
+        )}
         <Button
           disabled={!selectedIds.length || stale || busy}
           onClick={() => onAccept(selectedIds)}
@@ -188,17 +196,21 @@ export function ResultsTable({
             Отметить видимые ({eligible.length})
           </label>
         </div>
-        <p>
+        <p className="result-counts">
           Предложено строк по фильтрам: {eligible.length}. Учтено строк по
           фильтрам:{' '}
           {visibleLines.filter((l) => l.decision === 'ACCEPTED').length}.
           Отклонено:{' '}
           {visibleLines.filter((l) => l.decision === 'REJECTED').length}.
         </p>
-        <p>
-          Строки матрицы — отправители, столбцы — получатели. Нажмите на ячейку,
-          чтобы открыть состав. Предложения и галочки не изменяют заказы.
-        </p>
+        <details className="results-help">
+          <summary>Как работают предложения и выбор</summary>
+          <p>
+            Строки матрицы — отправители, столбцы — получатели. Нажмите на
+            ячейку, чтобы открыть состав. Предложения и галочки не изменяют
+            заказы.
+          </p>
+        </details>
         <div className="transfer-matrix">
           <VirtualTable
             rows={rows}
@@ -262,7 +274,8 @@ export function ResultsTable({
                         (summary.activeCount > 0 &&
                         acceptedCount === summary.activeCount
                           ? 'is-reviewed'
-                          : '')
+                          : '') +
+                        (summary.selectedCount > 0 ? ' has-selection' : '')
                       }
                       aria-label={[
                         'Открыть перемещение',
@@ -277,8 +290,8 @@ export function ResultsTable({
                           ? 'Сумма неизвестна'
                           : 'Сумма: ' + money(doc.totalAmount)}
                       </strong>
-                      <span>{doc.skuCount} SKU</span>
-                      <span>
+                      <span className="route-volume">
+                        {doc.skuCount} SKU ·{' '}
                         {doc.totalsByUnit
                           .map(
                             (g) =>
@@ -289,7 +302,7 @@ export function ResultsTable({
                           )
                           .join(' · ') || 'Нет активных позиций'}
                       </span>
-                      <span>
+                      <span className="route-decision-count">
                         Предложено:{' '}
                         {
                           doc.lines.filter((l) => l.decision === 'PROPOSED')
@@ -297,18 +310,26 @@ export function ResultsTable({
                         }{' '}
                         · Принято: {acceptedCount} из {summary.activeCount}
                       </span>
-                      <span>
-                        Принято на сумму:{' '}
-                        {summary.acceptedAmount === null
-                          ? 'Сумма неизвестна'
-                          : money(summary.acceptedAmount)}
-                      </span>
-                      <span>
-                        Выбрано на сумму:{' '}
-                        {summary.selectedAmount === null
-                          ? 'Сумма неизвестна'
-                          : money(summary.selectedAmount)}
-                      </span>
+                      <dl className="route-money">
+                        <div>
+                          <dt>Принято на сумму:</dt>
+                          <dd>
+                            {' '}
+                            {summary.acceptedAmount === null
+                              ? 'Сумма неизвестна'
+                              : money(summary.acceptedAmount)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Выбрано на сумму:</dt>
+                          <dd>
+                            {' '}
+                            {summary.selectedAmount === null
+                              ? 'Сумма неизвестна'
+                              : money(summary.selectedAmount)}
+                          </dd>
+                        </div>
+                      </dl>
                       {doc.lines.some((l) => l.decision === 'REJECTED') && (
                         <span>
                           Отклонено:{' '}

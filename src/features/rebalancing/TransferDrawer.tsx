@@ -89,23 +89,23 @@ export function TransferDrawer({
               {summary.activeCount}
             </p>
           </div>
+          <div className="transfer-financial-summary">
+            <div aria-label="Сумма перемещения">
+              <small>Всего в перемещении</small>
+              <strong>{amount(summary.totalAmount)}</strong>
+            </div>
+            <div aria-label="Принято на сумму в перемещении">
+              <small>Принято в перемещении</small>
+              <strong>{amount(summary.acceptedAmount)}</strong>
+            </div>
+            <div aria-label="Выбрано на сумму в перемещении">
+              <small>Выбрано по поиску · {routeSelected.length} поз.</small>
+              <strong>{amount(selectedAmount)}</strong>
+            </div>
+          </div>
           <button className="close" aria-label="Закрыть" onClick={onClose}>
             ×
           </button>
-        </div>
-        <div className="transfer-financial-summary">
-          <div aria-label="Сумма перемещения">
-            <small>Всего в перемещении</small>
-            <strong>{amount(summary.totalAmount)}</strong>
-          </div>
-          <div aria-label="Принято на сумму в перемещении">
-            <small>Принято в перемещении</small>
-            <strong>{amount(summary.acceptedAmount)}</strong>
-          </div>
-          <div aria-label="Выбрано на сумму в перемещении">
-            <small>Выбрано по поиску · {routeSelected.length} поз.</small>
-            <strong>{amount(selectedAmount)}</strong>
-          </div>
         </div>
         {stale && (
           <Alert tone="warning">
@@ -116,9 +116,10 @@ export function TransferDrawer({
         {error && <Alert tone="danger">{error}</Alert>}
         <div className="filters compact-filters transfer-toolbar">
           <label>
-            Поиск по составу перемещения
+            Поиск
             <SearchInput
               aria-label="Поиск по составу перемещения"
+              placeholder="Код, артикул или наименование"
               value={query}
               onValueChange={(value) => {
                 setQuery(value);
@@ -153,7 +154,7 @@ export function TransferDrawer({
         <div className="transfer-table-frame">
           <VirtualTable
             rows={rows}
-            estimateRowHeight={108}
+            estimateRowHeight={88}
             maxHeight="100%"
             getRowKey={(l) => l.id}
             emptyMessage={

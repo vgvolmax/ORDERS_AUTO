@@ -1,9 +1,8 @@
 .drawer.supplier-orders-drawer {
-  inset: 0;
+  inset: var(--feedback-height) 0 0;
   width: 100vw;
   max-width: none;
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100dvh - var(--feedback-height));
   padding: 18px 20px 20px;
   overflow: hidden;
   display: flex;

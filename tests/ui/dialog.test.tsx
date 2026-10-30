@@ -2,6 +2,27 @@ import { useState } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import { Dialog } from '../../src/components/Dialog';
+import { AppToast } from '../../src/components/AppToast';
+it('keeps the shared notification live while making the modal background inert', () => {
+  function Example() {
+    const [open, set] = useState(false);
+    return (
+      <>
+        <button onClick={() => set(true)}>Открыть</button>
+        <AppToast message="Сеанс сохранён" />
+        {open && (
+          <Dialog title="Окно" onClose={() => set(false)}>
+            Содержимое
+          </Dialog>
+        )}
+      </>
+    );
+  }
+  const { container } = render(<Example />);
+  fireEvent.click(screen.getByRole('button', { name: 'Открыть' }));
+  expect(container.inert).toBe(true);
+  expect((screen.getByRole('status') as HTMLElement).inert).not.toBe(true);
+});
 it('traps keyboard focus, isolates background, cancels with Escape and returns focus', () => {
   function Example() {
     const [open, set] = useState(false);

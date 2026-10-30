@@ -4,6 +4,7 @@ import { useStore } from '../../app/appStore';
 import { derive, type WorkflowOrder } from '../../app/selectors';
 import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
+import { QuantitySummary } from '../../components/QuantitySummary';
 import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import {
@@ -25,7 +26,7 @@ import {
 } from '../../export/download';
 import { supplierWorkbookFilename } from '../../export/orderFilenames';
 import { buildSupplierWorkbook } from '../../export/supplierWorkbook';
-import { fmtQty, money } from '../demand/DemandPage';
+import { money } from '../../format/numbers';
 import { OrderDrawer } from './OrderDrawer';
 import { SupplierOrdersDrawer } from './SupplierOrdersDrawer';
 
@@ -37,6 +38,7 @@ export function OrdersPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
+  const [exportError, setExportError] = useState('');
   const [supplierQuery, setSupplierQuery] = usePreference('orders:query', '');
   const [showBelowThreshold, setShowBelowThreshold] = usePreference(
     'orders:belowThreshold',
@@ -92,10 +94,10 @@ export function OrdersPage() {
   const suppliers = [...new Set(visibleOrders.map((order) => order.supplier))];
   const branches = state.minMax!.branches;
   const selected = selectedId
-    ? orders.find((order) => order.id === selectedId) ?? null
+    ? (orders.find((order) => order.id === selectedId) ?? null)
     : null;
   const selectedSupplierOrders = selectedSupplier
-    ? ordersBySupplier.get(selectedSupplier) ?? []
+    ? (ordersBySupplier.get(selectedSupplier) ?? [])
     : [];
 
   const markExported = async (
@@ -129,6 +131,7 @@ export function OrdersPage() {
   async function zip(mode: ExportMode) {
     const target = mode === 'REVIEWED' ? reviewedExportable : exportable;
     if (target.length === 0) return;
+    setExportError('');
     setBusy(`Формирование ${target.length} CSV…`);
     try {
       await downloadReadyOrdersZip(target);
@@ -141,6 +144,9 @@ export function OrdersPage() {
       });
     } catch (error) {
       console.error('Failed to export orders ZIP', error);
+      setExportError(
+        'Не удалось сформировать ZIP с заказами. Повторите выгрузку.',
+      );
       set({
         toast: 'Не удалось сформировать ZIP с заказами. Повторите выгрузку.',
       });
@@ -157,6 +163,7 @@ export function OrdersPage() {
         (mode === 'ALL' || order.reviewed),
     );
     if (supplierOrders.length === 0) return;
+    setExportError('');
     setBusy(`Создание Excel для ${supplier}…`);
     try {
       const buffer = await buildSupplierWorkbook(supplier, supplierOrders);
@@ -181,6 +188,9 @@ export function OrdersPage() {
       set({
         toast: `Не удалось сформировать Excel для ${supplier}. Повторите выгрузку.`,
       });
+      setExportError(
+        `Не удалось сформировать Excel для ${supplier}. Повторите выгрузку.`,
+      );
     } finally {
       setBusy('');
     }
@@ -194,7 +204,6 @@ export function OrdersPage() {
     try {
       const currentLine = order.lines.find((line) => line.skuCode === skuCode);
       if (!commit && currentLine?.orderQty === qty) {
-        set({ toast: 'Количество не изменилось.' });
         return;
       }
       const patch = (s: typeof state) => {
@@ -206,7 +215,7 @@ export function OrdersPage() {
           current.lines.find((line) => line.skuCode === skuCode)?.orderQty ===
           qty
         )
-          return { toast: 'Количество не изменилось.' };
+          return {};
         return {
           ...applyOrderQtyChange({
             edits: s.edits,
@@ -216,8 +225,6 @@ export function OrdersPage() {
             skuCode,
             qty,
           }),
-          toast:
-            'Количество и сумма заказа пересчитаны. Проверка заказа снята.',
         };
       };
       if (commit) await commit(patch);
@@ -257,6 +264,7 @@ export function OrdersPage() {
     order: WorkflowOrder,
     allowBelowThreshold: boolean,
   ) {
+    setExportError('');
     const hardBlockers = order.blockers.filter(
       (blocker) => blocker !== 'Ниже минимальной суммы',
     );
@@ -274,6 +282,7 @@ export function OrdersPage() {
       });
     } catch (error) {
       console.error(`Failed to export CSV for order ${order.id}`, error);
+      setExportError('Не удалось сформировать CSV заказа. Повторите выгрузку.');
       set({ toast: 'Не удалось сформировать CSV заказа. Повторите выгрузку.' });
     }
   }
@@ -307,11 +316,12 @@ export function OrdersPage() {
           </Button>
         </div>
       </header>
+      {exportError && <Alert tone="danger">{exportError}</Alert>}
 
       <ThresholdControls
         settings={state.settings}
         onChange={async (settings) => {
-          const patch = { settings, toast: 'Порог закупки пересчитан.' };
+          const patch = { settings };
           if (commit) await commit(patch);
           else set(patch);
         }}
@@ -434,8 +444,16 @@ export function OrdersPage() {
                             'подразделения',
                             'подразделений',
                           ])}{' '}
-                          · {supplierSkuCount} SKU · {fmtQty(supplierTotal.qty)}{' '}
-                          ед.
+                          · {supplierSkuCount} SKU ·{' '}
+                          <QuantitySummary
+                            rows={allSupplierOrders.flatMap((order) =>
+                              order.lines.map((line) => ({
+                                skuCode: line.skuCode,
+                                qty: line.orderQty,
+                                unit: line.unit,
+                              })),
+                            )}
+                          />
                         </small>
                         <span className="order-status-line">
                           <small>
@@ -510,8 +528,8 @@ export function OrdersPage() {
                               {order.status === 'READY'
                                 ? 'Готов'
                                 : order.status === 'EXPORTED'
-                                ? 'Выгружен'
-                                : 'Заблокирован'}
+                                  ? 'Выгружен'
+                                  : 'Заблокирован'}
                             </span>
                             {order.blockers.map((blocker) => (
                               <small key={blocker}>{blocker}</small>
@@ -560,6 +578,7 @@ export function OrdersPage() {
       {selected && (
         <OrderDrawer
           order={selected}
+          exportError={exportError}
           saving={Boolean(busy || saving)}
           renderMovement={(line) => (
             <MovementIndicator
@@ -594,8 +613,7 @@ export function OrdersPage() {
           branchOrder={branches}
           widthPreferences={
             state.uiPreferences.supplierMatrixWidths as
-              | Record<string, number>
-              | undefined
+              Record<string, number> | undefined
           }
           onWidthsChange={(supplierMatrixWidths) =>
             set((s) => ({
