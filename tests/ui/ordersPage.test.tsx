@@ -38,9 +38,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/export/download', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('../../src/export/download')
-  >();
+  const actual =
+    await importOriginal<typeof import('../../src/export/download')>();
   return {
     ...actual,
     save: mocks.save,
@@ -67,7 +66,7 @@ describe('OrdersPage', () => {
       name: /все заказы ип баранов роман борисович/i,
     });
     expect(card).toHaveTextContent('1 100,00 ₽');
-    expect(card).toHaveTextContent('2 подразделения · 1 SKU · 11 ед.');
+    expect(card).toHaveTextContent('2 подразделения · 1 SKU · 11 шт');
   });
 
   it('opens the complete supplier-wide order set from the accessible supplier card', () => {
@@ -110,7 +109,7 @@ describe('OrdersPage', () => {
     const input = screen.getByLabelText('Количество SKU1');
     fireEvent.change(input, { target: { value: '7.0' } });
 
-    expect(set).toHaveBeenCalledWith({ toast: 'Количество не изменилось.' });
+    expect(set).not.toHaveBeenCalled();
     expect(set).not.toHaveBeenCalledWith(
       expect.objectContaining({ reviewedOrderIds: expect.anything() }),
     );
@@ -130,6 +129,9 @@ describe('OrdersPage', () => {
       expect(set).toHaveBeenCalledWith({
         toast: 'Не удалось сформировать ZIP с заказами. Повторите выгрузку.',
       }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Не удалось сформировать ZIP с заказами',
     );
   });
 

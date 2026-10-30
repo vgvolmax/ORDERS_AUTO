@@ -261,15 +261,32 @@ export function RebalancingPage() {
     if (!confirmation) return undefined;
     const ids = new Set(confirmation.ids);
     const chosen = buildTransferDocuments({
-      proposal: r.proposal, accepted: r.accepted, registry: r.registry,
-      policies, skus: state.minMax?.skus ?? [], snapshot: d.snapshot?.snapshot ?? null,
-      selected: [], rejected: r.rejectedLineIds, query: '', scope: {},
-    }).flatMap((doc) => doc.lines.filter((line) =>
-      confirmation.kind === 'accept'
-        ? line.decision === 'PROPOSED' && ids.has(line.sourceLineId)
-        : line.decision === 'ACCEPTED' && ids.has(line.transferId ?? ''),
-    ).map((line) => ({ ...line, donor: doc.fromName, recipient: doc.toName })));
-    const missingPriceLineCount = chosen.filter((line) => line.amount === null).length;
+      proposal: r.proposal,
+      accepted: r.accepted,
+      registry: r.registry,
+      policies,
+      skus: state.minMax?.skus ?? [],
+      snapshot: d.snapshot?.snapshot ?? null,
+      selected: [],
+      rejected: r.rejectedLineIds,
+      query: '',
+      scope: {},
+    }).flatMap((doc) =>
+      doc.lines
+        .filter((line) =>
+          confirmation.kind === 'accept'
+            ? line.decision === 'PROPOSED' && ids.has(line.sourceLineId)
+            : line.decision === 'ACCEPTED' && ids.has(line.transferId ?? ''),
+        )
+        .map((line) => ({
+          ...line,
+          donor: doc.fromName,
+          recipient: doc.toName,
+        })),
+    );
+    const missingPriceLineCount = chosen.filter(
+      (line) => line.amount === null,
+    ).length;
     const amount = chosen.reduce((sum, line) => sum + (line.amount ?? 0), 0);
     return {
       donor: [...new Set(chosen.map((line) => line.donor))].join(', '),
@@ -278,7 +295,16 @@ export function RebalancingPage() {
       amount: missingPriceLineCount || !Number.isFinite(amount) ? null : amount,
       missingPriceLineCount,
     };
-  }, [confirmation, r.proposal, r.accepted, r.registry, r.rejectedLineIds, policies, state.minMax?.skus, d.snapshot]);
+  }, [
+    confirmation,
+    r.proposal,
+    r.accepted,
+    r.registry,
+    r.rejectedLineIds,
+    policies,
+    state.minMax?.skus,
+    d.snapshot,
+  ]);
   async function confirm() {
     if (!confirmation || busy) return;
     setBusy(true);
@@ -426,7 +452,7 @@ export function RebalancingPage() {
               'Нет расчёта'
             )
           }
-          note="Непринятые предложения · цены MIN/MAX"
+          note="Весь план · непринятые предложения · цены MIN/MAX"
         />
         <MetricCard
           label="Не распределено"
@@ -463,7 +489,7 @@ export function RebalancingPage() {
               ? 'Сумма неизвестна'
               : money(totals.acceptedAmount)
           }
-          note={`${totals.acceptedCount} из ${totals.activeCount} активных строк · выбрано ${decisions.selectedLineIds.length}`}
+          note={`Весь план · ${totals.acceptedCount} из ${totals.activeCount} активных строк · выбрано ${decisions.selectedLineIds.length}`}
         />
       </div>
       <div
@@ -545,6 +571,10 @@ export function RebalancingPage() {
                   skus={state.minMax?.skus ?? []}
                   stale={stale}
                   onBack={() => setShowSkipped(false)}
+                  onRoutes={() => {
+                    setShowSkipped(false);
+                    edit({ tab: 'routes' });
+                  }}
                 />
               ) : (
                 <>

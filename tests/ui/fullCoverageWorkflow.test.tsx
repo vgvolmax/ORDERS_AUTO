@@ -73,14 +73,26 @@ it('opens skipped need from the dashboard and explains why trial flow was discar
   const dialog = screen.getByRole('dialog', { name: 'Не распределено · A1' });
   expect(dialog).toHaveTextContent('Получатель');
   expect(within(dialog).queryByRole('spinbutton')).not.toBeInTheDocument();
+  expect(
+    within(dialog).getByRole('group', {
+      name: 'Итоги нераспределённого товара',
+    }),
+  ).toHaveTextContent('Нужно14');
+  fireEvent.click(
+    within(dialog).getByRole('button', { name: 'Проверить маршруты' }),
+  );
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: 'Маршруты' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 });
 
 it('keeps accepted purchasing and revoke available after disabling its donor and reloading the state', async () => {
   const { useState } = await import('react');
   const { fireEvent, within, waitFor } = await import('@testing-library/react');
-  const { prepareAcceptedChange } = await import(
-    '../../src/app/rebalanceActions'
-  );
+  const { prepareAcceptedChange } =
+    await import('../../src/app/rebalanceActions');
   const { derive } = await import('../../src/app/selectors');
   const initial = rebalanceAppState();
   initial.rebalance.proposal = createProposal(initial);
@@ -119,9 +131,8 @@ it('keeps accepted purchasing and revoke available after disabling its donor and
       .purchaseQty,
   ).toBe(35);
   expect(screen.getByText(/Предложения устарели/)).toBeVisible();
-  const { stateFromWorkspace, workspaceFromState } = await import(
-    '../../src/app/workspaceSession'
-  );
+  const { stateFromWorkspace, workspaceFromState } =
+    await import('../../src/app/workspaceSession');
   const loaded = stateFromWorkspace(workspaceFromState(current));
   expect(loaded.rebalance.registry[0]!.active).toBe(false);
   unmount();
@@ -174,18 +185,15 @@ it('keeps the result search name stable while typing and clearing', async () => 
   fireEvent.change(screen.getByRole('textbox', { name }), {
     target: { value: 'SKU1' },
   });
-  expect(screen.getByRole('textbox', { name })).toHaveValue(
-    'SKU1',
-  );
+  expect(screen.getByRole('textbox', { name })).toHaveValue('SKU1');
   fireEvent.click(screen.getByRole('button', { name: 'Очистить поиск' }));
   expect(screen.getByRole('textbox', { name })).toHaveValue('');
   expect(screen.getByRole('textbox', { name })).toHaveFocus();
 });
 
 it('treats a negative raw price as unknown consistently in skipped details', async () => {
-  const { SkippedRebalanceList } = await import(
-    '../../src/features/rebalancing/SkippedRebalanceList'
-  );
+  const { SkippedRebalanceList } =
+    await import('../../src/features/rebalancing/SkippedRebalanceList');
   const initial = rebalanceAppState();
   const proposal = {
     ...createProposal(initial),

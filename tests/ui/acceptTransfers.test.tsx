@@ -13,7 +13,9 @@ import { createProposal } from '../../src/app/rebalanceActions';
 import { derive } from '../../src/app/selectors';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
 import { AcceptTransfersDialog } from '../../src/features/rebalancing/AcceptTransfersDialog';
-export function Harness({ initial = rebalanceAppState }: { initial?: typeof rebalanceAppState } = {}) {
+export function Harness({
+  initial = rebalanceAppState,
+}: { initial?: typeof rebalanceAppState } = {}) {
   const [state, update] = useState(() => {
     const s = initial();
     s.rebalance.proposal = createProposal(s);
@@ -33,17 +35,33 @@ export function Harness({ initial = rebalanceAppState }: { initial?: typeof reba
 }
 it('shows the selected route, SKU count and amount in the acceptance confirmation', () => {
   render(<Harness />);
-  fireEvent.click(screen.getByRole('button', { name: 'Открыть перемещение Донор А → Получатель' }));
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: 'Открыть перемещение Донор А → Получатель',
+    }),
+  );
   const drawer = screen.getByRole('dialog', { name: 'Состав перемещения' });
-  fireEvent.click(within(drawer).getByRole('checkbox', { name: /Выбрать перемещение/ }));
-  fireEvent.click(within(drawer).getByRole('button', { name: /Принять выбранные в перемещении/ }));
-  const dialog = screen.getByRole('dialog', { name: 'Принять выбранные перемещения' });
+  fireEvent.click(
+    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение/ }),
+  );
+  fireEvent.click(
+    within(drawer).getByRole('button', {
+      name: /Принять выбранные в перемещении/,
+    }),
+  );
+  const dialog = screen.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+  });
   expect(dialog).toHaveTextContent('Донор: Донор А');
   expect(dialog).toHaveTextContent('Получатели: Получатель');
   expect(dialog).toHaveTextContent('SKU: 1');
   expect(dialog).toHaveTextContent('Сумма:');
-  expect(within(dialog).getByRole('group', { name: 'Изменение закупки' })).toHaveTextContent('Было');
-  expect(within(dialog).getByRole('group', { name: 'Изменение закупки' })).toHaveTextContent('Станет');
+  expect(
+    within(dialog).getByRole('group', { name: 'Изменение закупки' }),
+  ).toHaveTextContent('Было');
+  expect(
+    within(dialog).getByRole('group', { name: 'Изменение закупки' }),
+  ).toHaveTextContent('Станет');
 });
 it('summarizes multiple selected donors and keeps missing prices unknown', () => {
   const initial = () => {
@@ -53,17 +71,41 @@ it('summarizes multiple selected donors and keeps missing prices unknown', () =>
     return state;
   };
   render(<Harness initial={initial} />);
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать видимые предложения' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Принять выбранные (2)' }));
-  const dialog = screen.getByRole('dialog', { name: 'Принять выбранные перемещения' });
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: 'Выбрать видимые предложения' }),
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Принять выбранные (2)' }),
+  );
+  const dialog = screen.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+  });
   expect(dialog).toHaveTextContent('Донор: Донор А, Донор Б');
   expect(dialog).toHaveTextContent('Получатели: Получатель');
   expect(dialog).toHaveTextContent('SKU: 1');
   expect(dialog).toHaveTextContent('Сумма: Сумма неизвестна');
   expect(dialog).toHaveTextContent('Без цены: 2');
-  const totals = within(dialog).getByRole('group', { name: 'Изменение закупки' });
+  const totals = within(dialog).getByRole('group', {
+    name: 'Изменение закупки',
+  });
   expect(totals).toHaveTextContent('БылоСумма неизвестна');
   expect(totals).toHaveTextContent('Станет0,00');
+});
+it('makes selection hidden by result filters explicit before a global acceptance', () => {
+  render(<Harness />);
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: 'Выбрать видимые предложения' }),
+  );
+  fireEvent.change(
+    screen.getByRole('textbox', {
+      name: 'Поиск по коду, артикулу, товару и маршруту',
+    }),
+    { target: { value: 'Донор А' } },
+  );
+  expect(screen.getByText('Скрыто фильтрами: 1')).toBeVisible();
+  expect(
+    screen.getByRole('button', { name: 'Принять выбранные (2)' }),
+  ).toBeEnabled();
 });
 it('selection is independent; accept subset, cancel dialog, accept rest, recalculate and revoke', async () => {
   render(<Harness />);

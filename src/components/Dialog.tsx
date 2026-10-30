@@ -19,7 +19,7 @@ export function useModalLayer(
     const trigger = document.activeElement as HTMLElement | null;
     stack.push(surface);
     const roots = [...document.body.children].filter(
-      (el) => !el.contains(surface),
+      (el) => !el.contains(surface) && !el.matches('[data-ui-toast]'),
     ) as HTMLElement[];
     const previous = roots.map((el) => el.inert);
     roots.forEach((el) => {

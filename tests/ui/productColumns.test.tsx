@@ -19,16 +19,37 @@ it.each([undefined, 'Ленина'])(
 
 it('persists demand column choices and pins product identity while sorting the displayed demand', () => {
   const state = baseState();
-  state.minMax!.skus.push({ ...state.minMax!.skus[0]!, code: 'SKU2', name: 'Второй товар', referencePrice: 1 });
-  state.minMax!.branchStocks.push(...state.minMax!.branchStocks.map(line => ({ ...line, skuCode: 'SKU2' })));
-  renderWithStore(<DemandPage />, state, patch => Object.assign(state, typeof patch === 'function' ? patch(state) : patch));
-  fireEvent.click(screen.getByRole('button', { name: 'Сортировать: Потребность' }));
+  state.minMax!.skus.push({
+    ...state.minMax!.skus[0]!,
+    code: 'SKU2',
+    name: 'Второй товар',
+    referencePrice: 1,
+  });
+  state.minMax!.branchStocks.push(
+    ...state.minMax!.branchStocks.map((line) => ({ ...line, skuCode: 'SKU2' })),
+  );
+  renderWithStore(<DemandPage />, state, (patch) =>
+    Object.assign(state, typeof patch === 'function' ? patch(state) : patch),
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Сортировать: Потребность' }),
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Столбцы' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Показать столбец Статус' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Закрыть настройки столбцов' }));
-  expect(screen.queryByRole('columnheader', { name: 'Статус' })).not.toBeInTheDocument();
-  expect(screen.getAllByRole('row')[1]!.querySelectorAll('[role="cell"]')[0]).toHaveClass('is-frozen');
-  expect(state.uiPreferences['demand:all:table:hiddenColumns']).toEqual(['status']);
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: 'Показать столбец Статус' }),
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Закрыть настройки столбцов' }),
+  );
+  expect(
+    screen.queryByRole('columnheader', { name: 'Статус' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getAllByRole('row')[1]!.querySelectorAll('[role="cell"]')[0],
+  ).toHaveClass('is-frozen');
+  expect(state.uiPreferences['demand:all:table:hiddenColumns']).toEqual([
+    'status',
+  ]);
 });
 
 it('identifies the product with full code, article and name when selecting its supplier', () => {
@@ -66,9 +87,7 @@ it('preserves supplier selections hidden by product search when selecting or cle
     ...state.minMax!.branchStocks.map((l) => ({ ...l, skuCode: 'SKU2' })),
   );
   renderWithStore(<SuppliersPage />, state);
-  fireEvent.click(
-    screen.getByRole('checkbox', { name: 'Выбрать SKU1' }),
-  );
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать SKU1' }));
   fireEvent.change(
     screen.getByLabelText('Поиск товара для выбора поставщика'),
     { target: { value: 'ART-TWO' } },
@@ -84,9 +103,7 @@ it('preserves supplier selections hidden by product search when selecting or cle
     screen.getByLabelText('Поиск товара для выбора поставщика'),
     { target: { value: '' } },
   );
-  expect(
-    screen.getByRole('checkbox', { name: 'Выбрать SKU1' }),
-  ).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Выбрать SKU1' })).toBeChecked();
   expect(
     screen.getByRole('checkbox', { name: 'Выбрать SKU2' }),
   ).not.toBeChecked();
