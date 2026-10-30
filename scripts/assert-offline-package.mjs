@@ -84,7 +84,12 @@ export function validateOfflinePackage(packageDirectory = DEFAULT_PACKAGE_DIRECT
 
   const cssFiles = walkFiles(root).filter((file) => file.endsWith('.css'));
   for (const cssFile of cssFiles) {
-    if (/\b(?:https?:)?\/\//i.test(fs.readFileSync(cssFile, 'utf8'))) {
+    // Base64 WOFF2 payloads can contain // without referencing a remote host.
+    const css = fs.readFileSync(cssFile, 'utf8').replace(
+      /url\(\s*(["']?)data:font\/woff2;base64,[A-Za-z0-9+/=]+\1\s*\)/gi,
+      'url(embedded-local-font)',
+    );
+    if (/\b(?:https?:)?\/\//i.test(css)) {
       throw new Error(`Stylesheet contains a remote URL: ${path.relative(root, cssFile)}`);
     }
   }

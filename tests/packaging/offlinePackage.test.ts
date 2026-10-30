@@ -38,4 +38,17 @@ describe('offline production package contract', () => {
   it('does not keep a generated root launcher', () => {
     expect(fs.existsSync('ORDERS_AUTO.html')).toBe(false);
   });
+
+  it('accepts local embedded WOFF2 bytes containing slashes while rejecting remote CSS resources', () => {
+    const directory = fixture('<div id="root"></div><link rel="stylesheet" href="./assets/app.css"><script defer src="./assets/app.js"></script>');
+    const font = fs.readFileSync('src/styles/fonts/inter-latin-wght-normal.woff2').toString('base64');
+    expect(font).toContain('//');
+    fs.writeFileSync(path.join(directory, 'assets/app.css'), `@font-face{font-family:Inter;src:url("data:font/woff2;base64,${font}")}`);
+    fs.copyFileSync('src/styles/fonts/OFL.txt', path.join(directory, 'FONT-LICENSE.txt'));
+    expect(() => validateOfflinePackage(directory)).not.toThrow();
+    for (const remote of ['@import "https://example.com/style.css";', 'body{background:url(//example.com/a.png)}']) {
+      fs.appendFileSync(path.join(directory, 'assets/app.css'), remote);
+      expect(() => validateOfflinePackage(directory)).toThrow(/remote URL/);
+    }
+  });
 });

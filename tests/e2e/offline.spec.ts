@@ -1198,6 +1198,15 @@ test('E2E-10 nine-branch route matrix fits, edits pairs and groups, and preserve
     await expect(matrix.getByRole('button', { name: /^Маршрут / })).toHaveCount(
       72,
     );
+    const activityTarget = await matrix.getByRole('checkbox', { name: 'Участие Донор А', exact: true }).first().evaluate((input) => {
+      const label = input.closest('label');
+      if (!label) return null;
+      const rect = label.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    expect(activityTarget).not.toBeNull();
+    expect(activityTarget!.width).toBeGreaterThanOrEqual(24);
+    expect(activityTarget!.height).toBeGreaterThanOrEqual(24);
     await expectRouteFrameFits(page);
     await pair.focus();
     await page.keyboard.press('Enter');
