@@ -3,6 +3,7 @@ import { cpSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import axe from 'axe-core';
 
 interface RuntimeEvidence {
   consoleErrors: string[];
@@ -48,6 +49,15 @@ async function expectOfflineApp(
   await expect(
     page.getByRole('heading', { name: 'Импорт отчётов 1С' }),
   ).toBeVisible();
+  expect(
+    await page.evaluate(async () => {
+      await document.fonts.load('14px Inter', 'Привет ₽012345');
+      return document.fonts.check('14px Inter', 'Привет ₽012345');
+    }),
+  ).toBe(true);
+  expect(
+    readFileSync(path.join(packageDirectory, 'FONT-LICENSE.txt'), 'utf8'),
+  ).toContain('SIL OPEN FONT LICENSE');
   await expect(page.getByText('Отчёт MIN/MAX', { exact: true })).toBeVisible();
   await expect(
     page.getByText('Отчёт поставщиков', { exact: true }),
@@ -198,7 +208,9 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
       ),
     ).toBeLessThan(2);
     const labels = await page
-      .locator('.supplier-auto-toolbar > label')
+      .locator(
+        '.supplier-auto-toolbar > label, .supplier-auto-toolbar > .supplier-auto-strategy',
+      )
       .evaluateAll((nodes) =>
         nodes.map((node) => {
           const rect = node.getBoundingClientRect();
@@ -876,6 +888,17 @@ for (const { count, width, height } of [
       name: 'Принять выбранные перемещения',
     });
     await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText('Донор: Егорьевск');
+    const acceptanceFrame = await confirm
+      .locator('.virtual-scroll')
+      .boundingBox();
+    const consequence = await confirm
+      .getByRole('columnheader', { name: 'Было → станет', exact: true })
+      .boundingBox();
+    expect(consequence!.x).toBeGreaterThanOrEqual(acceptanceFrame!.x);
+    expect(consequence!.x + consequence!.width).toBeLessThanOrEqual(
+      acceptanceFrame!.x + acceptanceFrame!.width + 1,
+    );
     await confirm
       .getByRole('button', { name: 'Принять перемещения', exact: true })
       .click();
@@ -951,6 +974,7 @@ const coverageBranches = [
 async function importFullCoverageFixture(
   page: Page,
   branchNames = coverageBranches,
+  codes = ['FULL1', 'FULL2', 'SKIP14'],
 ) {
   const { buildWorkbook } = await import('../fixtures/workbookBuilders');
   const min = buildWorkbook([
@@ -963,7 +987,7 @@ async function importFullCoverageFixture(
       'Максимальный остаток',
       'Цена',
     ],
-    ...['FULL1', 'FULL2', 'SKIP14'].flatMap((code) => {
+    ...codes.flatMap((code) => {
       const firstDonor = code === 'SKIP14' ? 16 : 18;
       return [
         [
@@ -994,7 +1018,7 @@ async function importFullCoverageFixture(
       'Стоимость',
       'Ед. изм.',
     ],
-    ...['FULL1', 'FULL2', 'SKIP14'].map((code) => [
+    ...codes.map((code) => [
       'ИП Баранов Роман Борисович',
       code,
       `Товар полного покрытия ${code}`,
@@ -1198,12 +1222,15 @@ test('E2E-10 nine-branch route matrix fits, edits pairs and groups, and preserve
     await expect(matrix.getByRole('button', { name: /^Маршрут / })).toHaveCount(
       72,
     );
-    const activityTarget = await matrix.getByRole('checkbox', { name: 'Участие Донор А', exact: true }).first().evaluate((input) => {
-      const label = input.closest('label');
-      if (!label) return null;
-      const rect = label.getBoundingClientRect();
-      return { width: rect.width, height: rect.height };
-    });
+    const activityTarget = await matrix
+      .getByRole('checkbox', { name: 'Участие Донор А', exact: true })
+      .first()
+      .evaluate((input) => {
+        const label = input.closest('label');
+        if (!label) return null;
+        const rect = label.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+      });
     expect(activityTarget).not.toBeNull();
     expect(activityTarget!.width).toBeGreaterThanOrEqual(24);
     expect(activityTarget!.height).toBeGreaterThanOrEqual(24);
@@ -1964,4 +1991,93 @@ test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work 
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.consoleErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
+});
+
+test('E2E-15 page context, frozen product identity and accessible saved table controls work offline', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await importFullCoverageFixture(
+    page,
+    coverageBranches,
+    Array.from({ length: 30 }, (_, i) => `ITEM${i}`),
+  );
+  const nav = page.locator('.sidebar');
+  await nav.getByRole('button', { name: 'Все товары', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.locator('.virtual-table').scrollIntoViewIfNeeded();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeGreaterThan(0);
+  const position = await page.evaluate(() => window.scrollY);
+  await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await nav.getByRole('button', { name: 'Все товары', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeCloseTo(position, 0);
+  const scroll = page.locator('.virtual-scroll');
+  await scroll.evaluate((el) => {
+    el.scrollLeft = el.scrollWidth;
+  });
+  const code = page.getByRole('cell', { name: 'ITEM0', exact: true });
+  const frozen = await code.boundingBox();
+  const viewport = await scroll.boundingBox();
+  expect(frozen!.x).toBeGreaterThanOrEqual(viewport!.x - 1);
+  expect(frozen!.x + frozen!.width).toBeLessThan(viewport!.x + viewport!.width);
+  await page.getByRole('button', { name: 'Столбцы', exact: true }).click();
+  await page
+    .getByRole('checkbox', { name: 'Показать столбец Статус', exact: true })
+    .uncheck();
+  await page
+    .getByRole('button', { name: 'Закрыть настройки столбцов', exact: true })
+    .click();
+  await scroll.evaluate((el) => {
+    el.scrollLeft = 0;
+  });
+  await page
+    .getByRole('button', { name: 'Сортировать: Потребность', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Сортировать: Потребность', exact: true })
+    .click();
+  await page
+    .getByText('Сохранение сеанса…', { exact: true })
+    .waitFor({ state: 'hidden' });
+  await page.reload();
+  await expect(
+    page.getByRole('columnheader', { name: 'Статус', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('columnheader', { name: 'Потребность', exact: true }),
+  ).toHaveAttribute('aria-sort', 'descending');
+  const a11y = async () => {
+    await page.addScriptTag({ content: axe.source });
+    return page.evaluate(async () => {
+      const api = (window as unknown as { axe: typeof axe }).axe;
+      // OA is the decorative logo mark: text forming a logo is exempt from1.4.3.
+      const result = await api.run(
+        { exclude: [['.brand > span[aria-hidden="true"]']] },
+        {
+          runOnly: {
+            type: 'tag',
+            values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'],
+          },
+        },
+      );
+      return result.violations.map((v) => ({
+        id: v.id,
+        targets: v.nodes.map((n) => n.target),
+      }));
+    });
+  };
+  expect(await a11y()).toEqual([]);
+  await page.screenshot({
+    path: testInfo.outputPath('30-demand-saved-columns.png'),
+  });
+  await nav
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Маршруты', exact: true }).click();
+  expect(await a11y()).toEqual([]);
 });

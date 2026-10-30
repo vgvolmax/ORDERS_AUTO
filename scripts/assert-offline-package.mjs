@@ -89,7 +89,7 @@ export function validateOfflinePackage(packageDirectory = DEFAULT_PACKAGE_DIRECT
       /url\(\s*(["']?)data:font\/woff2;base64,[A-Za-z0-9+/=]+\1\s*\)/gi,
       'url(embedded-local-font)',
     );
-    if (/\b(?:https?:)?\/\//i.test(css)) {
+    if (/(?:https?:)?\/\//i.test(css)) {
       throw new Error(`Stylesheet contains a remote URL: ${path.relative(root, cssFile)}`);
     }
   }

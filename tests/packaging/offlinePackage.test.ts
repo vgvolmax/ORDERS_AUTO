@@ -7,10 +7,18 @@ import { validateOfflinePackage } from '../../scripts/assert-offline-package.mjs
 
 describe('offline production package contract', () => {
   function fixture(html: string): string {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'orders-auto-package-'));
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'orders-auto-package-'),
+    );
     fs.mkdirSync(path.join(directory, 'assets'));
-    fs.writeFileSync(path.join(directory, 'assets/app.js'), 'window.APP_STARTED = true;');
-    fs.writeFileSync(path.join(directory, 'assets/app.css'), 'body { color: black; }');
+    fs.writeFileSync(
+      path.join(directory, 'assets/app.js'),
+      'window.APP_STARTED = true;',
+    );
+    fs.writeFileSync(
+      path.join(directory, 'assets/app.css'),
+      'body { color: black; }',
+    );
     fs.writeFileSync(path.join(directory, 'index.html'), html);
     return directory;
   }
@@ -25,13 +33,19 @@ describe('offline production package contract', () => {
   });
 
   it('rejects inline/module JavaScript and missing or escaping resources', () => {
-    const inline = fixture('<div id="root"></div><script type="module">alert(1)</script>');
+    const inline = fixture(
+      '<div id="root"></div><script type="module">alert(1)</script>',
+    );
     expect(() => validateOfflinePackage(inline)).toThrow(/module scripts/);
 
-    const missing = fixture('<div id="root"></div><script defer src="./assets/missing.js"></script>');
+    const missing = fixture(
+      '<div id="root"></div><script defer src="./assets/missing.js"></script>',
+    );
     expect(() => validateOfflinePackage(missing)).toThrow(/does not exist/);
 
-    const escaping = fixture('<div id="root"></div><script defer src="./../outside.js"></script>');
+    const escaping = fixture(
+      '<div id="root"></div><script defer src="./../outside.js"></script>',
+    );
     expect(() => validateOfflinePackage(escaping)).toThrow(/leaves/);
   });
 
@@ -40,14 +54,25 @@ describe('offline production package contract', () => {
   });
 
   it('accepts local embedded WOFF2 bytes containing slashes while rejecting remote CSS resources', () => {
-    const directory = fixture('<div id="root"></div><link rel="stylesheet" href="./assets/app.css"><script defer src="./assets/app.js"></script>');
-    const font = fs.readFileSync('src/styles/fonts/inter-latin-wght-normal.woff2').toString('base64');
+    const directory = fixture(
+      '<div id="root"></div><link rel="stylesheet" href="./assets/app.css"><script defer src="./assets/app.js"></script>',
+    );
+    const font = fs
+      .readFileSync('src/styles/fonts/inter-latin-wght-normal.woff2')
+      .toString('base64');
     expect(font).toContain('//');
-    fs.writeFileSync(path.join(directory, 'assets/app.css'), `@font-face{font-family:Inter;src:url("data:font/woff2;base64,${font}")}`);
-    fs.copyFileSync('src/styles/fonts/OFL.txt', path.join(directory, 'FONT-LICENSE.txt'));
+    const localCss = `@font-face{font-family:Inter;src:url("data:font/woff2;base64,${font}")}`;
+    fs.writeFileSync(path.join(directory, 'assets/app.css'), localCss);
+    fs.copyFileSync(
+      'src/styles/fonts/OFL.txt',
+      path.join(directory, 'FONT-LICENSE.txt'),
+    );
     expect(() => validateOfflinePackage(directory)).not.toThrow();
-    for (const remote of ['@import "https://example.com/style.css";', 'body{background:url(//example.com/a.png)}']) {
-      fs.appendFileSync(path.join(directory, 'assets/app.css'), remote);
+    for (const remote of [
+      '@import "https://example.com/style.css";',
+      'body{background:url(//example.com/a.png)}',
+    ]) {
+      fs.writeFileSync(path.join(directory, 'assets/app.css'), localCss + remote);
       expect(() => validateOfflinePackage(directory)).toThrow(/remote URL/);
     }
   });
