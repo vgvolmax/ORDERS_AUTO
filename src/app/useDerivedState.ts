@@ -13,6 +13,8 @@ export function useDerivedState(state: AppState): DerivedState {
     [
       state.minMax,
       state.suppliers,
+      state.minMaxIssues,
+      state.supplierIssues,
       state.overrides,
       state.edits,
       state.settings,

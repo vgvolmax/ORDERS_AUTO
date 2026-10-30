@@ -1,5 +1,6 @@
 import type { AppState } from './appStore';
 import { derive } from './selectors';
+import { hasIncompatibleTransferQuantities } from './quantityPolicies';
 import {
   acceptTransfers,
   revokeTransfers,
@@ -44,6 +45,20 @@ export function prepareAcceptedChange(
   };
   if (command.kind === 'accept' && !state.rebalance.proposal)
     throw new RebalanceError('STALE_PROPOSAL');
+  if (command.kind === 'accept') {
+    const proposal = state.rebalance.proposal!;
+    const selected = new Set(command.ids);
+    const accepted = new Set(
+      state.rebalance.accepted
+        .filter((a) => a.sourceRunId === proposal.runId)
+        .map((a) => a.sourceLineId),
+    );
+    const additions = proposal.transfers.filter(
+      (t) => selected.has(t.sourceLineId) && !accepted.has(t.sourceLineId),
+    );
+    if (hasIncompatibleTransferQuantities(additions, previous.snapshot!.issues))
+      throw new RebalanceError('STALE_PROPOSAL');
+  }
   const change =
     command.kind === 'accept'
       ? acceptTransfers({

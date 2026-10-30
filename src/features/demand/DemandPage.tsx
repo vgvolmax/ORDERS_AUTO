@@ -114,10 +114,10 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
 
     const columns: VirtualColumn<NetworkGroup>[] = [
       {
-        key: 'status',
-        header: 'Статус',
-        width: '150px',
-        render: (group) => <StatusBadge status={group.worstStatus} />,
+        key: 'code',
+        header: 'Код',
+        width: '135px',
+        render: (group) => <strong>{group.skuCode}</strong>,
       },
       {
         key: 'article',
@@ -126,14 +126,8 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         render: (group) => group.article ?? '—',
       },
       {
-        key: 'code',
-        header: 'Код',
-        width: '135px',
-        render: (group) => <strong>{group.skuCode}</strong>,
-      },
-      {
         key: 'name',
-        header: 'Товар',
+        header: 'Наименование',
         width: 'minmax(240px, 1.8fr)',
         render: (group) => (
           <button
@@ -152,6 +146,12 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
             </small>
           </button>
         ),
+      },
+      {
+        key: 'status',
+        header: 'Статус',
+        width: '150px',
+        render: (group) => <StatusBadge status={group.worstStatus} />,
       },
       {
         key: 'branches',
@@ -259,10 +259,10 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
 
   const columns: VirtualColumn<PurchaseDemandLine>[] = [
     {
-      key: 'status',
-      header: 'Статус',
-      width: '145px',
-      render: (line) => <StatusBadge status={line.purchaseStatus} />,
+      key: 'code',
+      header: 'Код',
+      width: '130px',
+      render: (line) => <strong>{line.skuCode}</strong>,
     },
     {
       key: 'article',
@@ -271,16 +271,16 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       render: (line) => line.article ?? '—',
     },
     {
-      key: 'code',
-      header: 'Код',
-      width: '130px',
-      render: (line) => <strong>{line.skuCode}</strong>,
-    },
-    {
       key: 'name',
-      header: 'Номенклатура',
+      header: 'Наименование',
       width: 'minmax(240px, 1.5fr)',
       render: (line) => line.name,
+    },
+    {
+      key: 'status',
+      header: 'Статус',
+      width: '145px',
+      render: (line) => <StatusBadge status={line.purchaseStatus} />,
     },
     {
       key: 'stock',
@@ -504,13 +504,11 @@ function filterBranchLines(
   const query = filters.query.trim().toLocaleLowerCase('ru-RU');
   const diagnosticStatus = getDiagnosticNormStatus(filters.status);
   return lines.filter((line) => {
-    if (
-      !(
-        line.purchaseQty > 0 ||
-        (showCovered && line.acceptedTransferIds.length > 0) ||
-        (diagnosticStatus !== null && line.purchaseStatus === diagnosticStatus)
-      )
-    )
+    if (!(
+      line.purchaseQty > 0 ||
+      (showCovered && line.acceptedTransferIds.length > 0) ||
+      (diagnosticStatus !== null && line.purchaseStatus === diagnosticStatus)
+    ))
       return false;
     if (
       query &&

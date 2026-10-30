@@ -114,9 +114,9 @@ export function OrderDrawer({
           <table>
             <thead>
               <tr>
-                <th>Артикул</th>
                 <th>Код</th>
-                <th>Товар</th>
+                <th>Артикул</th>
+                <th>Наименование</th>
                 <th className="num">Остаток по отчёту</th>
                 <th className="num">MIN</th>
                 <th className="num">MAX</th>
@@ -130,10 +130,10 @@ export function OrderDrawer({
             <tbody>
               {order.lines.map((line) => (
                 <tr key={line.skuCode}>
-                  <td>{line.article ?? '—'}</td>
                   <td>
                     <strong>{line.skuCode}</strong>
                   </td>
+                  <td>{line.article ?? '—'}</td>
                   <td>{line.name}</td>
                   <td className="num">{fmtQty(line.stock)}</td>
                   <td className="num">{line.min ?? '—'}</td>

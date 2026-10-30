@@ -1,3 +1,4 @@
+import { productColumns } from '../../components/productColumns';
 import { useMemo } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { Alert, Button } from '../../components/ui';
@@ -91,12 +92,11 @@ export function AcceptTransfersDialog({
         getRowKey={({ line }) => JSON.stringify([line.skuCode, line.branch])}
         emptyMessage="Расчётное количество закупки не меняется."
         columns={[
-          {
-            key: 'sku',
-            header: 'Код',
-            width: '140px',
-            render: ({ line }) => line.skuCode,
-          },
+          ...productColumns<(typeof changes)[number]>(({ line }) => ({
+            code: line.skuCode,
+            article: line.article,
+            name: line.name,
+          })),
           {
             key: 'branch',
             header: 'Подразделение',

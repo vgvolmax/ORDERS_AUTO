@@ -4,10 +4,12 @@ import {
 } from '../domain/purchaseDemand';
 import { createRebalanceSnapshot } from '../import/rebalanceSnapshot';
 import { acceptedEconomicDiagnostics } from '../domain/rebalancing';
+import { resolveQuantityPolicies } from './quantityPolicies';
 import type {
   RebalanceIssue,
   SnapshotBuildResult,
   RebalanceProposal,
+  SkuQuantityPolicy,
 } from '../domain/rebalancing/types';
 import { calculateDemand, priceDemand } from '../domain/demand';
 import { getManualEditCount } from '../domain/orderWorkflow';
@@ -27,12 +29,15 @@ export interface WorkflowOrder extends Order {
   manualEditCount: number;
 }
 
-export interface WorkflowOrderProjection
-  extends Omit<OrderProjection, 'orders'> {
+export interface WorkflowOrderProjection extends Omit<
+  OrderProjection,
+  'orders'
+> {
   orders: WorkflowOrder[];
 }
 
 export interface DerivedState {
+  quantityPolicies: SkuQuantityPolicy[];
   resolutions: SupplierResolution[];
   demand: PricedDemandLine[];
   originalDemand: PricedDemandLine[];
@@ -44,6 +49,7 @@ export interface DerivedState {
 }
 
 const EMPTY_DERIVED_STATE: DerivedState = {
+  quantityPolicies: [],
   resolutions: [],
   demand: [],
   originalDemand: [],
@@ -93,13 +99,31 @@ export function derive(state: AppState): DerivedState {
     : [...new Set(state.minMax.branchStocks.map((s) => s.branch))].map(
         (name) => ({ id: name, name, active: true, aliases: [] }),
       );
+  const quantityPolicies = resolveQuantityPolicies(state);
   const snapshot = createRebalanceSnapshot({
     snapshotId: state.snapshotId,
     dataset: state.minMax,
     branchRegistry: registry,
-    skuPolicies: state.rebalance.policies,
+    skuPolicies: quantityPolicies,
     sourceIssues: state.minMaxIssues,
   });
+  const legacyIssues: RebalanceIssue[] = quantityPolicies
+    .filter((p) => p.quantityStep !== 1)
+    .map((p) => ({
+      code: 'LEGACY_QUANTITY_POLICY',
+      severity: 'ERROR',
+      skuCode: p.skuCode,
+      sourceRow: null,
+      message:
+        'Сохранены принятые дробные перемещения. Для нового расчёта целыми единицами сначала отмените принятие этого товара.',
+    }));
+  if (legacyIssues.length) {
+    snapshot.issues.push(...legacyIssues);
+    snapshot.snapshot.validationIssues = [
+      ...(snapshot.snapshot.validationIssues ?? []),
+      ...legacyIssues,
+    ];
+  }
   const purchaseDemand = buildPurchaseDemand(
     demand,
     state.rebalance.accepted,
@@ -127,6 +151,7 @@ export function derive(state: AppState): DerivedState {
   }));
 
   const result: DerivedState = {
+    quantityPolicies,
     resolutions,
     demand,
     originalDemand: demand,

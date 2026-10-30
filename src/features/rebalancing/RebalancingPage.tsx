@@ -1,8 +1,11 @@
+import { VirtualTable } from '../../components/VirtualTable';
+import { productColumns } from '../../components/productColumns';
 import { useMemo, useState } from 'react';
 import { useDurableDraft } from '../../app/useDurableDraft';
 import { useStore, type AppState } from '../../app/appStore';
 import { useDerivedState } from '../../app/useDerivedState';
 import { derive } from '../../app/selectors';
+import { hasIncompatibleTransferQuantities } from '../../app/quantityPolicies';
 import {
   createProposal,
   prepareAcceptedChange,
@@ -52,7 +55,7 @@ const messages: Record<string, string> = {
     'Условия или снимок изменились. Рассчитайте предложения заново. Принятые перемещения сохранены.',
   REVISION_CONFLICT: 'Решения изменились. Откройте подтверждение заново.',
   INVALID_TRANSFER_BATCH:
-    'Количество не сохранено: проверьте шаг, потребность получателя и общий выход. Остаток донора должен оставаться не ниже MAX. При принятии также действует порог суммы SKU.',
+    'Количество не сохранено: проверьте целое количество, потребность получателя и общий выход. Остаток донора должен оставаться не ниже MAX. При принятии также действует порог суммы SKU.',
 };
 export const rebalanceMessage = (e: unknown) =>
   e instanceof Error
@@ -63,18 +66,24 @@ export function RebalancingPage() {
     { state, set, saving } = store,
     d = useDerivedState(state),
     r = state.rebalance;
+  const policies = d.quantityPolicies;
+  const skuByCode = useMemo(
+    () => new Map((state.minMax?.skus ?? []).map((s) => [s.code, s])),
+    [state.minMax?.skus],
+  );
   const tab = r.tab === 'priorities' ? 'routes' : r.tab;
   const [showSkipped, setShowSkipped] = useState(false);
+  const [acceptanceCompleted, setAcceptanceCompleted] = useState(0);
   const coverage = useMemo(
     () =>
       buildFullCoverageSummary({
         proposal: r.proposal,
         accepted: r.accepted,
         rejectedLineIds: r.rejectedLineIds,
-        policies: r.policies,
+        policies,
         skus: state.minMax?.skus ?? [],
       }),
-    [r.proposal, r.accepted, r.rejectedLineIds, r.policies, state.minMax?.skus],
+    [r.proposal, r.accepted, r.rejectedLineIds, policies, state.minMax?.skus],
   );
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -153,25 +162,6 @@ export function RebalancingPage() {
       state.minMax?.skus,
     ],
   );
-  const [policies, changePolicies] = useDurableDraft(
-    r.policies,
-    state.workspaceId,
-    (value) =>
-      save((s) => {
-        if (s.rebalance.accepted.length)
-          throw new Error('Сначала отмените принятые перемещения');
-        return {
-          snapshotId: crypto.randomUUID(),
-          rebalance: {
-            ...s.rebalance,
-            policies: value,
-            proposal: null,
-            selectedLineIds: [],
-            rejectedLineIds: [],
-          },
-        };
-      }),
-  );
   const issues = [
     ...(d.snapshot?.issues ?? []),
     ...(r.proposal?.exclusions.filter((i) => !i.code.startsWith('ACCEPTED_')) ??
@@ -180,12 +170,15 @@ export function RebalancingPage() {
   ];
   const stale = Boolean(
     r.proposal &&
-      (r.proposal.algorithmVersion !== ALGORITHM_VERSION ||
-        r.proposal.participationFingerprint !==
-          branchParticipationFingerprint(registryDraft) ||
-        r.proposal.snapshotId !== state.snapshotId ||
-        r.proposal.configFingerprint !==
-          rebalanceConfigFingerprint(configDraft)),
+    (r.proposal.algorithmVersion !== ALGORITHM_VERSION ||
+      hasIncompatibleTransferQuantities(
+        r.proposal.transfers,
+        d.snapshot?.issues ?? [],
+      ) ||
+      r.proposal.participationFingerprint !==
+        branchParticipationFingerprint(registryDraft) ||
+      r.proposal.snapshotId !== state.snapshotId ||
+      r.proposal.configFingerprint !== rebalanceConfigFingerprint(configDraft)),
   );
   function open(kind: 'accept' | 'revoke', ids: string[]) {
     if (busy) return;
@@ -286,6 +279,7 @@ export function RebalancingPage() {
         };
       });
       setConfirmation(null);
+      if (confirmation.kind === 'accept') setAcceptanceCompleted((n) => n + 1);
     } catch (e) {
       setError(rebalanceMessage(e));
     } finally {
@@ -350,7 +344,7 @@ export function RebalancingPage() {
         proposal: r.proposal,
         accepted: r.accepted,
         registry: r.registry,
-        policies: r.policies,
+        policies,
         skus: state.minMax?.skus ?? [],
         snapshot: d.snapshot?.snapshot ?? null,
         selected: [],
@@ -517,14 +511,7 @@ export function RebalancingPage() {
             />
           )}
           {tab === 'conditions' && (
-            <ConditionsPanel
-              config={configDraft}
-              onChange={config}
-              skus={state.minMax?.skus ?? []}
-              policies={policies}
-              locked={r.accepted.length > 0}
-              onPolicies={changePolicies}
-            />
+            <ConditionsPanel config={configDraft} onChange={config} />
           )}
           {tab === 'results' && (
             <>
@@ -532,7 +519,7 @@ export function RebalancingPage() {
                 <SkippedRebalanceList
                   proposal={r.proposal}
                   registry={r.registry}
-                  policies={r.policies}
+                  policies={policies}
                   skus={state.minMax?.skus ?? []}
                   stale={stale}
                   onBack={() => setShowSkipped(false)}
@@ -549,6 +536,7 @@ export function RebalancingPage() {
                     </Button>
                   </div>
                   <ResultsTable
+                    acceptanceCompleted={acceptanceCompleted}
                     key={`${state.workspaceId}:${state.snapshotId}:${
                       r.proposal?.runId ?? ''
                     }`}
@@ -601,18 +589,28 @@ export function RebalancingPage() {
                   <summary>
                     Исключения и проверки данных · {issues.length}
                   </summary>
-                  <ul>
-                    {issues.slice(0, 100).map((i, n) => (
-                      <li key={n}>
-                        {i.skuCode ? `${i.skuCode}: ` : ''}
-                        {i.message}
-                      </li>
-                    ))}
-                  </ul>
-                  <p>
-                    Показано до 100 сообщений. Полный список доступен в Excel
-                    ребалансировки.
-                  </p>
+                  <VirtualTable
+                    rows={issues.map((issue, rowId) => ({ ...issue, rowId }))}
+                    getRowKey={(i) => String(i.rowId)}
+                    columns={[
+                      ...productColumns<
+                        (typeof issues)[number] & { rowId: number }
+                      >((i) => ({
+                        code: i.skuCode ?? '—',
+                        article:
+                          skuByCode.get(i.skuCode ?? '')?.article ?? null,
+                        name:
+                          skuByCode.get(i.skuCode ?? '')?.name ??
+                          'Общая проверка',
+                      })),
+                      {
+                        key: 'reason',
+                        header: 'Проверка',
+                        width: 'minmax(300px,2fr)',
+                        render: (i) => i.message,
+                      },
+                    ]}
+                  />
                 </details>
               )}
             </>

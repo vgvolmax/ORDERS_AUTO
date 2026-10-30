@@ -1,3 +1,6 @@
+import { VirtualTable } from '../../components/VirtualTable';
+import { productColumns } from '../../components/productColumns';
+import type { Sku } from '../../domain/types';
 import { useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { useDerivedState } from '../../app/useDerivedState';
@@ -260,6 +263,7 @@ export function SuppliersPage() {
 
       {problems.length > 0 && (
         <SupplierDecisions
+          skus={state.minMax?.skus ?? []}
           problems={problems}
           operationPool={operationPool}
           problemAmount={problemAmount}
@@ -361,6 +365,7 @@ export function SuppliersPage() {
 }
 
 function SupplierDecisions({
+  skus,
   problems,
   operationPool,
   problemAmount,
@@ -380,6 +385,7 @@ function SupplierDecisions({
   onApplyAutomation,
   onChoose,
 }: {
+  skus: Sku[];
   problems: SupplierResolution[];
   operationPool: SupplierResolution[];
   problemAmount: number | null;
@@ -400,7 +406,19 @@ function SupplierDecisions({
   onChoose: (resolution: SupplierResolution, supplier: string) => void;
 }) {
   const supplierBusy = bulkBusy || manualBusyCode !== null;
-  const displayedProblems = overwriteManual ? operationPool : problems;
+  const [productQuery, setProductQuery] = useState('');
+  const skuMap = new Map(skus.map((s) => [s.code, s]));
+  const displayedProblems = (overwriteManual ? operationPool : problems).filter(
+    (r) =>
+      [
+        r.skuCode,
+        skuMap.get(r.skuCode)?.article ?? '',
+        skuMap.get(r.skuCode)?.name ?? '',
+      ]
+        .join(' ')
+        .toLocaleLowerCase('ru')
+        .includes(productQuery.trim().toLocaleLowerCase('ru')),
+  );
   const allSelected =
     displayedProblems.length > 0 &&
     displayedProblems.every((problem) => selectedSkuCodes.has(problem.skuCode));
@@ -416,11 +434,11 @@ function SupplierDecisions({
   }
 
   function toggleAll(checked: boolean): void {
-    onSelectedSkuCodesChange(
-      checked
-        ? new Set(displayedProblems.map((problem) => problem.skuCode))
-        : new Set(),
-    );
+    const next = new Set(selectedSkuCodes);
+    for (const problem of displayedProblems)
+      if (checked) next.add(problem.skuCode);
+      else next.delete(problem.skuCode);
+    onSelectedSkuCodesChange(next);
   }
 
   return (
@@ -512,77 +530,123 @@ function SupplierDecisions({
                 type="checkbox"
                 aria-label="Выбрать все позиции"
                 checked={allSelected}
-                disabled={supplierBusy}
+                disabled={supplierBusy || !displayedProblems.length}
                 onChange={(event) => toggleAll(event.target.checked)}
               />
-              Отметить все
+              Отметить все по поиску
             </label>
             <small>Отмечено: {selectedSkuCodes.size}</small>
+            <small>По поиску: {displayedProblems.length}</small>
           </div>
 
+          <label>
+            Поиск товара
+            <SearchInput
+              aria-label="Поиск товара для выбора поставщика"
+              value={productQuery}
+              onValueChange={setProductQuery}
+            />
+          </label>
           <div className="decision-list">
-            {displayedProblems.map((resolution) => (
-              <div className="decision" key={resolution.skuCode}>
-                <label className="decision-check">
-                  <input
-                    type="checkbox"
-                    aria-label={`Выбрать ${resolution.skuCode}`}
-                    checked={selectedSkuCodes.has(resolution.skuCode)}
-                    disabled={supplierBusy}
-                    onChange={(event) =>
-                      toggleOne(resolution.skuCode, event.target.checked)
-                    }
-                  />
-                </label>
-                <div>
-                  <strong>Код {resolution.skuCode}</strong>
-                  <p>
-                    {resolution.status === 'STALE_OVERRIDE'
-                      ? 'Сохранённый поставщик отсутствует в свежем отчёте или не входит в рабочий пул.'
-                      : resolution.candidates.length === 0
-                      ? 'В рабочем пуле нет истории поставщиков для этой позиции.'
-                      : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
-                  </p>
-                </div>
-
-                {resolution.candidates.length > 0 ? (
-                  <div className="decision-supplier">
-                    <Select
-                      aria-label={`Поставщик ${resolution.skuCode}`}
-                      value=""
-                      disabled={supplierBusy}
-                      onChange={(event) =>
-                        onChoose(resolution, event.target.value)
-                      }
-                    >
-                      <option value="">Выберите поставщика…</option>
-                      {resolution.candidates.map((candidate) => (
-                        <option
-                          key={candidate.supplier}
-                          value={candidate.supplier}
+            <VirtualTable
+              rows={displayedProblems}
+              getRowKey={(r) => r.skuCode}
+              rowClassName="decision"
+              columns={[
+                {
+                  key: 'check',
+                  header: '',
+                  width: '36px',
+                  render: (resolution) => (
+                    <label className="decision-check">
+                      <input
+                        type="checkbox"
+                        aria-label={`Выбрать ${resolution.skuCode}`}
+                        checked={selectedSkuCodes.has(resolution.skuCode)}
+                        disabled={supplierBusy}
+                        onChange={(e) =>
+                          toggleOne(resolution.skuCode, e.target.checked)
+                        }
+                      />
+                    </label>
+                  ),
+                },
+                ...productColumns<SupplierResolution>(
+                  (r) => ({
+                    code: r.skuCode,
+                    article: skuMap.get(r.skuCode)?.article ?? null,
+                    name: skuMap.get(r.skuCode)?.name ?? r.skuCode,
+                  }),
+                  {
+                    code: { width: '130px' },
+                    article: { width: '110px' },
+                    name: {
+                      width: 'minmax(200px,1fr)',
+                      render: (resolution) => (
+                        <>
+                          <strong>
+                            {skuMap.get(resolution.skuCode)?.name ??
+                              resolution.skuCode}
+                          </strong>
+                          <p>
+                            {resolution.status === 'STALE_OVERRIDE'
+                              ? 'Сохранённый поставщик отсутствует в свежем отчёте или не входит в рабочий пул.'
+                              : resolution.candidates.length === 0
+                                ? 'В рабочем пуле нет истории поставщиков для этой позиции.'
+                                : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
+                          </p>
+                        </>
+                      ),
+                    },
+                  },
+                ),
+                {
+                  key: 'supplier',
+                  header: 'Поставщик',
+                  width: 'minmax(280px,1.3fr)',
+                  render: (resolution) =>
+                    resolution.candidates.length > 0 ? (
+                      <div className="decision-supplier">
+                        <Select
+                          aria-label={`Поставщик ${resolution.skuCode}`}
+                          value=""
+                          disabled={supplierBusy}
+                          onChange={(event) =>
+                            onChoose(resolution, event.target.value)
+                          }
                         >
-                          {candidate.supplier}
-                          {candidate.supplier === resolution.recommendedSupplier
-                            ? ' — рекомендуемый'
-                            : ''}
-                          {' · '}
-                          {fmtQty(candidate.purchaseQty)} ед. ·{' '}
-                          {money(candidate.purchaseAmount)} ·{' '}
-                          {candidate.weightedUnitCost == null
-                            ? 'нет цены'
-                            : money(candidate.weightedUnitCost)}
-                        </option>
-                      ))}
-                    </Select>
-                    {manualBusyCode === resolution.skuCode && (
-                      <small role="status">Сохраняем выбор…</small>
-                    )}
-                  </div>
-                ) : (
-                  <span className="danger-text">Только ручное уточнение</span>
-                )}
-              </div>
-            ))}
+                          <option value="">Выберите поставщика…</option>
+                          {resolution.candidates.map((candidate) => (
+                            <option
+                              key={candidate.supplier}
+                              value={candidate.supplier}
+                            >
+                              {candidate.supplier}
+                              {candidate.supplier ===
+                              resolution.recommendedSupplier
+                                ? ' — рекомендуемый'
+                                : ''}
+                              {' · '}
+                              {fmtQty(candidate.purchaseQty)} ед. ·{' '}
+                              {money(candidate.purchaseAmount)} ·{' '}
+                              {candidate.weightedUnitCost == null
+                                ? 'нет цены'
+                                : money(candidate.weightedUnitCost)}
+                            </option>
+                          ))}
+                        </Select>
+                        {manualBusyCode === resolution.skuCode && (
+                          <small role="status">Сохраняем выбор…</small>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="danger-text">
+                        Только ручное уточнение
+                      </span>
+                    ),
+                },
+              ]}
+            />
           </div>
         </>
       )}

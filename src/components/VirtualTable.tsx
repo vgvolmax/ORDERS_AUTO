@@ -24,6 +24,8 @@ export function VirtualTable<T>({
   getRowKey,
   renderDetails,
   maxHeight,
+  rowClassName,
+  estimateRowHeight = 58,
   emptyMessage = 'Нет данных по выбранным фильтрам.',
 }: {
   rows: T[];
@@ -31,6 +33,8 @@ export function VirtualTable<T>({
   getRowKey: (row: T) => string;
   renderDetails?: ((row: T) => ReactNode) | undefined;
   maxHeight?: string | undefined;
+  rowClassName?: string | undefined;
+  estimateRowHeight?: number;
   emptyMessage?: string | undefined;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -51,7 +55,7 @@ export function VirtualTable<T>({
   const virtualizer = useVirtualizer({
     count: shouldVirtualize ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 58,
+    estimateSize: () => estimateRowHeight,
     overscan: 10,
     scrollMargin: headerHeight,
   });
@@ -93,6 +97,7 @@ export function VirtualTable<T>({
                 const row = rows[virtualRow.index]!;
                 return (
                   <TableRow
+                    rowClassName={rowClassName}
                     key={getRowKey(row)}
                     row={row}
                     columns={columns}
@@ -115,6 +120,7 @@ export function VirtualTable<T>({
             <div>
               {rows.map((row, index) => (
                 <TableRow
+                  rowClassName={rowClassName}
                   key={getRowKey(row)}
                   row={row}
                   columns={columns}
@@ -165,6 +171,7 @@ function TableRow<T>({
   measureRef,
   dataIndex,
   style,
+  rowClassName,
 }: {
   row: T;
   columns: VirtualColumn<T>[];
@@ -173,6 +180,7 @@ function TableRow<T>({
   measureRef?: ((node: Element | null) => void) | undefined;
   dataIndex: number;
   style?: CSSProperties | undefined;
+  rowClassName?: string | undefined;
 }) {
   return (
     <div
@@ -182,7 +190,10 @@ function TableRow<T>({
       role="row"
       style={style}
     >
-      <div className="virtual-row" style={{ gridTemplateColumns: template }}>
+      <div
+        className={`virtual-row ${rowClassName ?? ''}`}
+        style={{ gridTemplateColumns: template }}
+      >
         {columns.map((column) => (
           <div key={column.key} className={column.className} role="cell">
             {column.render(row)}

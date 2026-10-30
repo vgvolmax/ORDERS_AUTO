@@ -1,3 +1,4 @@
+import { productColumns } from '../../components/productColumns';
 import { useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { VirtualTable } from '../../components/VirtualTable';
@@ -105,21 +106,11 @@ export function SkippedRebalanceList({
                 : 'Все выбранные потребности обеспечены либо исключены условиями расчёта. Проверьте список исключений.'
             }
             columns={[
-              {
-                key: 'sku',
-                header: 'Артикул · код · товар',
-                width: 'minmax(230px, 1.6fr)',
-                render: (r) => (
-                  <div className="skip-cell">
-                    <strong>
-                      {skuMap.get(r.skuCode)?.article ?? r.skuCode} ·{' '}
-                      {r.skuCode}
-                    </strong>
-                    <span>{skuMap.get(r.skuCode)?.name ?? r.skuCode}</span>
-                    <small>{units.get(r.skuCode) ?? 'Единица не задана'}</small>
-                  </div>
-                ),
-              },
+              ...productColumns<(typeof rows)[number]>((r) => ({
+                code: r.skuCode,
+                article: skuMap.get(r.skuCode)?.article ?? null,
+                name: skuMap.get(r.skuCode)?.name ?? r.skuCode,
+              })),
               {
                 key: 'need',
                 header: 'Нужно · можно доставить · не хватает',

@@ -173,7 +173,7 @@ describe('SupplierOrdersDrawer', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
-        name: 'Изменить ширину столбца Номенклатура',
+        name: 'Изменить ширину столбца Наименование',
       }),
     ).toBeInTheDocument();
     expect(

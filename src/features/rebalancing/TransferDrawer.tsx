@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, useModalLayer } from '../../components/Dialog';
 import { VirtualTable } from '../../components/VirtualTable';
+import { productColumns } from '../../components/productColumns';
 import { Alert, Button, SearchInput } from '../../components/ui';
 import { fmtQty, money } from '../demand/DemandPage';
 import type {
@@ -10,7 +11,6 @@ import type {
   TransferStockView,
 } from './transferDocuments';
 import { summarizeTransferDocuments } from './transferDocuments';
-import { useTransferPageSize } from './useTransferPageSize';
 
 export function TransferDrawer({
   document: doc,
@@ -44,22 +44,13 @@ export function TransferDrawer({
   const ref = useRef<HTMLElement>(null);
   useModalLayer(ref, onClose);
   const [query, setQuery] = useState('');
-  const [page, setPage] = useState(0);
   const [product, setProduct] = useState<TransferDocumentLine | null>(null);
-  const { frameRef, pageSize } = useTransferPageSize();
   const rows = doc.lines.filter((l) =>
     [l.skuCode, l.article ?? '', l.name]
       .join(' ')
       .toLocaleLowerCase('ru')
       .includes(query.trim().toLocaleLowerCase('ru')),
   );
-  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const currentPage = Math.min(page, pages - 1);
-  const pageRows = rows.slice(
-    currentPage * pageSize,
-    (currentPage + 1) * pageSize,
-  );
-  const pageEligible = pageRows.filter((l) => l.decision === 'PROPOSED');
   const eligible = rows.filter((l) => l.decision === 'PROPOSED');
   const routeSelected = eligible
     .filter((l) => l.selected)
@@ -127,24 +118,23 @@ export function TransferDrawer({
           <label>
             Поиск по составу перемещения
             <SearchInput
+              aria-label="Поиск по составу перемещения"
               value={query}
               onValueChange={(value) => {
                 setQuery(value);
-                setPage(0);
               }}
             />
           </label>
           <label className="checkbox-control">
             <input
               type="checkbox"
-              aria-label="Выбрать видимые предложения"
+              aria-label="Выбрать все предложения по поиску"
               checked={
-                pageEligible.length > 0 &&
-                pageEligible.every((line) => line.selected)
+                eligible.length > 0 && eligible.every((line) => line.selected)
               }
-              disabled={disabled || !pageEligible.length}
+              disabled={disabled || !eligible.length}
               onChange={(e) => {
-                const ids = new Set(pageEligible.map((l) => l.sourceLineId));
+                const ids = new Set(eligible.map((l) => l.sourceLineId));
                 onSelection(
                   e.target.checked
                     ? [...new Set([...selected, ...ids])]
@@ -152,58 +142,18 @@ export function TransferDrawer({
                 );
               }}
             />
-            Отметить страницу ({pageEligible.length})
+            Отметить все по поиску ({eligible.length})
           </label>
-          <nav
-            className="transfer-pagination"
-            aria-label="Страницы состава перемещения"
-          >
-            <span aria-live="polite">
-              {rows.length ? currentPage * pageSize + 1 : 0}–
-              {Math.min((currentPage + 1) * pageSize, rows.length)} из{' '}
-              {rows.length}
-            </span>
-            <Button
-              className="secondary"
-              aria-label="Первая страница"
-              disabled={currentPage === 0}
-              onClick={() => setPage(0)}
-            >
-              «
-            </Button>
-            <Button
-              className="secondary"
-              aria-label="Предыдущая страница"
-              disabled={currentPage === 0}
-              onClick={() => setPage(currentPage - 1)}
-            >
-              ‹
-            </Button>
-            <Button
-              className="secondary"
-              aria-label="Следующая страница"
-              disabled={currentPage >= pages - 1}
-              onClick={() => setPage(currentPage + 1)}
-            >
-              ›
-            </Button>
-            <Button
-              className="secondary"
-              aria-label="Последняя страница"
-              disabled={currentPage >= pages - 1}
-              onClick={() => setPage(pages - 1)}
-            >
-              »
-            </Button>
-          </nav>
+          <span aria-live="polite">Позиций по поиску: {rows.length}</span>
         </div>
         <p className="transfer-stock-help">
           Предложено: сейчас → после строки. Принято: по отчёту → с принятыми.
           Цена MIN/MAX — справочная.
         </p>
-        <div className="transfer-table-frame" ref={frameRef}>
+        <div className="transfer-table-frame">
           <VirtualTable
-            rows={pageRows}
+            rows={rows}
+            estimateRowHeight={108}
             maxHeight="100%"
             getRowKey={(l) => l.id}
             emptyMessage={
@@ -241,47 +191,46 @@ export function TransferDrawer({
                     />
                   ),
               },
-              {
-                key: 'product',
-                header: 'Код · артикул · товар',
-                width: 'minmax(0, 2fr)',
-                className: 'transfer-product',
-                render: (l) => (
-                  <>
-                    <strong>{l.skuCode}</strong>
-                    <span>{l.article ?? 'Артикул не указан'}</span>
-                    <button
-                      className="transfer-product-name"
-                      aria-label={`Показать полное название ${l.skuCode}`}
-                      onClick={() => setProduct(l)}
-                    >
-                      {l.name}
-                    </button>
-                  </>
-                ),
-              },
+              ...productColumns<TransferDocumentLine>(
+                (l) => ({ code: l.skuCode, article: l.article, name: l.name }),
+                {
+                  code: { width: '130px' },
+                  article: { width: '110px' },
+                  name: {
+                    width: 'minmax(200px,1.5fr)',
+                    render: (l) => (
+                      <button
+                        className="transfer-product-name"
+                        aria-label={`Показать полное название ${l.skuCode}`}
+                        onClick={() => setProduct(l)}
+                      >
+                        {l.name}
+                      </button>
+                    ),
+                  },
+                },
+              ),
               {
                 key: 'from',
                 header: 'Отправитель · остаток',
-                width: 'minmax(0, 1.1fr)',
+                width: 'minmax(155px, 1fr)',
                 render: (l) => <Stock values={l.from} line={l} />,
               },
               {
                 key: 'to',
                 header: 'Получатель · остаток',
-                width: 'minmax(0, 1.1fr)',
+                width: 'minmax(155px, 1fr)',
                 render: (l) => <Stock values={l.to} line={l} />,
               },
               {
                 key: 'cost',
-                header: 'Количество · стоимость',
-                width: 'minmax(0, 1.3fr)',
+                header: 'Количество · цена · сумма',
+                width: 'minmax(155px, 1fr)',
                 className: 'transfer-cost num',
                 render: (l) => (
                   <>
-                    <strong>
-                      {fmtQty(l.qty)} {l.unit ?? 'единица не задана'}
-                    </strong>
+                    <strong>{fmtQty(l.qty)}</strong>
+                    <small>Ед. изм.: {l.unit ?? 'ед.'}</small>
                     <small>
                       Цена:{' '}
                       {l.unitPrice === null ? 'Нет цены' : money(l.unitPrice)}
@@ -295,7 +244,7 @@ export function TransferDrawer({
               {
                 key: 'decision',
                 header: 'Решение',
-                width: 'minmax(0, 1.2fr)',
+                width: 'minmax(125px, 1fr)',
                 render: (l) => (
                   <div className="transfer-line-actions">
                     <span
@@ -338,8 +287,8 @@ export function TransferDrawer({
           />
         </div>
         <p className="transfer-scope-note">
-          Принятие — отмеченные позиции текущего поиска на всех страницах. CSV —
-          принятые позиции всего перемещения.
+          Принятие — все отмеченные позиции текущего поиска, включая строки за
+          пределами экрана. CSV — принятые позиции всего перемещения.
         </p>
         <div className="drawer-actions transfer-drawer-actions">
           <div className="transfer-selection-summary">

@@ -168,7 +168,9 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   ]);
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
   await expect(page.getByText(/Рабочий пул: 32 поставщика/)).toBeVisible();
-  await expect(page.getByText('Код SKU2', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.decision .product-code').getByText('SKU2', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText(/В рабочем пуле нет истории/)).toBeVisible();
   const choice = page.getByRole('combobox', { name: 'Поставщик SKU3' });
   await expect(choice.locator('option')).toHaveCount(3);
@@ -176,9 +178,9 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
     choice.locator('option').filter({ hasText: hidden }),
   ).toHaveCount(0);
   const expectDecisionLayout = async () => {
-    const row = page.locator('.decision').filter({ hasText: 'Код SKU3' });
+    const row = page.locator('.decision').filter({ hasText: 'SKU3' });
     const check = await row.getByRole('checkbox').boundingBox();
-    const identity = await row.locator(':scope > div').first().boundingBox();
+    const identity = await row.locator('.product-code').boundingBox();
     const select = await choice.boundingBox();
     expect(check).not.toBeNull();
     expect(identity).not.toBeNull();
@@ -233,7 +235,9 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   await expect(
     page.getByRole('heading', { name: 'Поставщики', exact: true }),
   ).toBeVisible();
-  await expect(page.getByText('Код SKU2', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.decision .product-code').getByText('SKU2', { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole('combobox', { name: 'Поставщик SKU3' }),
   ).toHaveCount(0);
@@ -391,11 +395,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     path: testInfo.outputPath('00-conditions-select-1280.png'),
   });
   await page.keyboard.press('Escape');
-  await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
-  await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
-  await page
-    .getByRole('button', { name: 'Назначить ненастроенным (1)' })
-    .click();
+  await expect(page.getByLabel('Шаг для ненастроенных SKU')).toHaveCount(0);
   await page.getByRole('button', { name: 'Рассчитать перемещения' }).click();
   await expect(
     page.getByRole('heading', { name: 'Перемещения по направлениям · 2' }),
@@ -442,6 +442,10 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   });
   await page
     .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  await expect(transferDrawer).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Открыть перемещение Донор А → Получатель' })
     .click();
   await expect(
     transferDrawer.getByText('Принято', { exact: true }),
@@ -625,7 +629,7 @@ for (const { count, width, height } of [
   { count: 46, width: 1280, height: 720 },
   { count: 130, width: 1024, height: 768 },
 ]) {
-  test(`E2E-09 transfer drawer ${count} rows fits the screen without scrolling and exports accepted CSV`, async ({
+  test(`E2E-09 transfer drawer ${count} rows uses one bounded scroll surface and exports accepted CSV`, async ({
     page,
   }, testInfo) => {
     test.setTimeout(90_000);
@@ -695,11 +699,7 @@ for (const { count, width, height } of [
       .getByRole('button', { name: 'Ребалансировка', exact: true })
       .click();
     await page.getByRole('tab', { name: 'Условия' }).click();
-    await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
-    await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
-    await page
-      .getByRole('button', { name: `Назначить ненастроенным (${count})` })
-      .click();
+    await expect(page.getByLabel('Шаг для ненастроенных SKU')).toHaveCount(0);
     await page.getByRole('button', { name: 'Рассчитать перемещения' }).click();
     const cell = page.getByRole('button', {
       name: 'Открыть перемещение Егорьевск → Ленина',
@@ -714,27 +714,37 @@ for (const { count, width, height } of [
     const button = drawer.getByRole('button', {
       name: /Принять выбранные в перемещении/,
     });
-    const expectNoScroll = () =>
+    const expectContainedScroll = () =>
       expect
         .poll(() =>
-          drawer.evaluate((root) =>
-            [root, ...root.querySelectorAll('*')].every((node) => {
-              const el = node as HTMLElement;
-              const style = getComputedStyle(el);
-              return !(
+          drawer.evaluate((root) => {
+            const box = root.getBoundingClientRect();
+            const outside =
+              box.left < 0 ||
+              box.top < 0 ||
+              box.right > innerWidth ||
+              box.bottom > innerHeight;
+            const owners = [...root.querySelectorAll('*')].filter((node) => {
+              const el = node as HTMLElement,
+                style = getComputedStyle(el);
+              return (
                 (/auto|scroll/.test(style.overflowX) &&
-                  el.clientWidth > 0 &&
                   el.scrollWidth > el.clientWidth + 1) ||
                 (/auto|scroll/.test(style.overflowY) &&
-                  el.clientHeight > 0 &&
                   el.scrollHeight > el.clientHeight + 1)
               );
-            }),
-          ),
+            });
+            return (
+              !outside &&
+              root.scrollHeight <= root.clientHeight + 1 &&
+              root.scrollWidth <= root.clientWidth + 1 &&
+              owners.every((el) => el.classList.contains('virtual-scroll'))
+            );
+          }),
         )
         .toBe(true);
     const expectFooter = async () => {
-      await expectNoScroll();
+      await expectContainedScroll();
       const box = await button.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);
@@ -770,7 +780,7 @@ for (const { count, width, height } of [
             );
           }).length,
       );
-      expect(owners).toBe(0);
+      expect(owners).toBeLessThanOrEqual(1);
       const verticalOwners = await drawer.locator('*').evaluateAll(
         (nodes) =>
           nodes.filter((node) => {
@@ -782,7 +792,7 @@ for (const { count, width, height } of [
             );
           }).length,
       );
-      expect(verticalOwners).toBe(0);
+      expect(verticalOwners).toBe(1);
       const drawerFits = await drawer.evaluate(
         (el) =>
           el.scrollHeight <= el.clientHeight + 1 &&
@@ -803,7 +813,9 @@ for (const { count, width, height } of [
       drawer.getByText('Выбрано к принятию: 1', { exact: true }),
     ).toBeVisible();
     await expect(button).toBeEnabled();
-    await drawer.getByRole('button', { name: 'Последняя страница' }).click();
+    await viewport.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
     const lastRow = viewport
       .getByRole('row')
       .filter({ hasText: codes.at(-1)! });
@@ -825,7 +837,7 @@ for (const { count, width, height } of [
     await expect(product).toHaveCount(0);
     if (width === 1280) {
       await page.setViewportSize({ width, height: 600 });
-      await expectNoScroll();
+      await expectContainedScroll();
       const shortBox = await button.boundingBox();
       expect(shortBox!.y + shortBox!.height).toBeLessThanOrEqual(600);
       await expect
@@ -868,6 +880,8 @@ for (const { count, width, height } of [
       .getByRole('button', { name: 'Принять перемещения', exact: true })
       .click();
     await expect(confirm).toHaveCount(0);
+    await expect(drawer).toHaveCount(0);
+    await cell.click();
     await expect(
       drawer.getByLabel('Принято на сумму в перемещении'),
     ).toContainText('1 800,00');
@@ -1147,11 +1161,7 @@ async function configureFullCoverage(page: Page) {
   await setPairDirection(page, 'Донор А', 'Второй', 'Донор А → Второй');
   await setPairDirection(page, 'Донор Б', 'Второй', 'Донор Б → Второй');
   await page.getByRole('tab', { name: 'Условия', exact: true }).click();
-  await page.getByLabel('Единица для ненастроенных SKU').fill('шт');
-  await page.getByLabel('Шаг для ненастроенных SKU').fill('1');
-  await page
-    .getByRole('button', { name: 'Назначить ненастроенным (3)', exact: true })
-    .click();
+  await expect(page.getByLabel('Шаг для ненастроенных SKU')).toHaveCount(0);
   await page
     .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
     .click();
@@ -1496,6 +1506,8 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   await confirmation
     .getByRole('button', { name: 'Принять перемещения', exact: true })
     .click();
+  await expect(transfer).toHaveCount(0);
+  await route.click();
   await expect(fullRow.getByText('Принято', { exact: true })).toBeVisible();
   await expect(
     transfer.getByRole('row').filter({ hasText: 'FULL2' }),
@@ -1631,17 +1643,8 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
     transfer.getByRole('row').filter({ hasText: 'FULL1' }),
   ).toContainText('Принято');
   const unacceptedRow = transfer.getByRole('row').filter({ hasText: 'FULL2' });
-  // A stale-plan banner can leave room for one row; use the real composition pages.
-  if ((await unacceptedRow.count()) === 0)
-    await transfer
-      .getByRole('button', { name: 'Следующая страница', exact: true })
-      .click();
+  await unacceptedRow.scrollIntoViewIfNeeded();
   await expect(unacceptedRow.getByRole('checkbox')).toBeDisabled();
-  const firstPage = transfer.getByRole('button', {
-    name: 'Первая страница',
-    exact: true,
-  });
-  if (await firstPage.isEnabled()) await firstPage.click();
 
   const stillAcceptedDownload = page.waitForEvent('download');
   await transfer
@@ -1765,14 +1768,12 @@ test('E2E-13 monetary threshold rolls back after an offline storage failure and 
     ['Выбрать файл Отчёт MIN/MAX', 'min.xlsx', buildMinMaxFixture()],
     ['Выбрать файл Отчёт поставщиков', 'sup.xlsx', buildSupplierFixture()],
   ] as const) {
-    await page
-      .getByLabel(label)
-      .setInputFiles({
-        name,
-        mimeType:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        buffer: Buffer.from(bytes),
-      });
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: Buffer.from(bytes),
+    });
   }
   await page
     .getByRole('button', { name: 'Ребалансировка', exact: true })
@@ -1810,6 +1811,147 @@ test('E2E-13 monetary threshold rolls back after an offline storage failure and 
   await expect(page.getByLabel('Порог цены', { exact: true })).toHaveValue(
     '5000',
   );
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
+test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work together offline', async ({
+  page,
+}, testInfo) => {
+  const XLSX = await import('xlsx');
+  const evidence = observeRuntime(page);
+  await expectOfflineApp(page, resolve('dist/ORDERS_AUTO'));
+  await page.setViewportSize({ width: 1280, height: 720 });
+  function report(rows: unknown[][], cell: string) {
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    sheet[cell]!.z = '000000';
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'Report');
+    return Buffer.from(XLSX.write(book, { type: 'array', bookType: 'xlsx' }));
+  }
+  const allowed = 'ИП Баранов Роман Борисович',
+    second = 'ИП Никишин Андрей Николаевич';
+  const min = report(
+    [
+      [
+        'Код',
+        'Артикул',
+        'Номенклатура',
+        'Количество',
+        'Минимальный остаток',
+        'Максимальный остаток',
+        'Цена',
+      ],
+      [123, 'ART-ZERO', 'Товар с полным кодом', 100, null, null, 100],
+      [null, null, 'Донор', 100, 10, 10, null],
+      ...Array.from({ length: 8 }, (_, i) => [
+        null,
+        null,
+        `Склад ${i + 1}`,
+        0,
+        1,
+        10,
+        null,
+      ]),
+    ],
+    'A2',
+  );
+  const sup = report(
+    [
+      [
+        'Контрагент',
+        'Код',
+        'Номенклатура',
+        'Количество',
+        'Стоимость',
+        'Ед. изм.',
+      ],
+      [allowed, 123, 'Товар с полным кодом', 10, 1000, 'шт'],
+      [second, '000123', 'Товар с полным кодом', 1, 100, 'шт'],
+    ],
+    'B2',
+  );
+  for (const [label, name, buffer] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'sup.xlsx', sup],
+  ] as const)
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer,
+    });
+  await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  const decision = page.locator('.decision').filter({ hasText: '000123' });
+  await expect(decision).toContainText('ART-ZERO');
+  await expect(decision).toContainText('Товар с полным кодом');
+  await decision
+    .getByRole('combobox', { name: 'Поставщик 000123' })
+    .selectOption(allowed);
+  await expect(decision).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await expect(page.getByLabel('Шаг для ненастроенных SKU')).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
+    .click();
+  const matrix = page.locator('.transfer-matrix .virtual-scroll');
+  await expect
+    .poll(() => matrix.evaluate((el) => el.scrollWidth > el.clientWidth))
+    .toBe(true);
+  const identity = page.locator(
+    '.transfer-matrix .virtual-row .transfer-identity',
+  );
+  await identity.scrollIntoViewIfNeeded();
+  await matrix.evaluate((el) => {
+    el.scrollLeft = 600;
+  });
+  await expect
+    .poll(() =>
+      identity.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const row = el.closest('.virtual-row')!.getBoundingClientRect();
+        if (Math.abs(r.height - row.height) > 1) return false;
+        return [r.top + 4, r.top + r.height / 2, r.bottom - 4].every((y) =>
+          el.contains(document.elementFromPoint(r.right - 8, y)),
+        );
+      }),
+    )
+    .toBe(true);
+  await expect(identity).toHaveCSS('background-color', 'rgb(247, 248, 250)');
+  await page.screenshot({
+    path: testInfo.outputPath('operator-sticky-column-1280.png'),
+  });
+  await page
+    .getByRole('button', {
+      name: 'Открыть перемещение Донор → Склад 1',
+      exact: true,
+    })
+    .click();
+  const drawer = page.getByRole('dialog', { name: 'Состав перемещения' });
+  await expect(
+    drawer
+      .getByRole('columnheader')
+      .filter({ hasText: /^(Код|Артикул|Наименование)$/ }),
+  ).toHaveText(['Код', 'Артикул', 'Наименование']);
+  await expect(drawer.getByText('000123', { exact: true })).toBeVisible();
+  await drawer
+    .getByRole('checkbox', { name: /Выбрать перемещение 000123/ })
+    .check();
+  await drawer
+    .getByRole('button', {
+      name: 'Принять выбранные в перемещении (1)',
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole('dialog', { name: 'Принять выбранные перемещения' })
+    .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  await expect(drawer).toHaveCount(0);
+  await expect(page.locator('.toast')).toContainText('Перемещения приняты');
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.consoleErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
