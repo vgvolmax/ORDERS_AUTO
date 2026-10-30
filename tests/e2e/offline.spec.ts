@@ -1912,8 +1912,10 @@ test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work 
     .poll(() =>
       identity.evaluate((el) => {
         const r = el.getBoundingClientRect();
-        return el.contains(
-          document.elementFromPoint(r.right - 8, r.top + r.height / 2),
+        const row = el.closest('.virtual-row')!.getBoundingClientRect();
+        if (Math.abs(r.height - row.height) > 1) return false;
+        return [r.top + 4, r.top + r.height / 2, r.bottom - 4].every((y) =>
+          el.contains(document.elementFromPoint(r.right - 8, y)),
         );
       }),
     )
