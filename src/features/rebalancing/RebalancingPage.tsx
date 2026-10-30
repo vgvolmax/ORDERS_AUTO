@@ -257,6 +257,28 @@ export function RebalancingPage() {
       preview ? derive({ ...state, ...preview.patch }).purchaseDemand : [],
     [state, preview],
   );
+  const confirmationSummary = useMemo(() => {
+    if (!confirmation) return undefined;
+    const ids = new Set(confirmation.ids);
+    const chosen = buildTransferDocuments({
+      proposal: r.proposal, accepted: r.accepted, registry: r.registry,
+      policies, skus: state.minMax?.skus ?? [], snapshot: d.snapshot?.snapshot ?? null,
+      selected: [], rejected: r.rejectedLineIds, query: '', scope: {},
+    }).flatMap((doc) => doc.lines.filter((line) =>
+      confirmation.kind === 'accept'
+        ? line.decision === 'PROPOSED' && ids.has(line.sourceLineId)
+        : line.decision === 'ACCEPTED' && ids.has(line.transferId ?? ''),
+    ).map((line) => ({ ...line, donor: doc.fromName, recipient: doc.toName })));
+    const missingPriceLineCount = chosen.filter((line) => line.amount === null).length;
+    const amount = chosen.reduce((sum, line) => sum + (line.amount ?? 0), 0);
+    return {
+      donor: [...new Set(chosen.map((line) => line.donor))].join(', '),
+      recipients: [...new Set(chosen.map((line) => line.recipient))],
+      skuCount: new Set(chosen.map((line) => line.skuCode)).size,
+      amount: missingPriceLineCount || !Number.isFinite(amount) ? null : amount,
+      missingPriceLineCount,
+    };
+  }, [confirmation, r.proposal, r.accepted, r.registry, r.rejectedLineIds, policies, state.minMax?.skus, d.snapshot]);
   async function confirm() {
     if (!confirmation || busy) return;
     setBusy(true);
@@ -621,6 +643,7 @@ export function RebalancingPage() {
         <AcceptTransfersDialog
           kind={confirmation.kind}
           count={confirmation.ids.length}
+          scopeSummary={confirmationSummary}
           before={d.purchaseDemand}
           after={previewDemand}
           clearedEdits={preview.clearedEditCount}

@@ -73,7 +73,7 @@ export function useModalLayer(
         el.inert = previous[i]!;
       });
       document.body.style.overflow = overflow;
-      if (trigger?.isConnected) trigger.focus();
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
     };
   }, [ref]);
 }
@@ -82,11 +82,13 @@ export function Dialog({
   children,
   onClose,
   actions,
+  size = 'default',
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   actions?: ReactNode;
+  size?: 'default' | 'wide';
 }) {
   const ref = useRef<HTMLElement>(null),
     id = useId();
@@ -104,7 +106,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={id}
-        className="modal-surface"
+        className={`modal-surface${size === 'wide' ? ' modal-wide' : ''}`}
       >
         <div className="modal-heading">
           <h2 id={id}>{title}</h2>

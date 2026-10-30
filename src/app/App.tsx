@@ -13,6 +13,7 @@ import { StoreContext, type AppState, type StatePatch } from './appStore';
 import { createInitialState } from './initialState';
 import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
 import { loadActiveWorkspace, saveWorkspace } from '../persistence/workspaces';
+import { usePageScroll } from './usePageScroll';
 
 export function App() {
   const [state, setState] = useState<AppState>(() => createInitialState());
@@ -144,6 +145,8 @@ export function App() {
     const timer = window.setTimeout(() => set({ toast: null }), 3500);
     return () => window.clearTimeout(timer);
   }, [state.toast]);
+
+  usePageScroll(state.page, state.workspaceId, !initializing && Boolean(session.current));
 
   if (initializing) {
     return <div className="boot">Загрузка сохранённых настроек…</div>;

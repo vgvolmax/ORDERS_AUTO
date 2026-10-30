@@ -13,9 +13,9 @@ import { createProposal } from '../../src/app/rebalanceActions';
 import { derive } from '../../src/app/selectors';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
 import { AcceptTransfersDialog } from '../../src/features/rebalancing/AcceptTransfersDialog';
-export function Harness() {
+export function Harness({ initial = rebalanceAppState }: { initial?: typeof rebalanceAppState } = {}) {
   const [state, update] = useState(() => {
-    const s = rebalanceAppState();
+    const s = initial();
     s.rebalance.proposal = createProposal(s);
     s.rebalance.tab = 'results';
     return s;
@@ -31,6 +31,40 @@ export function Harness() {
     </StoreContext.Provider>
   );
 }
+it('shows the selected route, SKU count and amount in the acceptance confirmation', () => {
+  render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: 'Открыть перемещение Донор А → Получатель' }));
+  const drawer = screen.getByRole('dialog', { name: 'Состав перемещения' });
+  fireEvent.click(within(drawer).getByRole('checkbox', { name: /Выбрать перемещение/ }));
+  fireEvent.click(within(drawer).getByRole('button', { name: /Принять выбранные в перемещении/ }));
+  const dialog = screen.getByRole('dialog', { name: 'Принять выбранные перемещения' });
+  expect(dialog).toHaveTextContent('Донор: Донор А');
+  expect(dialog).toHaveTextContent('Получатели: Получатель');
+  expect(dialog).toHaveTextContent('SKU: 1');
+  expect(dialog).toHaveTextContent('Сумма:');
+  expect(within(dialog).getByRole('group', { name: 'Изменение закупки' })).toHaveTextContent('Было');
+  expect(within(dialog).getByRole('group', { name: 'Изменение закупки' })).toHaveTextContent('Станет');
+});
+it('summarizes multiple selected donors and keeps missing prices unknown', () => {
+  const initial = () => {
+    const state = rebalanceAppState();
+    state.minMax!.skus[0]!.referencePrice = null;
+    state.suppliers!.history[0]!.weightedUnitCost = null;
+    return state;
+  };
+  render(<Harness initial={initial} />);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать видимые предложения' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Принять выбранные (2)' }));
+  const dialog = screen.getByRole('dialog', { name: 'Принять выбранные перемещения' });
+  expect(dialog).toHaveTextContent('Донор: Донор А, Донор Б');
+  expect(dialog).toHaveTextContent('Получатели: Получатель');
+  expect(dialog).toHaveTextContent('SKU: 1');
+  expect(dialog).toHaveTextContent('Сумма: Сумма неизвестна');
+  expect(dialog).toHaveTextContent('Без цены: 2');
+  const totals = within(dialog).getByRole('group', { name: 'Изменение закупки' });
+  expect(totals).toHaveTextContent('БылоСумма неизвестна');
+  expect(totals).toHaveTextContent('Станет0,00');
+});
 it('selection is independent; accept subset, cancel dialog, accept rest, recalculate and revoke', async () => {
   render(<Harness />);
   const open = (from: string) => {
