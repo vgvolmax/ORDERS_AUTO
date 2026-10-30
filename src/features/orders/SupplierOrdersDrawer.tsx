@@ -310,8 +310,8 @@ export function SupplierOrdersDrawer({
                   className="sticky-id sticky-name resizable-column"
                   style={sizedStyle(nameWidth, { left: nameLeft })}
                 >
-                  Номенклатура
-                  {resizer('name', 'Номенклатура', nameWidth)}
+                  Наименование
+                  {resizer('name', 'Наименование', nameWidth)}
                 </th>
                 <th
                   className="num resizable-column"

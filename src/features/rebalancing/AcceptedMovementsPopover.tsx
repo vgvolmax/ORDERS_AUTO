@@ -1,3 +1,5 @@
+import { productColumns } from '../../components/productColumns';
+import type { Sku } from '../../domain/types';
 import { useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { useDerivedState } from '../../app/useDerivedState';
@@ -15,11 +17,14 @@ export function AcceptedMovementsPopover({
   summary,
   onOpenRebalancing,
   onClose,
+  skus = [],
 }: {
   summary: MovementSummary;
+  skus?: Sku[];
   onOpenRebalancing: () => void;
   onClose: () => void;
 }) {
+  const skuMap = new Map(skus.map((s) => [s.code, s]));
   return (
     <Dialog
       title="Учтённые перемещения"
@@ -64,12 +69,11 @@ export function AcceptedMovementsPopover({
         rows={summary.transfers}
         getRowKey={(t) => t.transferId}
         columns={[
-          {
-            key: 'sku',
-            header: 'Код',
-            width: '110px',
-            render: (t) => t.skuCode,
-          },
+          ...productColumns<(typeof summary.transfers)[number]>((t) => ({
+            code: t.skuCode,
+            article: skuMap.get(t.skuCode)?.article ?? null,
+            name: skuMap.get(t.skuCode)?.name ?? t.skuCode,
+          })),
           {
             key: 'route',
             header: 'Принятый маршрут',
@@ -111,7 +115,7 @@ export function MovementIndicator({
     purchaseDemand: d.purchaseDemand,
     acceptedTransfers: state.rebalance.accepted,
     registry: state.rebalance.registry,
-    policies: state.rebalance.policies,
+    policies: d.quantityPolicies,
     scope,
     manualOrderQty,
   });
@@ -130,6 +134,7 @@ export function MovementIndicator({
       {open && (
         <AcceptedMovementsPopover
           summary={summary}
+          skus={state.minMax?.skus ?? []}
           onClose={() => setOpen(false)}
           onOpenRebalancing={() => {
             setOpen(false);

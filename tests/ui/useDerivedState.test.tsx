@@ -94,3 +94,26 @@ describe('useDerivedState', () => {
     expect(result.current).not.toBe(first);
   });
 });
+
+it('refreshes inferred units when source diagnostics change without replacing the parsed dataset', () => {
+  const state = baseState();
+  const { result, rerender } = renderHook(
+    ({ currentState }) => useDerivedState(currentState),
+    { initialProps: { currentState: state } },
+  );
+  expect(result.current.quantityPolicies[0]!.unit).toBe('шт');
+  rerender({
+    currentState: {
+      ...state,
+      supplierIssues: [
+        {
+          code: 'MIXED_UNITS',
+          severity: 'WARNING',
+          skuCode: 'SKU1',
+          message: 'Разные единицы',
+        },
+      ],
+    },
+  });
+  expect(result.current.quantityPolicies[0]!.unit).toBe('ед.');
+});

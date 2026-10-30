@@ -34,7 +34,7 @@ function initialState() {
     ...state.minMax!.branches.map((branch, i) => ({
       skuCode: '00001',
       branch,
-      stock: [62.5, 60, 57.5][i]!,
+      stock: [63, 60, 57][i]!,
       min: 60,
       max: 60,
     })),
@@ -91,7 +91,7 @@ it('shows global and route amounts, keeps selection separate from rejection and 
   const metric = (label: string) => screen.getByText(label).parentElement!;
   expect(metric('К перемещению')).toHaveTextContent('5 000,00');
   expect(metric('Принято на сумму')).toHaveTextContent('0,00');
-  const { drawer } = openRoute();
+  let { drawer } = openRoute();
   expect(within(drawer).getByLabelText('Сумма перемещения')).toHaveTextContent(
     '1 500,00',
   );
@@ -114,6 +114,12 @@ it('shows global and route amounts, keeps selection separate from rejection and 
   await waitFor(() => expect(current().rebalance.accepted).toHaveLength(1));
   expect(metric('К перемещению')).toHaveTextContent('3 500,00');
   expect(metric('Принято на сумму')).toHaveTextContent('1 500,00');
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Состав перемещения' }),
+    ).not.toBeInTheDocument(),
+  );
+  drawer = openRoute().drawer;
   expect(
     within(drawer).getByLabelText('Принято на сумму в перемещении'),
   ).toHaveTextContent('1 500,00');
@@ -127,7 +133,7 @@ it('opens a route document with product identity, exact units and both stock pre
   expect(cell).toHaveTextContent('2 SKU');
   expect(cell).toHaveTextContent('Сумма неизвестна');
   expect(cell).toHaveTextContent('15 шт');
-  expect(cell).toHaveTextContent('2,5 м');
+  expect(cell).toHaveTextContent('3 м');
   const { drawer } = openRoute();
   expect(drawer).toHaveTextContent('A1');
   expect(drawer).toHaveTextContent('Товар для перемещения');
@@ -160,10 +166,10 @@ it('accepts only selected positions in the open route and leaves another route s
   )!;
   state.rebalance.selectedLineIds = [other.sourceLineId];
   const current = harness(state);
-  const { drawer } = openRoute();
+  let { drawer } = openRoute();
   fireEvent.click(
     within(drawer).getByRole('checkbox', {
-      name: 'Выбрать видимые предложения',
+      name: 'Выбрать все предложения по поиску',
     }),
   );
   expect(current().rebalance.accepted).toHaveLength(0);
@@ -198,6 +204,12 @@ it('accepts only selected positions in the open route and leaves another route s
       (line) => line.skuCode === 'SKU1' && line.branch === 'Получатель',
     )!.purchaseQty,
   ).toBe(35);
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Состав перемещения' }),
+    ).not.toBeInTheDocument(),
+  );
+  drawer = openRoute().drawer;
   expect(within(drawer).getAllByText('Принято')).toHaveLength(2);
   expect(screen.getByText(/Предложено строк по фильтрам:/)).toHaveTextContent(
     'Предложено строк по фильтрам: 1',
@@ -269,10 +281,10 @@ it('keeps the document and committed purchase quantities when acceptance cannot 
 
 it('limits acceptance to the currently visible positions and preserves hidden selections in the same document', async () => {
   const current = harness();
-  const { drawer } = openRoute();
+  let { drawer } = openRoute();
   fireEvent.click(
     within(drawer).getByRole('checkbox', {
-      name: 'Выбрать видимые предложения',
+      name: 'Выбрать все предложения по поиску',
     }),
   );
   fireEvent.change(
@@ -296,9 +308,12 @@ it('limits acceptance to the currently visible positions and preserves hidden se
   );
   await waitFor(() => expect(current().rebalance.accepted).toHaveLength(1));
   expect(current().rebalance.accepted[0]!.skuCode).toBe('SKU1');
-  fireEvent.click(
-    within(drawer).getByRole('button', { name: 'Очистить поиск' }),
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Состав перемещения' }),
+    ).not.toBeInTheDocument(),
   );
+  drawer = openRoute().drawer;
   expect(
     within(drawer).getByRole('checkbox', { name: /Выбрать перемещение 00001/ }),
   ).toBeChecked();
@@ -306,7 +321,7 @@ it('limits acceptance to the currently visible positions and preserves hidden se
     within(drawer).getByRole('textbox', {
       name: 'Поиск по составу перемещения',
     }),
-  ).toHaveFocus();
+  ).toHaveValue('');
 });
 
 it('allows inspecting an outdated proposal but disables selecting and accepting its positions', () => {
@@ -325,7 +340,7 @@ it('allows inspecting an outdated proposal but disables selecting and accepting 
   expect(current().rebalance.accepted).toHaveLength(0);
 });
 
-it('pages a large route, preserves cross-page selection and searches the entire composition', () => {
+it('selects the whole virtual composition and preserves selection while searching', () => {
   const state = rebalanceAppState();
   const sku = state.minMax!.skus[0]!;
   const stocks = state.minMax!.branchStocks;
@@ -347,32 +362,16 @@ it('pages a large route, preserves cross-page selection and searches the entire 
   harness(state);
   const { drawer } = openRoute();
   expect(drawer).toHaveTextContent('500 SKU');
-  expect(within(drawer).getAllByRole('row')).toHaveLength(4);
   fireEvent.click(
-    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение SKU1 / }),
-  );
-  fireEvent.click(
-    within(drawer).getByRole('button', { name: 'Следующая страница' }),
-  );
-  expect(
-    within(drawer).queryByRole('checkbox', {
-      name: /Выбрать перемещение SKU1 /,
+    within(drawer).getByRole('checkbox', {
+      name: 'Выбрать все предложения по поиску',
     }),
-  ).not.toBeInTheDocument();
-  fireEvent.click(
-    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение SKU4 / }),
   );
   expect(
     within(drawer).getByRole('button', {
-      name: 'Принять выбранные в перемещении (2)',
+      name: 'Принять выбранные в перемещении (500)',
     }),
   ).toBeEnabled();
-  fireEvent.click(
-    within(drawer).getByRole('button', { name: 'Предыдущая страница' }),
-  );
-  expect(
-    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение SKU1 / }),
-  ).toBeChecked();
   fireEvent.change(
     within(drawer).getByRole('textbox', {
       name: 'Поиск по составу перемещения',
@@ -380,7 +379,27 @@ it('pages a large route, preserves cross-page selection and searches the entire 
     { target: { value: 'SKU500' } },
   );
   expect(within(drawer).getByText('Товар 500')).toBeVisible();
-  expect(within(drawer).getAllByRole('row')).toHaveLength(2);
+  expect(
+    within(drawer).getByRole('checkbox', {
+      name: /Выбрать перемещение SKU500 /,
+    }),
+  ).toBeChecked();
+  fireEvent.click(
+    within(drawer).getByRole('checkbox', {
+      name: /Выбрать перемещение SKU500 /,
+    }),
+  );
+  fireEvent.change(
+    within(drawer).getByRole('textbox', {
+      name: 'Поиск по составу перемещения',
+    }),
+    { target: { value: '' } },
+  );
+  expect(
+    within(drawer).getByRole('button', {
+      name: 'Принять выбранные в перемещении (499)',
+    }),
+  ).toBeEnabled();
 });
 
 it('keeps an empty route inspector open after its last accepted row is revoked following recalculation', async () => {
@@ -509,7 +528,7 @@ it('does not enable movement CSV for selected proposals', () => {
   const { drawer } = openRoute();
   fireEvent.click(
     within(drawer).getByRole('checkbox', {
-      name: 'Выбрать видимые предложения',
+      name: 'Выбрать все предложения по поиску',
     }),
   );
   expect(
@@ -517,4 +536,68 @@ it('does not enable movement CSV for selected proposals', () => {
       name: 'Скачать CSV принятых позиций (0)',
     }),
   ).toBeDisabled();
+});
+
+it('closes the composition only after accepted transfers have been saved', async () => {
+  const state = rebalanceAppState();
+  state.rebalance.proposal = createProposal(state);
+  state.rebalance.tab = 'results';
+  const current = harness(state);
+  const { drawer } = openRoute();
+  fireEvent.click(
+    within(drawer).getByRole('checkbox', { name: /Выбрать перемещение SKU1/ }),
+  );
+  fireEvent.click(
+    within(drawer).getByRole('button', {
+      name: 'Принять выбранные в перемещении (1)',
+    }),
+  );
+  const dialog = screen.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+  });
+  fireEvent.click(
+    within(dialog).getByRole('button', { name: 'Принять перемещения' }),
+  );
+  await waitFor(() => expect(current().rebalance.accepted).toHaveLength(1));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Состав перемещения' }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(current().toast).toBe(
+    'Перемещения приняты. Потребность и заказы пересчитаны.',
+  );
+});
+
+it('shows the whole filtered composition as a list without pagination', () => {
+  const state = rebalanceAppState();
+  for (let n = 2; n <= 12; n++) {
+    const code = `000${n}`;
+    state.minMax!.skus.push({ ...state.minMax!.skus[0]!, code });
+    state.minMax!.branchStocks.push(
+      ...state
+        .minMax!.branchStocks.filter((l) => l.skuCode === 'SKU1')
+        .map((l) => ({ ...l, skuCode: code })),
+    );
+  }
+  state.rebalance.proposal = createProposal(state);
+  state.rebalance.tab = 'results';
+  harness(state);
+  const { drawer } = openRoute();
+  expect(
+    within(drawer).queryByRole('navigation', {
+      name: 'Страницы состава перемещения',
+    }),
+  ).not.toBeInTheDocument();
+  expect(within(drawer).getByText('00012')).toBeVisible();
+  fireEvent.click(
+    within(drawer).getByRole('checkbox', {
+      name: 'Выбрать все предложения по поиску',
+    }),
+  );
+  expect(
+    within(drawer).getByRole('button', {
+      name: 'Принять выбранные в перемещении (12)',
+    }),
+  ).toBeEnabled();
 });

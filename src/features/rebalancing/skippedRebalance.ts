@@ -11,7 +11,7 @@ export const skippedReasonLabel: Record<SkippedRebalanceSku['reason'], string> =
   {
     INSUFFICIENT_SURPLUS: 'Недостаточно излишка сверх Max',
     ROUTE_LIMIT: 'Не позволяют выбранные маршруты',
-    QUANTITY_STEP: 'Потребность не закрывается с заданным шагом',
+    QUANTITY_STEP: 'Потребность не закрывается целым количеством',
   };
 export interface CoverageTotals {
   byUnit: { unit: string | null; skuCode?: string; qty: number }[];

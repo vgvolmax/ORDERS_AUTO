@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { VirtualTable } from '../../components/VirtualTable';
 import { Button, SearchInput } from '../../components/ui';
 import { fmtQty, money } from '../demand/DemandPage';
@@ -22,6 +22,7 @@ export function ResultsTable({
   busy,
   acceptingDisabled = false,
   error = '',
+  acceptanceCompleted = 0,
   ...input
 }: TransferDocumentsInput & {
   onQuery: (query: string) => void;
@@ -35,6 +36,7 @@ export function ResultsTable({
   busy: boolean;
   acceptingDisabled?: boolean;
   error?: string;
+  acceptanceCompleted?: number;
 }) {
   const {
     proposal,
@@ -78,6 +80,12 @@ export function ResultsTable({
   const [openedDocument, setOpenedDocument] = useState<TransferDocument | null>(
     null,
   );
+  const lastAcceptance = useRef(acceptanceCompleted);
+  useLayoutEffect(() => {
+    if (lastAcceptance.current === acceptanceCompleted) return;
+    lastAcceptance.current = acceptanceCompleted;
+    setOpenedDocument(null);
+  }, [acceptanceCompleted]);
   const allDocs = useMemo(
     () => buildTransferDocuments({ ...input, query: '', scope: {} }),
     [

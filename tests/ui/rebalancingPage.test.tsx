@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest';
 import { RebalancingPage } from '../../src/features/rebalancing/RebalancingPage';
 import { renderWithStore } from './renderWithStore';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
-it('offers recipient settings, explicit quantity policies and mirrored direct routes without a donor slider', () => {
+it('offers recipient settings, automatic whole-unit quantities and mirrored direct routes without a donor slider', () => {
   const state = rebalanceAppState();
   const patches: unknown[] = [];
   renderWithStore(
@@ -33,32 +33,6 @@ it('offers recipient settings, explicit quantity policies and mirrored direct ro
   );
 });
 
-it('does not invent quantity policies and explicitly assigns the operators unit and step', () => {
-  const state = rebalanceAppState();
-  state.rebalance.policies = [];
-  const patches: unknown[] = [];
-  renderWithStore(<RebalancingPage />, state, (p) =>
-    patches.push(typeof p === 'function' ? p(state) : p),
-  );
-  expect(screen.getByLabelText('Единица SKU1')).toHaveValue('');
-  expect(screen.getByLabelText('Шаг SKU1')).toHaveValue(null);
-  fireEvent.change(screen.getByLabelText('Единица для ненастроенных SKU'), {
-    target: { value: 'кг' },
-  });
-  fireEvent.change(screen.getByLabelText('Шаг для ненастроенных SKU'), {
-    target: { value: '0.25' },
-  });
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Назначить ненастроенным (1)' }),
-  );
-  expect(patches).toContainEqual(
-    expect.objectContaining({
-      rebalance: expect.objectContaining({
-        policies: [{ skuCode: 'SKU1', unit: 'кг', quantityStep: 0.25 }],
-      }),
-    }),
-  );
-});
 it('shows saved economic diagnostics immediately after a partial revocation', async () => {
   const { createProposal, prepareAcceptedChange } = await import(
     '../../src/app/rebalanceActions'
