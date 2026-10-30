@@ -168,7 +168,9 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   ]);
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
   await expect(page.getByText(/Рабочий пул: 32 поставщика/)).toBeVisible();
-  await expect(page.getByText('SKU2', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.decision .product-code').getByText('SKU2', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText(/В рабочем пуле нет истории/)).toBeVisible();
   const choice = page.getByRole('combobox', { name: 'Поставщик SKU3' });
   await expect(choice.locator('option')).toHaveCount(3);
@@ -178,7 +180,7 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   const expectDecisionLayout = async () => {
     const row = page.locator('.decision').filter({ hasText: 'SKU3' });
     const check = await row.getByRole('checkbox').boundingBox();
-    const identity = await row.locator(':scope > div').first().boundingBox();
+    const identity = await row.locator('.product-code').boundingBox();
     const select = await choice.boundingBox();
     expect(check).not.toBeNull();
     expect(identity).not.toBeNull();
@@ -233,7 +235,9 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   await expect(
     page.getByRole('heading', { name: 'Поставщики', exact: true }),
   ).toBeVisible();
-  await expect(page.getByText('SKU2', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.decision .product-code').getByText('SKU2', { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole('combobox', { name: 'Поставщик SKU3' }),
   ).toHaveCount(0);
@@ -1872,14 +1876,12 @@ test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work 
     ['Выбрать файл Отчёт MIN/MAX', 'min.xlsx', min],
     ['Выбрать файл Отчёт поставщиков', 'sup.xlsx', sup],
   ] as const)
-    await page
-      .getByLabel(label)
-      .setInputFiles({
-        name,
-        mimeType:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        buffer,
-      });
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer,
+    });
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
   const decision = page.locator('.decision').filter({ hasText: '000123' });
   await expect(decision).toContainText('ART-ZERO');
@@ -1899,12 +1901,13 @@ test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work 
   await expect
     .poll(() => matrix.evaluate((el) => el.scrollWidth > el.clientWidth))
     .toBe(true);
-  await matrix.evaluate((el) => {
-    el.scrollLeft = 600;
-  });
   const identity = page.locator(
     '.transfer-matrix .virtual-row .transfer-identity',
   );
+  await identity.scrollIntoViewIfNeeded();
+  await matrix.evaluate((el) => {
+    el.scrollLeft = 600;
+  });
   await expect
     .poll(() =>
       identity.evaluate((el) => {

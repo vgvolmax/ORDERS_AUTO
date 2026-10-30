@@ -45,7 +45,7 @@
 **Interfaces:** acceptance success signal is published only after durable commit; ResultsTable closes its opened document once on successful accept, not on pending/failure/revoke.
 - [x] Тест: нет pagination, выбор всех filtered rows; принятие closes composition on success only; failure retains UI.
 - [x] RED → bounded virtual scroll, explicit quantity/unit columns, opaque sticky layer, durable success signal → GREEN.
-- [ ] Native E2E: scroll last of130 rows; search/select; visible actions at1280×600/1024; no document overflow; sticky occlusion; accepted CSV; success/failure.
+- [x] Native E2E: scroll last of130 rows; search/select; visible actions at1280×600/1024; no document overflow; sticky occlusion; accepted CSV; success/failure.
 - [x] Прогнать inspector/queue/acceptance tests; commit.
 
 ### Task4: Единый порядок и полный товарный контекст
