@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { useStore } from './appStore';
 export function usePreference<T>(
   key: string,
@@ -8,7 +8,7 @@ export function usePreference<T>(
   const [value, update] = useState<T>(
     () => (state.uiPreferences[key] as T | undefined) ?? fallback,
   );
-  useEffect(() => {
+  useLayoutEffect(() => {
     update((state.uiPreferences[key] as T | undefined) ?? fallback);
   }, [key, state.workspaceId]);
   return [
