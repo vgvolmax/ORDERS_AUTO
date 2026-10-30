@@ -12,11 +12,18 @@ export function QuantityInput({
   onCommit,
   className = '',
   step = 'any',
+  saveErrorMessage = 'Количество не сохранено. Повторите ввод.',
+  invalidValueMessage = 'Введите неотрицательное количество.',
   ...props
 }: Omit<
   InputHTMLAttributes<HTMLInputElement>,
   'value' | 'onChange' | 'type'
-> & { value: number; onCommit: (qty: number) => void | Promise<void> }) {
+> & {
+  value: number;
+  onCommit: (qty: number) => void | Promise<void>;
+  saveErrorMessage?: string;
+  invalidValueMessage?: string;
+}) {
   const errorId = useId();
   const [draft, setDraft] = useState(String(value)),
     [error, setError] = useState(''),
@@ -42,7 +49,7 @@ export function QuantityInput({
       setSaving(pending.current);
       if (failed && current === sequence.current) {
         setDraft(String(committed.current));
-        setError('Количество не сохранено. Повторите ввод.');
+        setError(saveErrorMessage);
       }
     };
     try {
@@ -82,7 +89,7 @@ export function QuantityInput({
             Number(draft) < 0
           ) {
             setDraft(String(committed.current));
-            setError('Введите неотрицательное количество.');
+            setError(invalidValueMessage);
           }
         }}
       />

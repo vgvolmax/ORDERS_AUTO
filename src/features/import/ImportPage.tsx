@@ -53,7 +53,13 @@ export function ImportPage() {
       if (reads.current[kind] !== token) return;
       const result =
         kind === 'min'
-          ? parseMinMaxWorkbook(bytes)
+          ? parseMinMaxWorkbook(
+              bytes,
+              state.rebalance.registry.flatMap((branch) => [
+                branch.name,
+                ...branch.aliases,
+              ]),
+            )
           : parseSupplierWorkbook(bytes);
       if (result.fatal || !result.data) {
         setFailures((previous) => ({
@@ -262,10 +268,10 @@ function FileCard({
         {busy
           ? 'Обработка файла…'
           : ready
-          ? 'Успешно распознан'
-          : errors.length
-          ? 'Файл требует исправления'
-          : 'Файл не загружен'}
+            ? 'Успешно распознан'
+            : errors.length
+              ? 'Файл требует исправления'
+              : 'Файл не загружен'}
       </strong>
       {summary && <small>{summary}</small>}
       {(warnings.length > 0 || errors.length > 0) && (

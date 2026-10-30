@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button, Input, SearchInput, Select, Alert } from '../../components/ui';
 import { VirtualTable } from '../../components/VirtualTable';
+import { QuantityInput } from '../../components/QuantityInput';
 import type {
   RebalanceConfig,
   SkuQuantityPolicy,
@@ -14,7 +15,7 @@ export function ConditionsPanel({
   locked,
 }: {
   config: RebalanceConfig;
-  onChange: (c: RebalanceConfig) => void;
+  onChange: (c: RebalanceConfig) => void | Promise<void>;
   skus: { code: string; name: string }[];
   policies: SkuQuantityPolicy[];
   onPolicies: (p: SkuQuantityPolicy[]) => void;
@@ -105,29 +106,19 @@ export function ConditionsPanel({
               </label>
               <label>
                 Порог, ₽
-                <Input
+                <QuantityInput
                   aria-label={
                     key === 'unitPriceFilter' ? 'Порог цены' : 'Порог суммы SKU'
                   }
-                  type="number"
-                  min="0"
-                  defaultValue={config[key].threshold}
-                  onBlur={(e) => {
-                    const threshold = Number(e.target.value);
-                    if (
-                      e.target.value !== '' &&
-                      Number.isFinite(threshold) &&
-                      threshold >= 0
-                    )
-                      onChange({
-                        ...config,
-                        [key]: { ...config[key], threshold },
-                      });
-                    else {
-                      setError('Порог должен быть неотрицательным числом.');
-                      e.target.value = String(config[key].threshold);
-                    }
-                  }}
+                  value={config[key].threshold}
+                  onCommit={(threshold) =>
+                    onChange({
+                      ...config,
+                      [key]: { ...config[key], threshold },
+                    })
+                  }
+                  saveErrorMessage="Порог не сохранён. Повторите ввод."
+                  invalidValueMessage="Введите неотрицательный порог."
                 />
               </label>
             </div>

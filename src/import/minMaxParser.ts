@@ -29,6 +29,7 @@ interface IndexedRow {
 
 export function parseMinMaxWorkbook(
   input: ArrayBuffer,
+  savedBranchNames: readonly string[] = [],
 ): ParseResult<MinMaxDataset> {
   try {
     const rows = readFirstSheetRows(input);
@@ -43,13 +44,14 @@ export function parseMinMaxWorkbook(
     const data: MinMaxDataset = { skus: [], branchStocks: [], branches: [] };
     const issues: ValidationIssue[] = [];
     const seenSkuBranch = new Set<string>();
-    const malformedBranches: {
-      skuCode: string;
-      branch: string;
-      row: number;
-    }[] = [];
+    // Resolve identities before reading blocks: a malformed row can precede
+    // the only valid occurrence of its branch, or be known only by a saved alias.
+    const knownBranches = new Set(savedBranchNames.map(normalizeKey));
+    for (const row of rows.slice(header.rowIndex + 1))
+      if (isBranchRow(row, header.columns))
+        knownBranches.add(normalizeKey(row[header.columns.name]));
 
-    for (let index = header.rowIndex + 1; index < rows.length; ) {
+    for (let index = header.rowIndex + 1; index < rows.length;) {
       const parentRow = rows[index]!;
       const code = normalizeText(parentRow[header.columns.code]);
       if (!code) {
@@ -70,21 +72,37 @@ export function parseMinMaxWorkbook(
       const branchRows = children.filter(({ row }) =>
         isBranchRow(row, header.columns),
       );
+      const malformedRows = children.filter(
+        ({ row }) =>
+          isBranchIdentity(row, header.columns) &&
+          !isBranchRow(row, header.columns) &&
+          (knownBranches.has(normalizeKey(row[header.columns.name])) ||
+            [header.columns.min, header.columns.max].some(
+              (column) => normalizeText(row[column]) !== '',
+            )),
+      );
 
       // Coded category/group rows in the 1C report have no branch children.
       // They are intentionally ignored rather than becoming fake SKU records.
-      if (branchRows.length > 0) {
-        for (const child of children) {
+      if (branchRows.length > 0 || malformedRows.length > 0) {
+        for (const child of malformedRows) {
+          const branch = normalizeText(child.row[header.columns.name]);
+          issues.push({
+            severity: 'ERROR',
+            code: 'INVALID_BRANCH_VALUES',
+            skuCode: code,
+            branch,
+            row: child.rowNumber,
+            message: `Некорректные числовые данные остатка или MIN/MAX: ${code} / ${branch}`,
+          });
+          // The branch was present in this import. Do not disable it during
+          // registry reconciliation or invent a zero-valued physical stock.
           if (
-            isBranchIdentity(child.row, header.columns) &&
-            !isBranchRow(child.row, header.columns)
-          ) {
-            malformedBranches.push({
-              skuCode: code,
-              branch: normalizeText(child.row[header.columns.name]),
-              row: child.rowNumber,
-            });
-          }
+            !data.branches.some(
+              (name) => normalizeKey(name) === normalizeKey(branch),
+            )
+          )
+            data.branches.push(branch);
         }
 
         const sku = {
@@ -175,19 +193,6 @@ export function parseMinMaxWorkbook(
 
       index = nextIndex;
     }
-
-    const knownBranches = new Set(data.branches.map(normalizeKey));
-    for (const item of malformedBranches)
-      if (knownBranches.has(normalizeKey(item.branch))) {
-        issues.push({
-          severity: 'ERROR',
-          code: 'INVALID_BRANCH_VALUES',
-          skuCode: item.skuCode,
-          branch: item.branch,
-          row: item.row,
-          message: `Некорректные числовые данные остатка или MIN/MAX: ${item.skuCode} / ${item.branch}`,
-        });
-      }
 
     if (data.skus.length === 0) {
       return fatal('NO_SKU_BLOCKS', 'В отчёте не найдены товарные блоки.');
