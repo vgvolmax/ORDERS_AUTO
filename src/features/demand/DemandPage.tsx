@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
+import { useTablePreferences } from '../../app/tablePreferences';
 import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
 import { isSupplierInPool } from '../../domain/supplierPool';
@@ -47,6 +48,7 @@ const severity: Record<StockStatus, number> = {
 export function DemandPage({ branch }: { branch?: string | undefined }) {
   const { state } = useStore();
   const derived = useDerivedState(state);
+  const tablePreferences = useTablePreferences(`demand:${branch ?? 'all'}:table`);
   const [savedFilters, setFilters] = usePreference<DemandFilters>(
     `demand:${branch ?? 'all'}:filters`,
     emptyDemandFilters,
@@ -116,19 +118,22 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       {
         key: 'code',
         header: 'Код',
-        width: '135px',
+        width: '120px',
+        sticky: true, hideable: false, sortValue: group => group.skuCode,
         render: (group) => <strong>{group.skuCode}</strong>,
       },
       {
         key: 'article',
         header: 'Артикул',
-        width: '130px',
+        width: '110px',
+        sticky: true, hideable: false, sortValue: group => group.article,
         render: (group) => group.article ?? '—',
       },
       {
         key: 'name',
         header: 'Наименование',
         width: 'minmax(240px, 1.8fr)',
+        sticky: true, hideable: false, sortValue: group => group.name,
         render: (group) => (
           <button
             className="row-expand"
@@ -149,12 +154,14 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       },
       {
         key: 'status',
+        sortValue: group => severity[group.worstStatus],
         header: 'Статус',
         width: '150px',
         render: (group) => <StatusBadge status={group.worstStatus} />,
       },
       {
         key: 'branches',
+        sortValue: group => group.deficitBranchCount,
         header: 'Подразделений',
         width: '115px',
         className: 'num',
@@ -162,6 +169,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       },
       {
         key: 'below',
+        sortValue: group => group.belowMinBranchCount,
         header: 'Ниже MIN',
         width: '95px',
         className: 'num',
@@ -169,6 +177,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       },
       {
         key: 'qty',
+        sortValue: group => group.totalDeficitQty,
         header: 'Потребность',
         width: '115px',
         className: 'num',
@@ -181,6 +190,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       },
       {
         key: 'amount',
+        sortValue: group => group.missingPriceCount ? null : group.totalDemandAmount,
         header: 'Потребность, ₽',
         width: '155px',
         className: 'num',
@@ -189,6 +199,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       },
       {
         key: 'supplier',
+        sortValue: group => group.selectedSupplier,
         header: 'Поставщик / статус',
         width: '190px',
         render: (group) => group.selectedSupplier ?? 'Требует решения',
@@ -223,6 +234,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
           resultCount={groups.length}
         />
         <VirtualTable
+          {...tablePreferences}
           rows={groups}
           columns={columns}
           getRowKey={(group) => group.skuCode}
@@ -261,29 +273,34 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     {
       key: 'code',
       header: 'Код',
-      width: '130px',
+      width: '120px',
+      sticky: true, hideable: false, sortValue: line => line.skuCode,
       render: (line) => <strong>{line.skuCode}</strong>,
     },
     {
       key: 'article',
       header: 'Артикул',
-      width: '120px',
+      width: '110px',
+      sticky: true, hideable: false, sortValue: line => line.article,
       render: (line) => line.article ?? '—',
     },
     {
       key: 'name',
       header: 'Наименование',
       width: 'minmax(240px, 1.5fr)',
+      sticky: true, hideable: false, sortValue: line => line.name,
       render: (line) => line.name,
     },
     {
       key: 'status',
+      sortValue: line => severity[line.purchaseStatus],
       header: 'Статус',
       width: '145px',
       render: (line) => <StatusBadge status={line.purchaseStatus} />,
     },
     {
       key: 'stock',
+      sortValue: line => line.stock,
       header: 'Остаток по отчёту',
       width: '120px',
       className: 'num',
@@ -291,6 +308,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     },
     {
       key: 'min',
+      sortValue: line => line.min,
       header: 'MIN',
       width: '75px',
       className: 'num',
@@ -298,6 +316,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     },
     {
       key: 'max',
+      sortValue: line => line.max,
       header: 'MAX',
       width: '75px',
       className: 'num',
@@ -305,6 +324,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     },
     {
       key: 'pct',
+      sortValue: line => line.purchaseDeficitPct,
       header: 'Не хватает %',
       width: '105px',
       className: 'num',
@@ -315,6 +335,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     },
     {
       key: 'localQty',
+      sortValue: line => line.purchaseQty,
       header: 'Нужно сюда',
       width: '105px',
       className: 'num',
@@ -329,6 +350,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     },
     {
       key: 'networkQty',
+      sortValue: line => line.networkPurchaseQty,
       header: 'Нужно всей сети',
       width: '125px',
       className: 'num',
@@ -336,6 +358,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     },
     {
       key: 'localAmount',
+      sortValue: line => line.purchaseAmount,
       header: '₽ сюда',
       width: '125px',
       className: 'num',
@@ -344,6 +367,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     },
     {
       key: 'networkAmount',
+      sortValue: line => line.networkPurchaseMissingPriceCount ? null : line.networkPurchaseAmount,
       header: '₽ всей сети',
       width: '145px',
       className: 'num',
@@ -355,12 +379,14 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     },
     {
       key: 'supplier',
+      sortValue: line => line.selectedSupplier,
       header: 'Поставщик',
       width: '175px',
       render: (line) => line.selectedSupplier ?? 'Не выбран',
     },
     {
       key: 'source',
+      sortValue: line => priceSourceLabel(line.priceSource),
       header: 'Источник цены',
       width: '125px',
       render: (line) => priceSourceLabel(line.priceSource),
@@ -395,6 +421,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         resultCount={rows.length}
       />
       <VirtualTable
+        {...tablePreferences}
         rows={rows}
         columns={columns}
         getRowKey={(line) => `${line.skuCode}:${line.branch}`}

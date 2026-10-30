@@ -17,6 +17,20 @@ it.each([undefined, 'Ленина'])(
   },
 );
 
+it('persists demand column choices and pins product identity while sorting the displayed demand', () => {
+  const state = baseState();
+  state.minMax!.skus.push({ ...state.minMax!.skus[0]!, code: 'SKU2', name: 'Второй товар', referencePrice: 1 });
+  state.minMax!.branchStocks.push(...state.minMax!.branchStocks.map(line => ({ ...line, skuCode: 'SKU2' })));
+  renderWithStore(<DemandPage />, state, patch => Object.assign(state, typeof patch === 'function' ? patch(state) : patch));
+  fireEvent.click(screen.getByRole('button', { name: 'Сортировать: Потребность' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Столбцы' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Показать столбец Статус' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Закрыть настройки столбцов' }));
+  expect(screen.queryByRole('columnheader', { name: 'Статус' })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('row')[1]!.querySelectorAll('[role="cell"]')[0]).toHaveClass('is-frozen');
+  expect(state.uiPreferences['demand:all:table:hiddenColumns']).toEqual(['status']);
+});
+
 it('identifies the product with full code, article and name when selecting its supplier', () => {
   const state = baseState();
   state.suppliers!.history = [];
