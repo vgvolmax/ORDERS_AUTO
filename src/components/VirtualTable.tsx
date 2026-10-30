@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -111,9 +112,14 @@ export function VirtualTable<T>({
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [sort?.key, sort?.direction]);
   const shouldVirtualize = rows.length > VIRTUALIZATION_THRESHOLD;
+  const getItemKey = useCallback(
+    (index: number) => getRowKey(displayedRows[index]!),
+    [displayedRows, getRowKey],
+  );
   const virtualizer = useVirtualizer({
     count: shouldVirtualize ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
+    getItemKey,
     estimateSize: () => estimateRowHeight,
     overscan: 10,
     scrollMargin: headerHeight,

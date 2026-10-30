@@ -55,6 +55,6 @@
 **Files:** tests/e2e/offline.spec.ts; docs/ux/UX_AND_EXPORT.md; premium-ui.json при необходимости evidence paths.
 **Interfaces:** текущие test:e2e и автономный production artifact; screenshot deliverables вне репозитория.
 - [x] Typecheck, все unit, build, весь E2E; strict premium audit, DESIGN lint и axe по изменённым flow.
-- [ ] Независимое whole-branch review, один проход исправлений важных находок с RED→GREEN.
-- [ ] Снимки Import/Demand/Routes/Results/Transfer/Confirmation/Suppliers/Orders/History, визуальная проверка1280/1440 и short viewport; сохранить и предоставить пользователю.
+- [x] Независимое whole-branch review, один проход исправлений важных находок с RED→GREEN.
+- [x] Снимки Import/Demand/Routes/Results/Transfer/Confirmation/Suppliers/Orders/History, визуальная проверка1280/1440 и short viewport; сохранить и предоставить пользователю.
 - [ ] Опубликовать отдельный PR от main, проверить head/CI, оставить без merge/auto-merge.

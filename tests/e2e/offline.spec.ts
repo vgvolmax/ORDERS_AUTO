@@ -975,6 +975,7 @@ async function importFullCoverageFixture(
   page: Page,
   branchNames = coverageBranches,
   codes = ['FULL1', 'FULL2', 'SKIP14'],
+  articleForCode = (code: string) => `Артикул ${code}`,
 ) {
   const { buildWorkbook } = await import('../fixtures/workbookBuilders');
   const min = buildWorkbook([
@@ -992,7 +993,7 @@ async function importFullCoverageFixture(
       return [
         [
           code,
-          `Артикул ${code}`,
+          articleForCode(code),
           `Товар полного покрытия ${code}`,
           firstDonor + 16 + (branchNames.length - 4) * 10,
           1,
@@ -2080,4 +2081,71 @@ test('E2E-15 page context, frozen product identity and accessible saved table co
     .click();
   await page.getByRole('tab', { name: 'Маршруты', exact: true }).click();
   expect(await a11y()).toEqual([]);
+});
+
+test('E2E-16 sorting a long list keeps expanded product rows adjacent without overlap', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const codes = Array.from(
+    { length: 130 },
+    (_, i) => `SKU${String(i).padStart(3, '0')}`,
+  );
+  await importFullCoverageFixture(
+    page,
+    coverageBranches,
+    codes,
+    (code) =>
+      `A${code === 'SKU000' ? '001' : code === 'SKU001' ? '000' : code.slice(3)}`,
+  );
+  await page
+    .locator('.sidebar')
+    .getByRole('button', { name: 'Все товары', exact: true })
+    .click();
+  const first = page.getByRole('button', {
+    name: 'Товар полного покрытия SKU000 Показать подразделения',
+    exact: true,
+  });
+  await first.click();
+  const shells = page.locator('.virtual-row-shell');
+  await expect
+    .poll(async () => {
+      const heights = await shells.evaluateAll((rows) =>
+        rows.slice(0, 2).map((row) => row.getBoundingClientRect().height),
+      );
+      return heights[0]! - heights[1]!;
+    })
+    .toBeGreaterThan(20);
+  await page
+    .getByRole('button', { name: 'Сортировать: Артикул', exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      shells.evaluateAll((rows) =>
+        rows
+          .slice(0, 3)
+          .map((row) => row.querySelector('[role="cell"]')?.textContent),
+      ),
+    )
+    .toEqual(['SKU001', 'SKU000', 'SKU002']);
+  await expect
+    .poll(() =>
+      shells.evaluateAll((rows) => {
+        const boxes = rows
+          .slice(0, 3)
+          .map((row) => row.getBoundingClientRect());
+        return Math.max(
+          ...boxes
+            .slice(1)
+            .map((box, i) => Math.abs(box.top - boxes[i]!.bottom)),
+        );
+      }),
+    )
+    .toBeLessThanOrEqual(1);
+  await expect(
+    page.getByRole('button', {
+      name: 'Товар полного покрытия SKU000 Скрыть подразделения',
+      exact: true,
+    }),
+  ).toBeVisible();
 });
