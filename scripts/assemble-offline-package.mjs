@@ -10,4 +10,5 @@ if (!fs.existsSync(packageDirectory)) {
 }
 
 fs.copyFileSync(source, target);
+fs.copyFileSync(path.resolve('src/styles/fonts/OFL.txt'), path.join(packageDirectory, 'FONT-LICENSE.txt'));
 console.log(`Assembled offline entry: ${path.relative(process.cwd(), target)}`);

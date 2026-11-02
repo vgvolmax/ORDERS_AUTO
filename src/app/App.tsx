@@ -13,6 +13,8 @@ import { StoreContext, type AppState, type StatePatch } from './appStore';
 import { createInitialState } from './initialState';
 import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
 import { loadActiveWorkspace, saveWorkspace } from '../persistence/workspaces';
+import { usePageScroll } from './usePageScroll';
+import { AppToast } from '../components/AppToast';
 
 export function App() {
   const [state, setState] = useState<AppState>(() => createInitialState());
@@ -33,8 +35,8 @@ export function App() {
         owner !== session.current
           ? {}
           : typeof patch === 'function'
-          ? patch(current)
-          : patch,
+            ? patch(current)
+            : patch,
       );
     } catch (error) {
       if (owner === session.current)
@@ -144,6 +146,12 @@ export function App() {
     const timer = window.setTimeout(() => set({ toast: null }), 3500);
     return () => window.clearTimeout(timer);
   }, [state.toast]);
+
+  usePageScroll(
+    state.page,
+    state.workspaceId,
+    !initializing && Boolean(session.current),
+  );
 
   if (initializing) {
     return <div className="boot">Загрузка сохранённых настроек…</div>;
@@ -258,10 +266,10 @@ export function App() {
             {pending
               ? 'Сохранение сеанса…'
               : state.storageError
-              ? 'Изменения не сохранены'
-              : state.workspaceRevision < 0
-              ? 'Начните с загрузки отчётов'
-              : 'Сеанс сохранён на этом компьютере'}
+                ? 'Изменения не сохранены'
+                : state.workspaceRevision < 0
+                  ? 'Начните с загрузки отчётов'
+                  : 'Сеанс сохранён на этом компьютере'}
           </div>
           {state.storageError && (
             <div className="alert danger" role="alert">
@@ -323,11 +331,7 @@ export function App() {
             </p>
           </Dialog>
         )}
-        {state.toast && (
-          <div className="toast" role="status">
-            {state.toast}
-          </div>
-        )}
+        {state.toast && <AppToast message={state.toast} />}
       </div>
     </StoreContext.Provider>
   );

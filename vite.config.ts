@@ -12,6 +12,9 @@ export default defineConfig({
     modulePreload: false,
     copyPublicDir: false,
     cssCodeSplit: false,
+    // file:// font fetches can be CORS-blocked in Chrome. Ship font bytes in
+    // the local stylesheet; application JS remains a separate classic file.
+    assetsInlineLimit: (filePath) => filePath.endsWith('.woff2'),
     rollupOptions: {
       input: resolve(process.cwd(), 'src/main.tsx'),
       output: {

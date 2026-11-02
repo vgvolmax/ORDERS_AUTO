@@ -41,7 +41,7 @@ export function FiltersBar({
   };
 
   return (
-    <section className="filters" aria-label="Фильтры">
+    <section className="filters demand-filters" aria-label="Фильтры">
       <label className="filter-search">
         Поиск по коду, артикулу или названию
         <SearchInput
@@ -84,53 +84,60 @@ export function FiltersBar({
         </Select>
       </label>
 
-      <label>
-        Потребность ₽ от
-        <Input
-          type="number"
-          min="0"
-          value={value.amountFrom}
-          onChange={(event) => update('amountFrom', event.target.value)}
-        />
-      </label>
+      <div className="filter-amounts" role="group" aria-label="Потребность, ₽">
+        <span className="filter-amount-title">Потребность, ₽</span>
+        <label>
+          <span className="sr-only">Потребность ₽ от</span>
+          <Input
+            type="number"
+            min="0"
+            placeholder="От"
+            value={value.amountFrom}
+            onChange={(event) => update('amountFrom', event.target.value)}
+          />
+        </label>
 
-      <label>
-        до
-        <Input
-          type="number"
-          min="0"
-          value={value.amountTo}
-          onChange={(event) => update('amountTo', event.target.value)}
-        />
-      </label>
-
-      <label className="checkbox-control">
-        <input
-          type="checkbox"
-          checked={value.onlyInOrders}
-          onChange={(event) => update('onlyInOrders', event.target.checked)}
-        />
-        Только попадающие в заказ
-      </label>
-
-      <label className="checkbox-control">
-        <input
-          type="checkbox"
-          checked={value.problemsOnly}
-          onChange={(event) => update('problemsOnly', event.target.checked)}
-        />
-        Только с проблемами
-      </label>
-
-      <div className="filter-result">
-        Найдено: <strong>{resultCount}</strong>
+        <label>
+          <span className="sr-only">до</span>
+          <Input
+            type="number"
+            min="0"
+            placeholder="До"
+            value={value.amountTo}
+            onChange={(event) => update('amountTo', event.target.value)}
+          />
+        </label>
       </div>
 
-      {JSON.stringify(value) !== JSON.stringify(emptyDemandFilters) && (
-        <button className="link" onClick={() => onChange(emptyDemandFilters)}>
-          Сбросить фильтры
-        </button>
-      )}
+      <div className="filter-toggles">
+        <label className="checkbox-control">
+          <input
+            type="checkbox"
+            checked={value.onlyInOrders}
+            onChange={(event) => update('onlyInOrders', event.target.checked)}
+          />
+          Только попадающие в заказ
+        </label>
+
+        <label className="checkbox-control">
+          <input
+            type="checkbox"
+            checked={value.problemsOnly}
+            onChange={(event) => update('problemsOnly', event.target.checked)}
+          />
+          Только с проблемами
+        </label>
+
+        <div className="filter-result">
+          Найдено: <strong>{resultCount}</strong>
+        </div>
+
+        {JSON.stringify(value) !== JSON.stringify(emptyDemandFilters) && (
+          <button className="link" onClick={() => onChange(emptyDemandFilters)}>
+            Сбросить фильтры
+          </button>
+        )}
+      </div>
     </section>
   );
 }

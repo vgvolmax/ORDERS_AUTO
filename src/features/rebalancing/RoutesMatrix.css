@@ -98,7 +98,16 @@
   height: 100%;
   padding: 0 4px;
 }
-.routes-branch > input {
+.routes-active-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+.routes-active-toggle > input {
   flex-shrink: 0;
   width: 14px;
   height: 14px;
@@ -109,8 +118,8 @@
 .routes-branch-column {
   flex-direction: column-reverse;
   justify-content: center;
-  gap: 1px;
-  padding: 2px 3px;
+  gap: 0;
+  padding: 1px 3px;
 }
 .routes-branch-button.button {
   display: flex;
@@ -137,10 +146,10 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
-  line-height: 14px;
+  line-height: 12px;
 }
 .routes-branch-column .routes-branch-button {
-  height: 30px;
+  height: 24px;
   text-align: center;
   align-items: center;
 }
@@ -211,7 +220,7 @@
 }
 .routes-cell.button:focus-visible,
 .routes-branch-button.button:focus-visible,
-.routes-branch > input:focus-visible {
+.routes-active-toggle > input:focus-visible {
   outline-offset: -3px;
 }
 .routes-diagonal {

@@ -19,8 +19,10 @@ colors:
 typography:
   sans:
     fontFamily: "Inter, \"Segoe UI\", Arial, sans-serif"
+    fontSize: "14px"
   data:
     fontFamily: "Inter, \"Segoe UI\", Arial, sans-serif"
+    fontSize: "13px"
 rounded:
   sm: "6px"
   DEFAULT: "7px"
@@ -28,11 +30,11 @@ rounded:
   lg: "12px"
   pill: "999px"
 spacing:
-  page-x: "42px"
-  page-y: "34px"
+  page-x: "24px"
+  page-y: "20px"
   control-gap: "12px"
   panel-gap: "18px"
-  sidebar-width: "250px"
+  sidebar-width: "224px"
 components:
   button:
     radius: "7px"
@@ -96,6 +98,8 @@ ORDERS_AUTO должен ощущаться как хорошо собранны
 
 ## Layout
 
+Уточнение30.10: Inter variable normal поставляется локально с кириллицей, латиницей и знаком рубля; исходные WOFF2/OFL находятся в `src/styles/fonts` (Fontsource Inter5.3.0). Vite встраивает только font bytes в локальный CSS для file:// без font-fetch/CORS; FONT-LICENSE.txt входит в production-папку. Runtime tokens: body14, data13, help12, title24, page-x24/page-y20/sidebar224. Палитра и умеренные скругления сохранены. Sticky product cells и headers имеют собственный непрозрачный фон. Управление столбцами использует общий Dialog, сортировка — доступные кнопки заголовков.
+
 Базовый shell сохраняет постоянную левую sidebar и рабочую content-area. Основные страницы используют существующий ритм `page-y/page-x`; плотные таблицы и карты могут занимать больше ширины, но не должны создавать второй независимый page shell.
 
 Для data-heavy поверхностей:
@@ -114,7 +118,7 @@ ORDERS_AUTO должен ощущаться как хорошо собранны
 
 Overlay/drawer может иметь отделение от фона, но обычные KPI, таблицы и route cards не должны выглядеть как набор «парящих» плиток.
 
-Общие уведомления toast находятся сверху по центру с отступом24px, выше overlays. Такое единое размещение освобождает нижние действия карточек и правую кнопку закрытия. Runtime owner — `.toast` в `src/styles/app.css`.
+Общие уведомления toast занимают постоянную верхнюю полосу36px над рабочей областью, выше overlays. Она совпадает с местом статуса сохранения; headers/drawers/dialogs начинаются ниже этой полосы. Runtime owner — `.toast`/`--feedback-height` в `src/styles/app.css`. Нижние действия и заголовки остаются открытыми.
 
 ## Shapes
 

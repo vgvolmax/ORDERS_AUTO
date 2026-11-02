@@ -1,5 +1,6 @@
 import { VirtualTable } from '../../components/VirtualTable';
 import { productColumns } from '../../components/productColumns';
+import { QuantitySummary } from '../../components/QuantitySummary';
 import type { Sku } from '../../domain/types';
 import { useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
@@ -67,7 +68,7 @@ export function SuppliersPage() {
   );
   const setSelectedSkuCodes = (codes: Set<string>) =>
     setSelectedCodes([...codes]);
-  const [autoStrategy, setAutoStrategy] = usePreference<SupplierAutoStrategy>(
+  const [autoStrategy] = usePreference<SupplierAutoStrategy>(
     'suppliers:autoStrategy',
     'MIN_PRICE',
   );
@@ -232,7 +233,7 @@ export function SuppliersPage() {
         <p>
           Кому, на какую сумму и в какие подразделения сейчас требуется заказ.
         </p>
-        <p>
+        <p className="supplier-pool-note">
           Рабочий пул: {SUPPLIER_POOL.length} поставщика. Остальные скрыты из
           выбора и заказов; исходная история закупок сохранена.
         </p>
@@ -241,7 +242,7 @@ export function SuppliersPage() {
       <ThresholdControls
         settings={state.settings}
         onChange={async (settings) => {
-          const patch = { settings, toast: 'Порог закупки пересчитан.' };
+          const patch = { settings };
           if (commit) await commit(patch);
           else set(patch);
         }}
@@ -271,8 +272,6 @@ export function SuppliersPage() {
           onOpenChange={setDecisionsOpen}
           selectedSkuCodes={selectedSkuCodes}
           onSelectedSkuCodesChange={setSelectedSkuCodes}
-          strategy={autoStrategy}
-          onStrategyChange={setAutoStrategy}
           scope={autoScope}
           onScopeChange={setAutoScope}
           overwriteManual={overwriteManual}
@@ -373,8 +372,6 @@ function SupplierDecisions({
   onOpenChange,
   selectedSkuCodes,
   onSelectedSkuCodesChange,
-  strategy,
-  onStrategyChange,
   scope,
   onScopeChange,
   overwriteManual,
@@ -393,8 +390,6 @@ function SupplierDecisions({
   onOpenChange: (open: boolean) => void;
   selectedSkuCodes: Set<string>;
   onSelectedSkuCodesChange: (selected: Set<string>) => void;
-  strategy: SupplierAutoStrategy;
-  onStrategyChange: (strategy: SupplierAutoStrategy) => void;
   scope: SupplierAutoScope;
   onScopeChange: (scope: SupplierAutoScope) => void;
   overwriteManual: boolean;
@@ -468,25 +463,13 @@ function SupplierDecisions({
 
       {open && (
         <>
-          <Alert tone="warning">
+          <p className="supplier-auto-note">
             Автовыбор использует только валидные исторические цены. Позиции без
             подходящей цены останутся на ручное решение.
-          </Alert>
+          </p>
 
           <div className="supplier-auto-toolbar">
-            <label>
-              Стратегия автовыбора
-              <Select
-                aria-label="Стратегия автовыбора"
-                value={strategy}
-                disabled={supplierBusy}
-                onChange={(event) =>
-                  onStrategyChange(event.target.value as SupplierAutoStrategy)
-                }
-              >
-                <option value="MIN_PRICE">Минимальная цена</option>
-              </Select>
-            </label>
+            <div className="supplier-auto-strategy"><span>Автовыбор</span><strong>Минимальная цена</strong></div>
             <label className="checkbox-control overwrite-manual-control">
               <input
                 type="checkbox"
@@ -678,7 +661,7 @@ function SupplierRow({ summary }: { summary: SupplierSummary }) {
       <td className="num">{summary.skuCount}</td>
       <td className="num">{summary.branchCount}</td>
       <td className="num">{summary.belowMinSkuCount}</td>
-      <td className="num">{fmtQty(summary.totalQty)}</td>
+      <td className="num"><QuantitySummary rows={summary.orders.flatMap(order => order.lines.map(line => ({ skuCode: line.skuCode, qty: line.orderQty, unit: line.unit })))} /></td>
       <td className="num">
         {summary.totalAmount == null ? (
           <span className="danger-text">

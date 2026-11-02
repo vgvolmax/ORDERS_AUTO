@@ -5,6 +5,7 @@ import type { OrderLine } from '../../domain/types';
 import type { WorkflowOrder } from '../../app/selectors';
 import { QuantityInput } from '../../components/QuantityInput';
 import { Alert, Button } from '../../components/ui';
+import { QuantitySummary } from '../../components/QuantitySummary';
 import { fmtQty, money, priceSourceLabel } from '../demand/DemandPage';
 
 export function OrderDrawer({
@@ -15,9 +16,11 @@ export function OrderDrawer({
   onExport,
   renderMovement,
   saving = false,
+  exportError = '',
 }: {
   order: WorkflowOrder;
   saving?: boolean | undefined;
+  exportError?: string;
   renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   onClose: () => void;
   onEdit: (
@@ -65,7 +68,14 @@ export function OrderDrawer({
             </h2>
             <p>
               {order.lines.filter((line) => line.orderQty > 0).length} SKU ·{' '}
-              {fmtQty(order.totalQty)} ед. ·{' '}
+              <QuantitySummary
+                rows={order.lines.map((line) => ({
+                  skuCode: line.skuCode,
+                  qty: line.orderQty,
+                  unit: line.unit,
+                }))}
+              />{' '}
+              ·{' '}
               {order.totalAmount == null
                 ? 'Сумма неизвестна'
                 : money(order.totalAmount)}
@@ -109,6 +119,7 @@ export function OrderDrawer({
             {order.blockers.join('. ')}
           </Alert>
         )}
+        {exportError && <Alert tone="danger">{exportError}</Alert>}
 
         <div className="table-wrap drawer-table-wrap">
           <table>

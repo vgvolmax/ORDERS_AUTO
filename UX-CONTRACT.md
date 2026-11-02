@@ -16,7 +16,7 @@ ORDERS_AUTO — русский локальный инструмент заку�
 |---|---|---|---|---|
 | Table Selection | ResultsTable / TransferDrawer / SupplierDecisions | persisted selectedLineIds / uiPreferences | Видимые предложения; действие карточки ограничено её видимыми отмеченными позициями; общий счётчик включает скрытый выбор | transferInspector.test.tsx; acceptTransfers.test.tsx; offline.spec.ts |
 | Select/Listbox | components/ui.tsx Select | native HTML select | OS popup принят для компактных настроек и русских option labels; без авторского popup | rebalancingPage.test.tsx; browser keyboard |
-| Form | ConditionsPanel / PolicyEditor / QuantityInput | domain validation + app commit | inline settings; explicit save for unit/step; noValidate | rebalancingPage.test.tsx |
+| Form | ConditionsPanel / QuantityInput | domain validation + app commit | inline autosave settings; quantity step1 has no UI; noValidate | rebalancingPage.test.tsx |
 | Scrollbar | styles/app.css | глобальные scrollbar-color/width | Таблицы имеют собственный горизонтальный/вертикальный scroll | offline screenshots |
 | Toast | App | state.toast | Один status, 3.5 секунды; ошибки сохранения имеют отдельный постоянный banner | workspaceRestore / persistence tests |
 | CRUD | workspaceSession + rebalanceActions | committed workspace | Принять/отменить с подтверждением; импорт и восстановление создают новый сеанс | offline.spec.ts; workspaceSession.test.ts |
@@ -111,3 +111,13 @@ RoutesMatrix и чистый routeEditing владеют matrix/pair/group; уп
 Общий `productColumns` владеет последовательностью Код/Артикул/Наименование для виртуальных таблиц; существующие native order tables соблюдают тот же порядок. SupplierDecisions использует VirtualTable, показывает все три идентификатора рядом с выбором поставщика, ищет по ним и сохраняет массовой выбор независимо от viewport. Служебный checkbox может предшествовать бизнес-колонкам. Полный код переносится, но не обрезается и не теряет нули.
 
 TransferDrawer имеет одну внутреннюю virtual-scroll поверхность, без пагинации. Шапка, суммы и действия остаются доступны; при недостаточной ширине обе оси принадлежат таблице. Отметить все по поиску действует на все подходящие строки. Количество и единица подписаны явно. Успех durable accept закрывает состав и подтверждение, показывает общий toast и возвращает фокус; отказ не закрывает окно. Сигнал завершения не закрывает карточку при первоначальном mount и не относится к revoke. Matrix sticky identity имеет непрозрачный фон и собственный слой. Форма настройки кратности удалена, сохраняются рабочие условия получателя/денежных фильтров. Evidence: automaticRebalancePolicies/productColumns/transferInspector и Chrome E2E09/14.
+
+### Общая доводка30.10.2026 после аудита
+
+`usePageScroll` владеет позициями разделов отдельно внутри текущего workspace. Новый раздел открывается с начала, повторный — с прежней позиции; фильтры и overlays не перематывают страницу. Возврат фокуса overlay использует preventScroll. Новый workspace не наследует позиции.
+
+VirtualTable размещает доступную table внутри именованной scroll surface; rowcount/colcount/rowindex отражают логический набор. Sticky identity cells непрозрачны по всей высоте. Controlled sortValue/TableSort сортирует копию без изменения row keys/selection, неизвестные значения остаются в конце. Demand сохраняет sort/hidden columns через useTablePreferences/usePreference; Код/Артикул/Наименование нельзя скрыть. Настройки колонок принадлежат общему Dialog, не создают отдельного popup owner.
+
+Подтверждение принятия/отмены использует business variant Dialog size=wide: конкретные стороны/uniqueSKU/справочная сумма выбранного набора и закупка до/после по затронутым строкам. Неизвестная цена не становится нулём. Persist-before-publish, отказ/повтор, revision guards, сброс ручных правок и закрытие после успеха сохраняются. Маршрутный флажок находится в отдельном label24×24; направление остаётся отдельной кнопкой.
+
+Runtime status/notification lane36px резервирует место над headers и overlays, исключая перекрытие заголовков/действий. Данные шрифтов локальные, без runtime font fetch/HTTP. Обычные формы сохраняют natural height; bounded table viewport не фиксирует всю страницу. Браузерные guards:9×9 при1280×720/600, opaque horizontal scrolling, wide acceptance и последующая закупка/CSV/reload.

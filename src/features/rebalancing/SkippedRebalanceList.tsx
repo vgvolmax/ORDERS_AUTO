@@ -2,7 +2,13 @@ import { productColumns } from '../../components/productColumns';
 import { useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { VirtualTable } from '../../components/VirtualTable';
-import { Alert, Button, EmptyState, SearchInput } from '../../components/ui';
+import {
+  Alert,
+  Button,
+  EmptyState,
+  SearchInput,
+  MetricCard,
+} from '../../components/ui';
 import {
   ALGORITHM_VERSION,
   type RebalanceProposal,
@@ -23,6 +29,7 @@ export function SkippedRebalanceList({
   policies,
   stale,
   onBack,
+  onRoutes,
 }: {
   proposal: RebalanceProposal | null;
   skus: Sku[];
@@ -30,6 +37,7 @@ export function SkippedRebalanceList({
   policies: SkuQuantityPolicy[];
   stale: boolean;
   onBack: () => void;
+  onRoutes?: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [opened, setOpened] = useState<SkippedRebalanceSku | null>(null);
@@ -155,11 +163,35 @@ export function SkippedRebalanceList({
           title={`Не распределено · ${skuMap.get(opened.skuCode)?.article ?? opened.skuCode}`}
           onClose={() => setOpened(null)}
           actions={
-            <Button className="secondary" onClick={() => setOpened(null)}>
-              Закрыть
-            </Button>
+            <>
+              <Button className="secondary" onClick={() => setOpened(null)}>
+                Закрыть
+              </Button>
+              {onRoutes && (
+                <Button
+                  onClick={() => {
+                    setOpened(null);
+                    onRoutes();
+                  }}
+                >
+                  Проверить маршруты
+                </Button>
+              )}
+            </>
           }
         >
+          <div
+            className="metrics metrics-three skip-totals"
+            role="group"
+            aria-label="Итоги нераспределённого товара"
+          >
+            <MetricCard label="Нужно" value={fmtQty(opened.neededQty)} />
+            <MetricCard
+              label="Можно доставить"
+              value={fmtQty(opened.deliverableQty)}
+            />
+            <MetricCard label="Не хватает" value={fmtQty(opened.missingQty)} />
+          </div>
           <p>
             {skippedReasonLabel[opened.reason]}. Артикул не включён в новый план
             перемещений.

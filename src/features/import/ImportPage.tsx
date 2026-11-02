@@ -132,6 +132,15 @@ export function ImportPage() {
           отправляются.
         </p>
       </header>
+      <details className="import-help">
+        <summary>Какие отчёты загрузить</summary>
+        <p>
+          MIN/MAX — отчёт с кодом, артикулом, наименованием, остатками и
+          нормативами по подразделениям. Поставщики — история закупок с кодом
+          товара, контрагентом, количеством и стоимостью. Товары сопоставляются
+          по полному коду 1С.
+        </p>
+      </details>
 
       {anyLoading && <Alert>Обработка отчёта…</Alert>}
       {failures.min && <Alert tone="danger">MIN/MAX: {failures.min}</Alert>}
@@ -206,6 +215,11 @@ export function ImportPage() {
       >
         Перейти к потребности
       </Button>
+      {state.minMax && state.suppliers && !anyLoading && (
+        <p className="import-ready" role="status">
+          Оба отчёта загружены. Можно перейти к работе с потребностью.
+        </p>
+      )}
     </main>
   );
 }
