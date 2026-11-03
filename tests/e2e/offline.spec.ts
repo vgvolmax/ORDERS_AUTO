@@ -116,6 +116,13 @@ test('E2E-17 calculation integrity survives import, export and reload offline', 
   await page
     .getByRole('button', { name: 'Загрузить новые отчёты', exact: true })
     .click();
+  await page
+    .getByRole('dialog', { name: 'Загрузить новые отчёты?', exact: true })
+    .getByRole('button', { name: 'Начать новый сеанс', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Импорт отчётов 1С', exact: true }),
+  ).toBeVisible();
   await upload(
     [
       parent('DUP'),
