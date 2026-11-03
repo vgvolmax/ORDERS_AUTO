@@ -269,3 +269,8 @@ ValidationIssueCode дополнен DUPLICATE_SKU (ERROR), INVALID_REFERENCE_PR
 ### Минимальная сумма SKU в перемещении ·03.11.2026
 
 RebalanceConfig.transferAmountFilter?:MoneyFilter — явный минимум SKU×донор×получатель; skuAmountFilter/unitPriceFilter сохраняются как legacy-поля для чтения замороженных условий. Для текущего порога при отсутствии transferAmountFilter берутся enabled/threshold skuAmountFilter; unitPriceFilter игнорируется при новых расчётах/принятии. Новые acceptedConfig всегда содержат transferAmountFilter. Исторические acceptedConfig без него не изменяются и сохраняют прежние SKU×получатель diagnostics. Fingerprint старой структуры сохраняет прежний формат; при новом поле включает его enabled/threshold. algorithmVersion=full-sku-route-sku-amount-v5; старые планы требуют пересчёта, accepted/no-op/revoke доступны. Workspace/IndexedDB schema не меняется. RebalanceIssue получает optional fromBranchId/toBranchId; TRANSFER_AMOUNT_FILTER/UNKNOWN и ACCEPTED_TRANSFER_AMOUNT_BELOW_THRESHOLD/UNKNOWN содержат skuCode, направленную пару, amount и threshold.
+
+
+### Реестр принятых и стабильная шапка ·03.11.2026
+
+RebalanceWorkspace.tab дополнен accepted. Optional acceptedFilters:{query:string,fromBranchId:string,toBranchId:string} хранится отдельно от фильтров результатов. Отсутствие поля в legacy workspace означает пустые фильтры. Schema workspace/IndexedDB не меняется. Выбор направлений для CSV временный и не использует selectedLineIds бизнес-принятия. Принятые записи не изменяются экспортом.

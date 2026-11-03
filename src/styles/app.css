@@ -310,7 +310,7 @@ details summary { cursor: pointer; }
 .transfer-line-actions { display: grid; gap: 10px; justify-items: start; }
 .transfer-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 /* Composition scroll surfaces own viewport sizing; the other rebalance tabs keep natural height. */
-.transfer-drawer { --transfer-row-height: 88px; display: flex; flex-direction: column; overflow: hidden; top: calc(var(--feedback-height) + 12px); right: 12px; width: calc(100vw - 24px); height: calc(100dvh - var(--feedback-height) - 24px); max-height: calc(100dvh - var(--feedback-height) - 24px); padding: 16px 18px; }
+.transfer-drawer { --transfer-row-height: 88px; display: flex; flex-direction: column; overflow: hidden; top: calc(var(--feedback-height) + 12px); right: 12px; width: calc(100% - 24px); height: calc(100dvh - var(--feedback-height) - 24px); max-height: calc(100dvh - var(--feedback-height) - 24px); padding: 16px 18px; }
 .transfer-drawer > * { flex-shrink: 0; }
 .transfer-drawer .drawer-head { align-items: flex-start; gap: 16px; }
 .transfer-heading { flex: 0 1 30%; min-width: 0; max-width: 36%; }
@@ -359,7 +359,7 @@ details summary { cursor: pointer; }
 .transfer-sender-summary { display: grid; gap: 8px; padding: 4px 0; font-size: 12px; }
 .transfer-sender-summary > strong { font-size: 15px; }
 .transfer-sender-summary small { color: var(--muted); font-size: 11px; font-weight: normal; }
-@media (max-height: 650px) { .transfer-drawer { top: calc(var(--feedback-height) + 8px); right: 8px; width: calc(100vw - 16px); height: calc(100dvh - var(--feedback-height) - 16px); max-height: calc(100dvh - var(--feedback-height) - 16px); padding: 12px 16px; } .transfer-financial-summary { margin-top: 8px; } .transfer-drawer > .filters { margin-top: 8px; } }
+@media (max-height: 650px) { .transfer-drawer { top: calc(var(--feedback-height) + 8px); right: 8px; width: calc(100% - 16px); height: calc(100dvh - var(--feedback-height) - 16px); max-height: calc(100dvh - var(--feedback-height) - 16px); padding: 12px 16px; } .transfer-financial-summary { margin-top: 8px; } .transfer-drawer > .filters { margin-top: 8px; } }
 @media (max-width: 1100px) { .transfer-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 820px) { .transfer-metrics { grid-template-columns: 1fr; } }
 .search-control { position: relative; display: flex; min-width: 200px; }
@@ -391,29 +391,31 @@ details summary { cursor: pointer; }
   left: 0;
 }
 
-/* Route configuration owns its compact viewport; sibling pages keep natural layout. */
-.rebalancing-routes {
+/* Shared compact rebalancing chrome keeps all tab positions stable. */
+.rebalancing-page {
+  display: flex;
+  flex-direction: column;
   padding: 12px 24px 12px;
 }
-.rebalancing-routes > header {
+.rebalancing-page > header {
   margin-bottom: 8px;
   gap: 16px;
 }
-.rebalancing-routes h1 {
+.rebalancing-page h1 {
   font-size: var(--font-title);
   margin: 0 0 3px;
 }
-.rebalancing-routes > header p {
+.rebalancing-page > header p {
   font-size: 12px;
   margin: 0;
 }
-.rebalancing-routes > header .eyebrow {
+.rebalancing-page > header .eyebrow {
   display: none;
 }
-.rebalancing-routes .rebalance-header-actions {
+.rebalancing-page .rebalance-header-actions {
   gap: 8px;
 }
-.rebalancing-routes .rebalance-header-actions .button {
+.rebalancing-page .rebalance-header-actions .button {
   font-size: 12px;
   padding: 8px 12px;
   min-height: 34px;
@@ -421,28 +423,28 @@ details summary { cursor: pointer; }
 .rebalancing-page .coverage-metrics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-.rebalancing-routes .coverage-metrics {
+.rebalancing-page .coverage-metrics {
   margin: 8px 0;
   gap: 8px;
 }
-.rebalancing-routes .coverage-metrics .metric {
+.rebalancing-page .coverage-metrics .metric {
   padding: 8px 10px;
 }
-.rebalancing-routes .coverage-metrics .metric strong {
+.rebalancing-page .coverage-metrics .metric strong {
   margin-top: 3px;
   font-size: 18px;
 }
-.rebalancing-routes .coverage-metrics .metric small {
+.rebalancing-page .coverage-metrics .metric small {
   font-size: 11px;
 }
-.rebalancing-routes .coverage-metrics .link {
+.rebalancing-page .coverage-metrics .link {
   padding: 0;
   font-size: 11px;
 }
-.rebalancing-routes .workspace-tabs {
+.rebalancing-page .workspace-tabs {
   margin-bottom: 8px;
 }
-.rebalancing-routes > .alert {
+.rebalancing-page > .alert {
   margin: 6px 0;
   padding: 5px 10px;
   font-size: 12px;
@@ -477,11 +479,11 @@ details summary { cursor: pointer; }
   padding: 2px 0;
 }
 @media (max-width: 1100px) {
-  .rebalancing-routes {
+  .rebalancing-page {
     padding-left: 16px;
     padding-right: 16px;
   }
-  .rebalancing-routes > header {
+  .rebalancing-page > header {
     gap: 8px;
   }
 }
@@ -489,39 +491,39 @@ details summary { cursor: pointer; }
   font-size: inherit;
   color: inherit;
 }
-.rebalancing-routes .coverage-metrics .metric > strong {
+.rebalancing-page .coverage-metrics .metric > strong {
   display: flex;
   align-items: baseline;
   gap: 5px 10px;
   flex-wrap: wrap;
   font-size: 16px;
 }
-.rebalancing-routes .coverage-metrics .metric > strong small {
+.rebalancing-page .coverage-metrics .metric > strong small {
   font-size: 12px;
   margin: 0;
 }
-.rebalancing-routes .coverage-metrics .metric > small { display: none; }
-.rebalancing-routes .coverage-metrics .metric > small br {
+.rebalancing-page .coverage-metrics .metric > small { display: none; }
+.rebalancing-page .coverage-metrics .metric > small br {
   display: none;
 }
-.rebalancing-routes .coverage-metrics .metric > small .link {
+.rebalancing-page .coverage-metrics .metric > small .link {
   margin-left: 5px;
 }
-/* Keep the nine-branch route workspace visible at 1280×600. */
-.rebalancing-routes { padding-top: 8px; padding-bottom: 8px; }
-.rebalancing-routes > header { margin-bottom: 6px; align-items: center; }
-.rebalancing-routes > header p { display: none; }
-.rebalancing-routes .coverage-metrics { margin: 6px 0; }
-.rebalancing-routes .workspace-tabs { margin: 8px 0; }
-.rebalancing-routes .workspace-tabs button { padding: 6px 4px; }
+/* Keep the common chrome at the nine-branch Routes height at1280×600. */
+.rebalancing-page { padding-top: 8px; padding-bottom: 8px; }
+.rebalancing-page > header { margin-bottom: 6px; align-items: center; }
+.rebalancing-page > header p { display: none; }
+.rebalancing-page .coverage-metrics { margin: 0 0 6px; }
+.rebalancing-page .workspace-tabs { margin: 2px 0 8px; }
+.rebalancing-page .workspace-tabs button { padding: 6px 4px; }
 /* The existing branch list owns sidebar scrolling; chrome must not lengthen the page. */
-.shell:has(.rebalancing-routes) .sidebar { display: flex; flex-direction: column; min-height: 0; }
-.shell:has(.rebalancing-routes) .sidebar .brand,
-.shell:has(.rebalancing-routes) .sidebar > button,
-.shell:has(.rebalancing-routes) .sidebar nav > button,
-.shell:has(.rebalancing-routes) .sidebar nav > .nav-label { flex-shrink: 0; }
-.shell:has(.rebalancing-routes) .sidebar nav { flex: 1; min-height: 0; }
-.shell:has(.rebalancing-routes) .sidebar .branch-nav { flex: 1; min-height: 0; }
+.shell:has(.rebalancing-page) .sidebar { display: flex; flex-direction: column; min-height: 0; }
+.shell:has(.rebalancing-page) .sidebar .brand,
+.shell:has(.rebalancing-page) .sidebar > button,
+.shell:has(.rebalancing-page) .sidebar nav > button,
+.shell:has(.rebalancing-page) .sidebar nav > .nav-label { flex-shrink: 0; }
+.shell:has(.rebalancing-page) .sidebar nav { flex: 1; min-height: 0; }
+.shell:has(.rebalancing-page) .sidebar .branch-nav { flex: 1; min-height: 0; }
 
 /* Product identity is consistent across operational lists. */
 .product-code, .product-article { overflow-wrap: anywhere; }
@@ -591,3 +593,31 @@ main > header .eyebrow { display: none; }
   .demand-filters { grid-template-columns: minmax(0, 1fr); }
   .column-options { grid-template-columns: 1fr; }
 }
+
+/* Accepted list owns its scroll; sibling forms retain natural document height. */
+html:has(.rebalancing-page) { scrollbar-gutter: stable; }
+.content:has(> .rebalancing-accepted) { height: 100dvh; display: flex; flex-direction: column; min-height: 0; }
+.content:has(> .rebalancing-accepted) > .workspace-save-state, .content:has(> .rebalancing-accepted) > .alert { flex-shrink: 0; }
+.rebalancing-accepted { flex: 1; width: 100%; margin: 0 auto; min-height: 0; }
+.rebalancing-accepted > header, .rebalancing-accepted > .coverage-metrics, .rebalancing-accepted > .workspace-tabs, .rebalancing-accepted > .alert { flex-shrink: 0; }
+.rebalancing-accepted > [role="tabpanel"], .rebalancing-accepted .workspace-controls { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.accepted-transfers { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1; }
+.accepted-transfers > * { flex-shrink: 0; }
+.accepted-transfers .section-heading { align-items: center; gap: 8px; flex-wrap: wrap; }
+.accepted-transfers h2 { margin: 0; font-size: 16px; }
+.accepted-transfers .section-heading > span { font-size: 12px; }
+.accepted-filters { display: grid; grid-template-columns: minmax(200px, 1.5fr) repeat(2, minmax(150px, 1fr)) auto; gap: 10px; align-items: end; }
+.accepted-filters label { display: grid; gap: 4px; font-size: 12px; min-width: 0; }
+.accepted-filters .search-control, .accepted-filters .input { width: 100%; min-width: 0; }
+.accepted-filters .input { min-height: 34px; padding: 6px 8px; font-size: 12px; }
+.accepted-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 12px; }
+.accepted-toolbar > span { margin-right: auto; }
+.accepted-toolbar .checkbox-control { margin: 0; }
+.accepted-transfers .button { min-height: 32px; padding: 6px 10px; font-size: 12px; }
+.accepted-export-help { margin: 0; font-size: 11px; }
+.accepted-transfers .accepted-table-frame { flex: 1; min-height: 0; }
+.accepted-table-frame .virtual-table { height: 100%; display: flex; flex-direction: column; }
+.accepted-table-frame .virtual-scroll { flex: 1; min-height: 0; }
+.accepted-table-frame .virtual-row { font-size: 13px; }
+.accepted-table-frame .virtual-row strong { overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .accepted-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } .accepted-filters > label:first-child { grid-column: 1 / -1; } }
