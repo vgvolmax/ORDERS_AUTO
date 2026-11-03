@@ -183,3 +183,8 @@ collectPurchasingIssues(dataset,sourceIssues) индексирует дубли 
 ### Минимальная сумма SKU в перемещении ·03.11.2026
 
 calculateRebalance сначала строит полностью покрывающие SKU потоки, затем исключает строки ниже getTransferAmountFilter(config).threshold отдельно по SKU×from×to. balances и uncoveredNeed рассчитываются по оставшимся transfers. skippedSkus описывает только исходную невозможность полного покрытия; денежные исключения находятся в exclusions с SKU и направлением. acceptTransfers проверяет сумму выбранного SKU вместе с уже принятыми строками того же run×SKU×from×to; другие SKU, направления и runs не помогают пройти порог. Новые принятые условия фиксируют transferAmountFilter, отмена ниже порога разрешена с адресной диагностикой. Purchasing по-прежнему учитывает только accepted.
+
+
+### Реестр принятых и стабильная шапка ·03.11.2026
+
+buildAcceptedDocuments использует существующую TransferDocument projection с proposal=null и полным committed ledger. filterAcceptedDocuments фильтрует целые документы по IDs отправителя/получателя и поиску кода/артикула/названия/направления; состав документа не обрезается. totals считаются только из принятых строк, неизвестная цена не заменяется0. CSV parent заново разрешает запрошенные IDs в полном accepted projection; rowsToCsv формирует один заголовок и from/to в каждой товарной строке.

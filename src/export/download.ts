@@ -3,7 +3,12 @@ import type { Order } from '../domain/types';
 import { orderToCsv } from './csv';
 import { orderCsvFilename, ordersZipFilename } from './orderFilenames';
 import type { TransferDocument } from '../features/rebalancing/transferDocuments';
-import { transferToCsv, transferCsvFilename } from './transferCsv';
+import {
+  transferToCsv,
+  transferCsvFilename,
+  transfersToCsv,
+} from './transferCsv';
+import { formatLocalDate } from './date';
 
 export function save(blob: Blob, name: string): void {
   const anchor = document.createElement('a');
@@ -29,6 +34,23 @@ export function downloadTransferCsv(doc: TransferDocument): void {
   save(
     new Blob([transferToCsv(doc)], { type: 'text/csv;charset=utf-8' }),
     transferCsvFilename(doc),
+  );
+}
+
+export function downloadAcceptedTransfersCsv(
+  documents: TransferDocument[],
+): void {
+  if (
+    !documents.length ||
+    documents.some(
+      (doc) => !doc.lines.some((l) => l.decision === 'ACCEPTED' && l.qty > 0),
+    )
+  )
+    throw new Error('Нет принятых перемещений для CSV.');
+  if (documents.length === 1) return downloadTransferCsv(documents[0]!);
+  save(
+    new Blob([transfersToCsv(documents)], { type: 'text/csv;charset=utf-8' }),
+    `Принятые_перемещения__${formatLocalDate(new Date())}.csv`,
   );
 }
 

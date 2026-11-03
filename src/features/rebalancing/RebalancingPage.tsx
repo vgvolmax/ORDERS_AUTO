@@ -20,8 +20,17 @@ import { Alert, Button, MetricCard } from '../../components/ui';
 import { ConditionsPanel } from './ConditionsPanel';
 import { RoutesMatrix } from './RoutesMatrix';
 import { ResultsTable } from './ResultsTable';
+import { AcceptedTransfersView } from './AcceptedTransfersView';
+import {
+  buildAcceptedDocuments,
+  emptyAcceptedFilters,
+} from './acceptedTransfersViewModel';
 import { buildRebalancingWorkbook } from '../../export/rebalancingWorkbook';
-import { save as download, downloadTransferCsv } from '../../export/download';
+import {
+  save as download,
+  downloadTransferCsv,
+  downloadAcceptedTransfersCsv,
+} from '../../export/download';
 import { AcceptTransfersDialog } from './AcceptTransfersDialog';
 import {
   buildTransferDocuments,
@@ -62,6 +71,7 @@ export const rebalanceMessage = (e: unknown) =>
   e instanceof Error
     ? (messages[e.message] ?? e.message)
     : 'Не удалось выполнить действие';
+const REBALANCE_TABS = ['routes', 'conditions', 'results', 'accepted'] as const;
 export function RebalancingPage() {
   const store = useStore(),
     { state, set, saving } = store,
@@ -130,6 +140,29 @@ export function RebalancingPage() {
     persistedFilters,
     state.workspaceId,
     (value) => save((s) => ({ rebalance: { ...s.rebalance, ...value } })),
+  );
+  const [acceptedFilters, changeAcceptedFilters] = useDurableDraft(
+    r.acceptedFilters ?? emptyAcceptedFilters,
+    state.workspaceId,
+    (value) =>
+      save((s) => ({ rebalance: { ...s.rebalance, acceptedFilters: value } })),
+  );
+  const acceptedDocuments = useMemo(
+    () =>
+      buildAcceptedDocuments({
+        accepted: r.accepted,
+        registry: r.registry,
+        policies,
+        skus: state.minMax?.skus ?? [],
+        snapshot: d.snapshot?.snapshot ?? null,
+      }),
+    [
+      r.accepted,
+      r.registry,
+      policies,
+      state.minMax?.skus,
+      d.snapshot?.snapshot,
+    ],
   );
   const persistedDecisions = useMemo(
     () => ({
@@ -418,8 +451,8 @@ export function RebalancingPage() {
   return (
     <main
       className={
-        tab === 'routes'
-          ? 'rebalancing-page rebalancing-routes'
+        tab === 'accepted'
+          ? 'rebalancing-page rebalancing-accepted'
           : 'rebalancing-page'
       }
     >
@@ -503,7 +536,7 @@ export function RebalancingPage() {
         aria-label="Ребалансировка"
         className="workspace-tabs"
       >
-        {(['routes', 'conditions', 'results'] as const).map((tab) => (
+        {REBALANCE_TABS.map((tab) => (
           <button
             key={tab}
             role="tab"
@@ -511,7 +544,7 @@ export function RebalancingPage() {
             aria-selected={(r.tab === 'priorities' ? 'routes' : r.tab) === tab}
             aria-controls="rebalance-panel"
             onKeyDown={(e) => {
-              const tabs = ['routes', 'conditions', 'results'] as const;
+              const tabs = REBALANCE_TABS;
               const i = tabs.indexOf(tab);
               const target =
                 e.key === 'ArrowRight'
@@ -536,6 +569,7 @@ export function RebalancingPage() {
                 routes: 'Маршруты',
                 conditions: 'Условия',
                 results: 'Результаты',
+                accepted: 'Принятые',
               }[tab]
             }
           </button>
@@ -566,6 +600,32 @@ export function RebalancingPage() {
           )}
           {tab === 'conditions' && (
             <ConditionsPanel config={configDraft} onChange={config} />
+          )}
+          {tab === 'accepted' && (
+            <AcceptedTransfersView
+              key={state.workspaceId}
+              documents={acceptedDocuments}
+              filters={acceptedFilters}
+              onFilters={changeAcceptedFilters}
+              onExport={(ids) => {
+                const selected = new Set(ids);
+                const docs = buildAcceptedDocuments({
+                  accepted: r.accepted,
+                  registry: r.registry,
+                  policies,
+                  skus: state.minMax?.skus ?? [],
+                  snapshot: d.snapshot?.snapshot ?? null,
+                }).filter((doc) => selected.has(doc.id));
+                if (docs.length !== selected.size)
+                  throw new Error(
+                    'Состав принятых перемещений изменился. Повторите выбор.',
+                  );
+                downloadAcceptedTransfersCsv(docs);
+                set({
+                  toast: `CSV принятых перемещений сформирован · направлений: ${docs.length}.`,
+                });
+              }}
+            />
           )}
           {tab === 'results' && (
             <>

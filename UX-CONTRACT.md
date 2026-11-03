@@ -14,7 +14,7 @@ ORDERS_AUTO — русский локальный инструмент заку�
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
-| Table Selection | ResultsTable / TransferDrawer / SupplierDecisions | persisted selectedLineIds / uiPreferences | Видимые предложения; действие карточки ограничено её видимыми отмеченными позициями; общий счётчик включает скрытый выбор | transferInspector.test.tsx; acceptTransfers.test.tsx; offline.spec.ts |
+| Table Selection | ResultsTable / TransferDrawer / AcceptedTransfersView / SupplierDecisions | persisted selectedLineIds / uiPreferences; временный выбор CSV в реестре | Видимые предложения; действие карточки ограничено её видимыми отмеченными позициями; общий счётчик включает скрытый выбор | transferInspector.test.tsx; acceptTransfers.test.tsx; offline.spec.ts |
 | Select/Listbox | components/ui.tsx Select | native HTML select | OS popup принят для компактных настроек и русских option labels; без авторского popup | rebalancingPage.test.tsx; browser keyboard |
 | Form | ConditionsPanel / QuantityInput | domain validation + app commit | inline autosave settings; quantity step1 has no UI; noValidate | rebalancingPage.test.tsx |
 | Scrollbar | styles/app.css | глобальные scrollbar-color/width | Таблицы имеют собственный горизонтальный/вертикальный scroll | offline screenshots |
@@ -136,3 +136,8 @@ ConditionsPanel использует прежние QuantityInput/checkbox и о
 ## Минимальная сумма SKU в перемещении ·03.11.2026
 
 Источник: SPEC.md, окончательное уточнение03.11.2026. ConditionsPanel использует прежние QuantityInput/checkbox и показывает единственный фильтр «Минимальная сумма SKU в перемещении» с полем «Порог суммы SKU». Цена единицы не является отдельным ограничением. Исключения показывают SKU, направленную пару и сумму/порог. Принятие остаётся атомарным: разные SKU/доноры/получатели/runs не складываются. Старые предложения требуют пересчёта, принятые записи доступны. Визуальные токены и владельцы компонентов сохраняются.
+
+
+## Реестр принятых и общая шапка ·03.11.2026
+
+Источник: запрос оператора03.11.2026 и docs/superpowers/specs/2026-11-03-accepted-transfers-workspace-design.md. Шапка/метрики/вкладки имеют одну компактную компоновку и стабильные координаты. «Условия» сохраняют естественную высоту; «Принятые» владеют внутренним прокручиванием VirtualTable. Вкладка стоит справа от «Результатов». Реестр использует committed accepted, поиск отбирает целые направления; массовый CSV содержит все принятые строки отмеченных направлений, включая скрытые поиском. Количество скрытого выбора явно показано. Фильтры сохраняются отдельно от результатов, выбор CSV временный. Native Select/SearchInput/VirtualTable/Dialog/Alert/кнопки остаются каноническими владельцами, новые экранные аналоги не вводятся. Ошибка CSV показывается в открытом Dialog либо реестре и допускает повтор без потери выбора.

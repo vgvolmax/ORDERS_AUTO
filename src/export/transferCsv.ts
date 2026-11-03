@@ -4,6 +4,10 @@ import { formatLocalDate } from './date';
 import { safeFilename } from './filenames';
 
 export function transferToCsv(doc: TransferDocument): string {
+  return transfersToCsv([doc]);
+}
+
+export function transfersToCsv(documents: TransferDocument[]): string {
   return rowsToCsv(
     [
       'Код',
@@ -16,19 +20,21 @@ export function transferToCsv(doc: TransferDocument): string {
       'Цена MIN/MAX',
       'Сумма',
     ],
-    doc.lines
-      .filter((line) => line.decision === 'ACCEPTED' && line.qty > 0)
-      .map((line) => [
-        line.skuCode,
-        line.article,
-        line.name,
-        doc.fromName,
-        doc.toName,
-        line.qty,
-        line.unit,
-        line.unitPrice,
-        line.amount,
-      ]),
+    documents.flatMap((doc) =>
+      doc.lines
+        .filter((line) => line.decision === 'ACCEPTED' && line.qty > 0)
+        .map((line) => [
+          line.skuCode,
+          line.article,
+          line.name,
+          doc.fromName,
+          doc.toName,
+          line.qty,
+          line.unit,
+          line.unitPrice,
+          line.amount,
+        ]),
+    ),
   );
 }
 

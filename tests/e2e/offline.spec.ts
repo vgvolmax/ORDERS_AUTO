@@ -5,6 +5,237 @@ import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 
+test('E2E-19 stable rebalancing chrome and accepted route register export full compositions offline', async ({
+  page,
+}, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const evidence = observeRuntime(page);
+  const names = Array.from(
+    { length: 12 },
+    (_, i) => `Склад ${String(i + 1).padStart(2, '0')}`,
+  );
+  const codes = names.flatMap((_, i) => [
+    `AC${String(i).padStart(2, '0')}A`,
+    `AC${String(i).padStart(2, '0')}B`,
+  ]);
+  const min = buildWorkbook([
+    [
+      'Код',
+      'Артикул',
+      'Номенклатура',
+      'Количество',
+      'Минимальный остаток',
+      'Максимальный остаток',
+      'Цена',
+    ],
+    ...codes.flatMap((code, i) => [
+      [code, `ART-${code}`, `Принятый товар ${code}`, 111, null, null, 1000],
+      ...names.map((name, j) => [
+        null,
+        null,
+        name,
+        j === Math.floor(i / 2) ? 111 : 0,
+        j === Math.floor(i / 2) ? 0 : 1,
+        j === Math.floor(i / 2) ? 100 : 1,
+        null,
+      ]),
+    ]),
+  ]);
+  const sup = buildWorkbook([
+    [
+      'Контрагент',
+      'Код',
+      'Номенклатура',
+      'Количество',
+      'Стоимость',
+      'Ед. изм.',
+    ],
+    ...codes.map((code) => [
+      'ИП Баранов Роман Борисович',
+      code,
+      `Принятый товар ${code}`,
+      1,
+      1000,
+      'шт',
+    ]),
+  ]);
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  for (const [label, name, bytes] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'accepted-min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'accepted-sup.xlsx', sup],
+  ] as const) {
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: Buffer.from(bytes),
+    });
+    await expect(page.getByLabel(label)).toBeEnabled();
+    await expect(
+      page.getByText('Обработка отчёта…', { exact: true }),
+    ).toHaveCount(0);
+  }
+  await page
+    .getByRole('button', { name: 'Перейти к потребности', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
+    .click();
+  await page
+    .getByRole('checkbox', { name: 'Выбрать видимые предложения', exact: true })
+    .check();
+  await page
+    .getByRole('button', { name: 'Принять выбранные (264)', exact: true })
+    .click();
+  const confirmation = page.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+    exact: true,
+  });
+  await confirmation
+    .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  await expect(confirmation).toHaveCount(0);
+  const frame = () =>
+    page.evaluate(() =>
+      [
+        '.rebalancing-page > header',
+        '.rebalancing-page > .coverage-metrics',
+        '.rebalancing-page > .workspace-tabs',
+      ].map((selector) => {
+        const r = document.querySelector(selector)!.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      }),
+    );
+  for (const height of [600, 720]) {
+    await page.setViewportSize({ width: 1280, height });
+    await page.getByRole('tab', { name: 'Маршруты', exact: true }).click();
+    const reference = await frame();
+    for (const label of ['Условия', 'Результаты', 'Принятые', 'Маршруты']) {
+      await page.getByRole('tab', { name: label, exact: true }).click();
+      await expect(
+        page.getByRole('tab', { name: label, exact: true }),
+      ).toHaveAttribute('aria-selected', 'true');
+      await expect
+        .poll(async () => {
+          const actual = await frame();
+          return actual.flatMap((box, i) =>
+            (Object.keys(box) as Array<keyof typeof box>)
+              .filter((key) => Math.abs(box[key] - reference[i]![key]) > 1)
+              .map(
+                (key) =>
+                  `${label}: ${i}.${key}: ${box[key]} vs ${reference[i]![key]}`,
+              ),
+          );
+        })
+        .toEqual([]);
+    }
+    await page.getByRole('tab', { name: 'Принятые', exact: true }).click();
+    await expect(
+      page.getByRole('heading', {
+        name: 'Принятые перемещения · 132',
+        exact: true,
+      }),
+    ).toBeVisible();
+    const scroll = page.locator('.accepted-table-frame .virtual-scroll');
+    await expect
+      .poll(() => scroll.evaluate((el) => el.scrollHeight > el.clientHeight))
+      .toBe(true);
+    await expect
+      .poll(() => page.locator('.accepted-table-frame [role="row"]').count())
+      .toBeLessThan(60);
+    const box = await scroll.boundingBox();
+    expect(box!.height).toBeGreaterThan(100);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(height);
+    await scroll.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await expect(
+      page.getByLabel('Выбрать Склад 12 → Склад 11', { exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            Math.max(
+              document.documentElement.scrollHeight,
+              document.body.scrollHeight,
+            ) - innerHeight,
+        ),
+      )
+      .toBeLessThanOrEqual(1);
+    await page.screenshot({
+      path: testInfo.outputPath(`19-accepted-${height}.png`),
+      fullPage: true,
+    });
+  }
+  await page
+    .getByRole('checkbox', {
+      name: 'Выбрать все направления по фильтрам',
+      exact: true,
+    })
+    .check();
+  await page
+    .getByLabel('Поиск принятых перемещений', { exact: true })
+    .fill('AC00A');
+  await expect(
+    page.getByText('Выбрано: 132 · Скрыто фильтрами: 121', { exact: true }),
+  ).toBeVisible();
+  const downloadAll = page.waitForEvent('download');
+  await page
+    .getByRole('button', { name: 'CSV выбранных (132)', exact: true })
+    .click();
+  const all = await downloadAll;
+  const allCsv = readFileSync((await all.path())!, 'utf8');
+  expect(allCsv.match(/Код;Артикул;/g)).toHaveLength(1);
+  expect(allCsv.split('\r\n')).toHaveLength(266);
+  expect(allCsv).toContain('AC11B;');
+  await page
+    .getByLabel('Получатель принятых', { exact: true })
+    .selectOption({ label: 'Склад 02' });
+  const downloadOne = page.waitForEvent('download');
+  await page
+    .getByRole('button', { name: 'CSV Склад 01 → Склад 02', exact: true })
+    .click();
+  const one = await downloadOne;
+  expect(one.suggestedFilename()).toMatch(/^Перемещение__Склад 01__Склад 02__/);
+  const oneCsv = readFileSync((await one.path())!, 'utf8');
+  expect(oneCsv).toContain('AC00A;');
+  expect(oneCsv).toContain('AC00B;');
+  expect(oneCsv.split('\r\n')).toHaveLength(4);
+  await page
+    .getByRole('button', { name: 'Состав Склад 01 → Склад 02', exact: true })
+    .click();
+  const composition = page.getByRole('dialog', {
+    name: 'Принято: Склад 01 → Склад 02',
+    exact: true,
+  });
+  await expect(composition.getByText('AC00B', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(composition).toHaveCount(0);
+  await page
+    .getByText('Сохранение сеанса…', { exact: true })
+    .waitFor({ state: 'hidden' });
+  await page.reload();
+  await expect(
+    page.getByRole('tab', { name: 'Принятые', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await expect(
+    page.getByLabel('Поиск принятых перемещений', { exact: true }),
+  ).toHaveValue('AC00A');
+  await expect(
+    page
+      .getByLabel('Получатель принятых', { exact: true })
+      .locator('option:checked'),
+  ).toHaveText('Склад 02');
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
 test('E2E-18 one SKU per donor-recipient must meet the minimum; other SKUs and donors cannot subsidize it', async ({
   page,
 }, testInfo) => {

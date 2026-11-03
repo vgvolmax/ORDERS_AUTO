@@ -3,6 +3,43 @@ import { baseState } from '../ui/renderWithStore';
 import { derive } from '../../src/app/selectors';
 import { createInitialState } from '../../src/app/initialState';
 import { createWorkspaceSession } from '../../src/app/workspaceSession';
+import { workspaceFromState } from '../../src/app/workspaceSession';
+
+it('restores legacy workspaces without accepted filters and persists the accepted tab independently of results', async () => {
+  const legacy = baseState();
+  legacy.rebalance.query = 'Старый поиск результатов';
+  delete legacy.rebalance.acceptedFilters;
+  let written: ReturnType<typeof workspaceFromState> | undefined;
+  const session = createWorkspaceSession({
+    initial: createInitialState(),
+    publish: () => undefined,
+    save: async (workspace) => {
+      written = workspace;
+    },
+  });
+  await session.restore(workspaceFromState(legacy));
+  expect(session.getState().rebalance.acceptedFilters).toBeUndefined();
+  await session.commit((s) => ({
+    rebalance: {
+      ...s.rebalance,
+      tab: 'accepted',
+      acceptedFilters: { query: 'SKU1', fromBranchId: '', toBranchId: 'b2' },
+    },
+  }));
+  const saved = written!;
+  const restored = createWorkspaceSession({
+    initial: createInitialState(),
+    publish: () => undefined,
+    save: async () => undefined,
+  });
+  await restored.restore(saved);
+  expect(restored.getState().rebalance).toMatchObject({
+    tab: 'accepted',
+    query: 'Старый поиск результатов',
+    acceptedFilters: { query: 'SKU1', fromBranchId: '', toBranchId: 'b2' },
+  });
+  expect(legacy.rebalance.acceptedFilters).toBeUndefined();
+});
 
 describe('persist then publish workspace commands', () => {
   it('archives report replacement with a new snapshot and clears old decisions, while preserving settings', async () => {

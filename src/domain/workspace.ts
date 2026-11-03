@@ -17,6 +17,11 @@ export interface RebalanceResultScope {
   skuCode?: string;
   branchId?: string;
 }
+export interface AcceptedTransferFilters {
+  query: string;
+  fromBranchId: string;
+  toBranchId: string;
+}
 export interface RebalanceWorkspace {
   registry: BranchRegistry;
   policies: SkuQuantityPolicy[];
@@ -26,9 +31,10 @@ export interface RebalanceWorkspace {
   acceptedRevision: number;
   selectedLineIds: string[];
   rejectedLineIds: string[];
-  tab: 'routes' | 'conditions' | 'results' | 'priorities';
+  tab: 'routes' | 'conditions' | 'results' | 'accepted' | 'priorities';
   query: string;
   resultScope?: RebalanceResultScope;
+  acceptedFilters?: AcceptedTransferFilters;
 }
 export interface ImportFileRef {
   fileId: string;

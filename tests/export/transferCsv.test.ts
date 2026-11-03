@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import {
   transferToCsv,
   transferCsvFilename,
+  transfersToCsv,
 } from '../../src/export/transferCsv';
 import type {
   TransferDocument,
@@ -26,6 +27,30 @@ const line = (
   from: null,
   to: null,
   ...changes,
+});
+it('exports multiple directed documents under one header with only their accepted positive lines', () => {
+  const first = doc([
+    line({ unitPrice: 0, amount: 0 }),
+    line({ skuCode: 'PROPOSAL', decision: 'PROPOSED' }),
+  ]);
+  const second = {
+    ...doc([
+      line({
+        skuCode: '00002',
+        name: 'Второй товар',
+        unitPrice: 100,
+        amount: 25,
+      }),
+    ]),
+    id: 'second',
+    fromName: 'Другой донор',
+    toName: 'Другой получатель',
+  };
+  const csv = transfersToCsv([first, second]);
+  expect(csv.match(/Код;Артикул;/g)).toHaveLength(1);
+  expect(csv).toContain(';Донор / А;Ленина;0.25;м;0;0');
+  expect(csv).toContain(';Другой донор;Другой получатель;0.25;м;100;25');
+  expect(csv).not.toContain('PROPOSAL');
 });
 const doc = (lines: TransferDocumentLine[]): TransferDocument => ({
   id: '["a","b"]',
