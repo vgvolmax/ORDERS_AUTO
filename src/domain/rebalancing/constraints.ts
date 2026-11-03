@@ -59,8 +59,15 @@ export function assertConfig(config: RebalanceConfig): void {
     !['ALL_ALLOWED', 'SELECTIVE'].includes(config.routeConfig.mode)
   )
     throw new RebalanceError('INVALID_CONFIG');
-  for (const filter of [config.unitPriceFilter, config.skuAmountFilter]) {
+  for (const filter of [
+    config.unitPriceFilter,
+    config.skuAmountFilter,
+    ...(config.transferAmountFilter === undefined
+      ? []
+      : [config.transferAmountFilter]),
+  ]) {
     if (
+      !filter ||
       typeof filter.enabled !== 'boolean' ||
       !Number.isFinite(filter.threshold) ||
       filter.threshold < 0
@@ -108,6 +115,12 @@ export function rebalanceConfigFingerprint(config: RebalanceConfig): string {
     config.unitPriceFilter.threshold,
     config.skuAmountFilter.enabled,
     config.skuAmountFilter.threshold,
+    ...(config.transferAmountFilter
+      ? [
+          config.transferAmountFilter.enabled,
+          config.transferAmountFilter.threshold,
+        ]
+      : []),
   ]);
 }
 export function assertSnapshot(snapshot: RebalanceSnapshot): void {

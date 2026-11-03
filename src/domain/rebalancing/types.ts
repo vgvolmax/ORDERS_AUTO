@@ -37,6 +37,8 @@ export interface RebalanceIssue {
   sourceRow: number | null;
   skuCode?: string;
   branchId?: string;
+  fromBranchId?: string;
+  toBranchId?: string;
   stockIndex?: number;
   amount?: number | null;
   quantity?: number;
@@ -79,8 +81,12 @@ export interface RebalanceConfig {
   recipientTrigger: 'BELOW_MIN' | 'BELOW_MAX';
   receiverPct: number;
   routeConfig: RouteConfig;
+  /** Legacy frozen conditions only; no longer applied to new transfers. */
   unitPriceFilter: MoneyFilter;
+  /** Legacy saved SKU minimum; used only as a fallback for current settings. */
   skuAmountFilter: MoneyFilter;
+  /** Minimum of one SKU × donor × recipient. Missing in legacy saved conditions. */
+  transferAmountFilter?: MoneyFilter;
 }
 export interface RebalanceTransfer {
   sourceLineId: string;

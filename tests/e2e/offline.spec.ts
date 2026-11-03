@@ -5,7 +5,7 @@ import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 
-test('E2E-18 SKU minimum amount is per recipient, includes equality and survives acceptance/reload', async ({
+test('E2E-18 one SKU per donor-recipient must meet the minimum; other SKUs and donors cannot subsidize it', async ({
   page,
 }, testInfo) => {
   const { buildWorkbook } = await import('../fixtures/workbookBuilders');
@@ -13,16 +13,6 @@ test('E2E-18 SKU minimum amount is per recipient, includes equality and survives
   const evidence = observeRuntime(page);
   await page.context().setOffline(true);
   await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
-  const names = [
-    'Донор',
-    'Первый',
-    'Второй',
-    'Малый 1',
-    'Малый 2',
-    'Малый 3',
-    'Малый 4',
-  ];
-  const needs = [12, 10, 8, 7, 7, 6];
   const min = buildWorkbook([
     [
       'Код',
@@ -33,9 +23,18 @@ test('E2E-18 SKU minimum amount is per recipient, includes equality and survives
       'Максимальный остаток',
       'Цена',
     ],
-    ['AMOUNT', 'A-1', 'Порог подразделений', 122, null, null, 1000],
-    [null, null, names[0], 122, 0, 100, null],
-    ...needs.map((max, i) => [null, null, names[i + 1], 0, max, max, null]),
+    ['AMOUNT-A', 'A-1', 'Первый товар документа', 203, null, null, 1000],
+    [null, null, 'Егорьевск', 103, 0, 100, null],
+    [null, null, 'Ленина', 100, 0, 100, null],
+    [null, null, 'ОреховоЗуево', 0, 3, 3, null],
+    ['AMOUNT-B', 'B-1', 'Второй товар документа', 219, null, null, 339.3],
+    [null, null, 'Егорьевск', 115, 0, 100, null],
+    [null, null, 'Ленина', 104, 0, 100, null],
+    [null, null, 'ОреховоЗуево', 0, 19, 19, null],
+    ['AMOUNT-C', 'C-1', 'Равенство порогу', 210, null, null, 500],
+    [null, null, 'Егорьевск', 110, 0, 100, null],
+    [null, null, 'Ленина', 100, 0, 100, null],
+    [null, null, 'ОреховоЗуево', 0, 10, 10, null],
   ]);
   const sup = buildWorkbook([
     [
@@ -48,16 +47,32 @@ test('E2E-18 SKU minimum amount is per recipient, includes equality and survives
     ],
     [
       'ИП Баранов Роман Борисович',
-      'AMOUNT',
-      'Порог подразделений',
+      'AMOUNT-A',
+      'Первый товар документа',
       1,
       1000,
       'шт',
     ],
+    [
+      'ИП Баранов Роман Борисович',
+      'AMOUNT-B',
+      'Второй товар документа',
+      1,
+      339.3,
+      'шт',
+    ],
+    [
+      'ИП Баранов Роман Борисович',
+      'AMOUNT-C',
+      'Равенство порогу',
+      1,
+      500,
+      'шт',
+    ],
   ]);
   for (const [label, name, bytes] of [
-    ['Выбрать файл Отчёт MIN/MAX', 'recipient-min.xlsx', min],
-    ['Выбрать файл Отчёт поставщиков', 'recipient-sup.xlsx', sup],
+    ['Выбрать файл Отчёт MIN/MAX', 'document-min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'document-sup.xlsx', sup],
   ] as const) {
     await page.getByLabel(label).setInputFiles({
       name,
@@ -78,35 +93,40 @@ test('E2E-18 SKU minimum amount is per recipient, includes equality and survives
     .click();
   await page
     .getByRole('checkbox', {
-      name: 'Сумма SKU у одного получателя не ниже порога',
+      name: 'Минимальная сумма SKU в перемещении',
       exact: true,
     })
     .check();
-  await page.getByLabel('Порог суммы SKU', { exact: true }).fill('10000');
+  await page.getByLabel('Порог суммы SKU', { exact: true }).fill('5000');
+  await expect(page.getByLabel('Порог цены', { exact: true })).toHaveCount(0);
   await page
     .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
     .click();
   await expect(
     page.getByRole('heading', {
-      name: 'Перемещения по направлениям · 2',
+      name: 'Перемещения по направлениям · 1',
       exact: true,
     }),
   ).toBeVisible();
+  const route = page.getByRole('button', {
+    name: 'Открыть перемещение Егорьевск → ОреховоЗуево',
+    exact: true,
+  });
+  await expect(route).toContainText('10 089,50');
+  await expect(route).toContainText('2 SKU');
   await expect(
     page.getByRole('button', {
-      name: 'Открыть перемещение Донор → Первый',
+      name: 'Открыть перемещение Ленина → ОреховоЗуево',
       exact: true,
     }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', {
-      name: 'Открыть перемещение Донор → Второй',
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: /Открыть перемещение Донор → Малый/ }),
   ).toHaveCount(0);
+  await page.getByText(/Исключения и проверки данных/).click();
+  await expect(
+    page.getByText('Сумма SKU в перемещении ниже порога', { exact: true }),
+  ).toHaveCount(2);
+  await expect(
+    page.getByText('Ленина → ОреховоЗуево', { exact: true }),
+  ).toBeVisible();
   await page
     .getByRole('checkbox', { name: 'Выбрать видимые предложения', exact: true })
     .check();
@@ -124,30 +144,38 @@ test('E2E-18 SKU minimum amount is per recipient, includes equality and survives
   await page.reload();
   await expect(
     page.getByRole('heading', {
-      name: 'Перемещения по направлениям · 2',
+      name: 'Перемещения по направлениям · 1',
       exact: true,
     }),
   ).toBeVisible();
-  await page
-    .getByRole('button', {
-      name: 'Открыть перемещение Донор → Второй',
+  await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  await expect(page.getByLabel('Порог суммы SKU', { exact: true })).toHaveValue(
+    '5000',
+  );
+  await expect(
+    page.getByRole('checkbox', {
+      name: 'Минимальная сумма SKU в перемещении',
       exact: true,
-    })
-    .click();
-  const doc = page.getByRole('dialog');
+    }),
+  ).toBeChecked();
+  await page.getByRole('tab', { name: 'Результаты', exact: true }).click();
+  await route.click();
   const downloaded = page.waitForEvent('download');
-  await doc
+  await page
+    .getByRole('dialog')
     .getByRole('button', {
-      name: 'Скачать CSV принятых позиций (1)',
+      name: 'Скачать CSV принятых позиций (2)',
       exact: true,
     })
     .click();
   const download = await downloaded;
   const csv = await readFile((await download.path())!, 'utf8');
-  expect(csv).toContain(';Второй;10;шт;1000;10000');
-  expect(csv).not.toContain('Малый');
+  expect(csv).not.toContain('AMOUNT-A');
+  expect(csv).toContain(';ОреховоЗуево;10;шт;500;5000');
+  expect(csv).toContain(';ОреховоЗуево;15;шт;339.3;5089.5');
+  expect(csv).not.toContain('Ленина');
   await page.screenshot({
-    path: testInfo.outputPath('18-recipient-amount.png'),
+    path: testInfo.outputPath('18-transfer-sku-amount.png'),
     fullPage: true,
   });
   expect(evidence.remoteRequests).toEqual([]);
@@ -2137,8 +2165,8 @@ test('E2E-13 monetary threshold rolls back after an offline storage failure and 
     .getByRole('button', { name: 'Ребалансировка', exact: true })
     .click();
   await page.getByRole('tab', { name: 'Условия', exact: true }).click();
-  const threshold = page.getByLabel('Порог цены', { exact: true });
-  await expect(threshold).toHaveValue('1000');
+  const threshold = page.getByLabel('Порог суммы SKU', { exact: true });
+  await expect(threshold).toHaveValue('10000');
   await expect(
     page.getByRole('button', { name: 'Рассчитать перемещения', exact: true }),
   ).toBeEnabled();
@@ -2158,7 +2186,7 @@ test('E2E-13 monetary threshold rolls back after an offline storage failure and 
   await expect(
     page.getByText('Порог не сохранён. Повторите ввод.', { exact: true }),
   ).toBeVisible();
-  await expect(threshold).toHaveValue('1000');
+  await expect(threshold).toHaveValue('10000');
   await threshold.fill('5000');
   await expect(threshold).toHaveAttribute('aria-busy', 'false');
   await expect(
@@ -2166,7 +2194,7 @@ test('E2E-13 monetary threshold rolls back after an offline storage failure and 
   ).toHaveCount(0);
   await page.reload();
   await page.getByRole('tab', { name: 'Условия', exact: true }).click();
-  await expect(page.getByLabel('Порог цены', { exact: true })).toHaveValue(
+  await expect(page.getByLabel('Порог суммы SKU', { exact: true })).toHaveValue(
     '5000',
   );
   expect(evidence.pageErrors).toEqual([]);

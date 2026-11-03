@@ -7,8 +7,13 @@ import {
   rebalanceConfigFingerprint,
   validateAcceptedLedger,
 } from './constraints';
-import { moneyGreaterThan, receiverTarget, sumQuantities } from './numbers';
+import { receiverTarget, sumQuantities } from './numbers';
 import { moneyProductsLessThan } from '../money';
+import {
+  getTransferAmountFilter,
+  groupTransferSkuAmounts,
+  transferSkuKey,
+} from './transferAmounts';
 import { acceptedEconomicDiagnostics } from './economics';
 import {
   RebalanceError,
@@ -114,7 +119,10 @@ export function acceptTransfers(
       qty: t.qty,
       snapshotId: input.snapshot.snapshotId,
       acceptedAt: input.acceptedAt,
-      acceptedConfig: structuredClone(p.config),
+      acceptedConfig: structuredClone({
+        ...p.config,
+        transferAmountFilter: getTransferAmountFilter(p.config),
+      }),
     });
   }
   if (!additions.length)
@@ -169,34 +177,26 @@ export function acceptTransfers(
   }
   for (const code of addedSkus) {
     const price = skus.get(code)!.referencePrice;
-    if (p.config.unitPriceFilter.enabled || p.config.skuAmountFilter.enabled) {
+    if (getTransferAmountFilter(p.config).enabled) {
       if (price === null || !Number.isFinite(price) || price < 0)
         throw new RebalanceError('INVALID_TRANSFER_BATCH');
+    }
+  }
+  const amountFilter = getTransferAmountFilter(p.config);
+  if (amountFilter.enabled) {
+    const changedRoutes = new Set(additions.map(transferSkuKey));
+    const sameRun = next.filter(
+      (t) => t.sourceRunId === p.runId && changedRoutes.has(transferSkuKey(t)),
+    );
+    for (const group of groupTransferSkuAmounts(
+      input.snapshot,
+      sameRun,
+    ).values()) {
       if (
-        p.config.unitPriceFilter.enabled &&
-        !moneyGreaterThan(1, price, p.config.unitPriceFilter.threshold)
+        group.amount === null ||
+        moneyProductsLessThan(group.products, amountFilter.threshold)
       )
         throw new RebalanceError('INVALID_TRANSFER_BATCH');
-      if (p.config.skuAmountFilter.enabled) {
-        const recipients = new Set(
-          additions.filter((t) => t.skuCode === code).map((t) => t.toBranchId),
-        );
-        for (const recipient of recipients) {
-          const quantities = next.filter(
-            (t) =>
-              t.sourceRunId === p.runId &&
-              t.skuCode === code &&
-              t.toBranchId === recipient,
-          );
-          if (
-            moneyProductsLessThan(
-              quantities.map((t) => [t.qty, price] as const),
-              p.config.skuAmountFilter.threshold,
-            )
-          )
-            throw new RebalanceError('INVALID_TRANSFER_BATCH');
-        }
-      }
     }
   }
   return change(

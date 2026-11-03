@@ -1,4 +1,8 @@
-import { moneyProduct, moneyProductsLessThan } from '../money';
+import { moneyProductsLessThan } from '../money';
+import {
+  getTransferAmountFilter,
+  groupTransferSkuAmounts,
+} from './transferAmounts';
 import { validatedSnapshot } from './validation';
 import {
   assertConfig,
@@ -9,7 +13,6 @@ import {
 } from './constraints';
 import {
   isStepQuantity,
-  moneyGreaterThan,
   quantityFromUnits,
   receiverTarget,
   stepUnits,
@@ -32,7 +35,7 @@ import {
   type SkippedRebalanceSku,
 } from './types';
 
-export const ALGORITHM_VERSION = 'full-sku-recipient-amount-v4';
+export const ALGORITHM_VERSION = 'full-sku-route-sku-amount-v5';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const transferKey = (skuCode: string, from: string, to: string) =>
   JSON.stringify([skuCode, from, to]);
@@ -75,6 +78,7 @@ export function calculateRebalance(
   accepted: AcceptedTransfer[],
 ): RebalanceResult {
   assertConfig(config);
+  const amountFilter = getTransferAmountFilter(config);
   const validated = validatedSnapshot(input),
     s = validated.snapshot;
   const ledgerIssues = validateAcceptedLedger(s, accepted);
@@ -179,30 +183,6 @@ export function calculateRebalance(
         const target = receiverTarget(row.min!, row.max!, config.receiverPct);
         targetByKey.set(key, target);
         const neededQty = Math.max(0, subtractQuantity(target, stock));
-        // A recipient must qualify on its own remaining need before any
-        // surplus is reserved. Other branches cannot subsidize its threshold.
-        if (
-          config.skuAmountFilter.enabled &&
-          sku.referencePrice !== null &&
-          moneyProductsLessThan(
-            [[neededQty, sku.referencePrice]],
-            config.skuAmountFilter.threshold,
-          )
-        ) {
-          emit(
-            'SKU_AMOUNT_FILTER',
-            'Сумма SKU у подразделения-получателя ниже порога',
-            sku.skuCode,
-            {
-              branchId: row.branchId,
-              sourceRow: row.sourceRow,
-              quantity: neededQty,
-              amount: moneyProduct(neededQty, sku.referencePrice),
-              threshold: config.skuAmountFilter.threshold,
-            },
-          );
-          continue;
-        }
         eligibleRecipientKeys.push(key);
         if (neededQty > 0) {
           neededByRecipient.set(row.branchId, neededQty);
@@ -231,28 +211,6 @@ export function calculateRebalance(
         'Количество шагов превышает безопасную точность; уточните единицу/шаг',
         sku.skuCode,
       );
-      continue;
-    }
-    if (
-      (config.unitPriceFilter.enabled || config.skuAmountFilter.enabled) &&
-      sku.referencePrice === null
-    ) {
-      emit(
-        'MISSING_PRICE',
-        'Нет учётной цены для активного денежного фильтра',
-        sku.skuCode,
-      );
-      continue;
-    }
-    if (
-      config.unitPriceFilter.enabled &&
-      !moneyGreaterThan(
-        1,
-        sku.referencePrice!,
-        config.unitPriceFilter.threshold,
-      )
-    ) {
-      emit('UNIT_PRICE_FILTER', 'Цена не строго больше порога', sku.skuCode);
       continue;
     }
     const allocation = allocateFlow(
@@ -296,6 +254,38 @@ export function calculateRebalance(
       continue;
     }
     transfers.push(...allocation);
+  }
+  // Filter each SKU×donor×recipient after allocation. Other lines survive,
+  // even when removing a small line leaves its recipient below the target.
+  if (amountFilter.enabled) {
+    const excluded = new Set<RebalanceTransfer>();
+    for (const group of groupTransferSkuAmounts(s, transfers).values()) {
+      if (
+        group.amount !== null &&
+        !moneyProductsLessThan(group.products, amountFilter.threshold)
+      )
+        continue;
+      group.lines.forEach((t) => excluded.add(t));
+      exclusions.push({
+        code:
+          group.amount === null
+            ? 'TRANSFER_AMOUNT_UNKNOWN'
+            : 'TRANSFER_AMOUNT_FILTER',
+        message:
+          group.amount === null
+            ? 'Неизвестна сумма SKU в перемещении'
+            : 'Сумма SKU в перемещении ниже порога',
+        severity: 'WARNING',
+        sourceRow: null,
+        skuCode: group.skuCode,
+        fromBranchId: group.fromBranchId,
+        toBranchId: group.toBranchId,
+        amount: group.amount,
+        threshold: amountFilter.threshold,
+      });
+    }
+    for (let i = transfers.length - 1; i >= 0; i--)
+      if (excluded.has(transfers[i]!)) transfers.splice(i, 1);
   }
   transfers.sort((a, b) => compare(a.sourceLineId, b.sourceLineId));
   const proposedIncoming = new Map<string, number[]>(),
@@ -360,8 +350,22 @@ export function calculateRebalance(
     balances,
     exclusions: exclusions.sort((a, b) =>
       compare(
-        JSON.stringify([a.skuCode, a.branchId, a.code, a.sourceRow]),
-        JSON.stringify([b.skuCode, b.branchId, b.code, b.sourceRow]),
+        JSON.stringify([
+          a.skuCode,
+          a.branchId,
+          a.fromBranchId,
+          a.toBranchId,
+          a.code,
+          a.sourceRow,
+        ]),
+        JSON.stringify([
+          b.skuCode,
+          b.branchId,
+          b.fromBranchId,
+          b.toBranchId,
+          b.code,
+          b.sourceRow,
+        ]),
       ),
     ),
   };

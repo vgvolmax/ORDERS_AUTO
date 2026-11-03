@@ -95,6 +95,12 @@ function acceptFirst(): {
   return { input, accepted: acceptTransfers(input).nextAccepted };
 }
 
+function sameSkuRouteAcceptance(): AcceptTransfersInput {
+  const input = acceptance();
+  input.currentProposal.transfers[0]!.fromBranchId = 'D2';
+  return input;
+}
+
 describe('explicit accepted movement ledger', () => {
   it('applies only selected rows, freezes a copy of config and preserves all inputs', () => {
     const input = acceptance();
@@ -236,8 +242,8 @@ describe('explicit accepted movement ledger', () => {
       ),
     ).toBe('TRANSFER_ID_CONFLICT');
   });
-  it('rechecks SKU total for the recipient on the accepted subset and permits explicit revocation below the threshold', () => {
-    const input = acceptance();
+  it('rechecks SKU total for one donor-recipient pair on the accepted subset and permits explicit revocation below the threshold', () => {
+    const input = sameSkuRouteAcceptance();
     input.currentProposal.config.skuAmountFilter = {
       enabled: true,
       threshold: 10000,
@@ -267,9 +273,9 @@ describe('explicit accepted movement ledger', () => {
     [10000, true],
     [7200, false],
   ] as const)(
-    'warns only below the inclusive recipient threshold %s after revoke',
+    'warns only below the inclusive SKU-route threshold %s after revoke',
     (threshold, warns) => {
-      const input = acceptance();
+      const input = sameSkuRouteAcceptance();
       input.currentProposal.config.skuAmountFilter = {
         enabled: true,
         threshold,
@@ -291,7 +297,7 @@ describe('explicit accepted movement ledger', () => {
         expectedRevision: 1,
       });
       const warning = expect.objectContaining({
-        code: 'ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD',
+        code: 'ACCEPTED_TRANSFER_AMOUNT_BELOW_THRESHOLD',
         severity: 'WARNING',
         sourceRunId: 'run1',
         skuCode: '00001',
@@ -311,7 +317,7 @@ describe('explicit accepted movement ledger', () => {
       else
         expect(
           recalculated.exclusions.some(
-            (i) => i.code === 'ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD',
+            (i) => i.code === 'ACCEPTED_TRANSFER_AMOUNT_BELOW_THRESHOLD',
           ),
         ).toBe(false);
       const unchanged = revokeTransfers({
@@ -342,7 +348,7 @@ describe('explicit accepted movement ledger', () => {
     },
   );
   it('keeps retained economic diagnostics separate by run and uses saved acceptance conditions', () => {
-    const input = acceptance();
+    const input = sameSkuRouteAcceptance();
     input.currentProposal.config.recipientTrigger = 'BELOW_MAX';
     input.currentProposal.config.skuAmountFilter = {
       enabled: true,
@@ -404,7 +410,7 @@ describe('explicit accepted movement ledger', () => {
     ).toEqual(expect.arrayContaining(remaining.diagnostics));
   });
   it('uses exact monetary comparison for retained accepted amounts at a decimal threshold', () => {
-    const input = acceptance();
+    const input = sameSkuRouteAcceptance();
     input.snapshot.skus[0]!.referencePrice = 0.1;
     input.currentProposal.config.skuAmountFilter = {
       enabled: true,
@@ -428,7 +434,7 @@ describe('explicit accepted movement ledger', () => {
     expect(remaining.diagnostics).toEqual([]); //3×0.1 equals0.3 exactly and satisfies the new inclusive minimum.
   });
   it('compares monetary thresholds exactly for decimal prices', () => {
-    const input = acceptance();
+    const input = sameSkuRouteAcceptance();
     input.snapshot.skus[0]!.quantityStep = 0.1;
     input.snapshot.skus[0]!.referencePrice = 0.1;
     input.currentProposal.transfers[0]!.qty = 3;
