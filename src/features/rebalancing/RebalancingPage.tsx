@@ -56,7 +56,7 @@ const messages: Record<string, string> = {
     'Условия или снимок изменились. Рассчитайте предложения заново. Принятые перемещения сохранены.',
   REVISION_CONFLICT: 'Решения изменились. Откройте подтверждение заново.',
   INVALID_TRANSFER_BATCH:
-    'Количество не сохранено: проверьте целое количество, потребность получателя и общий выход. Остаток донора должен оставаться не ниже MAX. При принятии также действует порог суммы SKU.',
+    'Количество не сохранено: проверьте целое количество, потребность получателя и общий выход. Остаток донора должен оставаться не ниже MAX. При принятии также действует порог суммы SKU отдельно по каждому получателю.',
 };
 export const rebalanceMessage = (e: unknown) =>
   e instanceof Error
@@ -71,6 +71,10 @@ export function RebalancingPage() {
   const skuByCode = useMemo(
     () => new Map((state.minMax?.skus ?? []).map((s) => [s.code, s])),
     [state.minMax?.skus],
+  );
+  const branchNames = useMemo(
+    () => new Map(r.registry.map((branch) => [branch.id, branch.name])),
+    [r.registry],
   );
   const tab = r.tab === 'priorities' ? 'routes' : r.tab;
   const [showSkipped, setShowSkipped] = useState(false);
@@ -657,6 +661,15 @@ export function RebalancingPage() {
                           skuByCode.get(i.skuCode ?? '')?.name ??
                           'Общая проверка',
                       })),
+                      {
+                        key: 'branch',
+                        header: 'Подразделение',
+                        width: '170px',
+                        render: (i) =>
+                          i.branchId
+                            ? (branchNames.get(i.branchId) ?? i.branchId)
+                            : '—',
+                      },
                       {
                         key: 'reason',
                         header: 'Проверка',

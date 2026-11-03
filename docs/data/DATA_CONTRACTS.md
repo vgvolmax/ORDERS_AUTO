@@ -257,3 +257,8 @@ Proposal.transfers — текущий конкретный план до при�
 ValidationIssueCode дополнен DUPLICATE_SKU (ERROR), INVALID_REFERENCE_PRICE и INCOMPLETE_SUPPLIER_PRICE (WARNING). Отрицательная исходная цена импортируется как null с диагностикой; явный ноль остаётся0. Повторные родительские блоки сохраняются для диагностики, но их fallback-цена не выбирается по последнему блоку. Полные числовые history quantity/amount агрегируются десятично, неполнота хотя бы одной строки делает weightedUnitCost=null.
 
 Опциональное OrderProjection.dataIssues:ValidationIssue[] сохраняет source errors и проблемы старых нормализованных данных, включая строки без расчётной физической потребности. Это derived DTO, схема IndexedDB/workspace не меняется. В старых сеансах утраченные при прежнем импорте исходные значения можно восстановить только повторным импортом отчёта; нулевую сохранённую цену нельзя произвольно объявить ошибочной.
+
+
+### Порог SKU×получатель ·03.11.2026
+
+Структура skuAmountFilter.enabled/threshold и схема workspace/IndexedDB сохраняются. RebalanceIssue кода SKU_AMOUNT_FILTER содержит branchId, sourceRow, quantity, amount и threshold для исключённого получателя. ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD/UNKNOWN также содержит branchId; группировка run×SKU×recipient×savedConfig. algorithmVersion нового плана — full-sku-recipient-amount-v4. Числовое равенство суммы порогу допустимо.

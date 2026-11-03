@@ -8,6 +8,7 @@ import {
   validateAcceptedLedger,
 } from './constraints';
 import { moneyGreaterThan, receiverTarget, sumQuantities } from './numbers';
+import { moneyProductsLessThan } from '../money';
 import { acceptedEconomicDiagnostics } from './economics';
 import {
   RebalanceError,
@@ -176,16 +177,26 @@ export function acceptTransfers(
         !moneyGreaterThan(1, price, p.config.unitPriceFilter.threshold)
       )
         throw new RebalanceError('INVALID_TRANSFER_BATCH');
-      const runQty = sumQuantities(
-        next
-          .filter((t) => t.sourceRunId === p.runId && t.skuCode === code)
-          .map((t) => t.qty),
-      );
-      if (
-        p.config.skuAmountFilter.enabled &&
-        !moneyGreaterThan(runQty, price, p.config.skuAmountFilter.threshold)
-      )
-        throw new RebalanceError('INVALID_TRANSFER_BATCH');
+      if (p.config.skuAmountFilter.enabled) {
+        const recipients = new Set(
+          additions.filter((t) => t.skuCode === code).map((t) => t.toBranchId),
+        );
+        for (const recipient of recipients) {
+          const quantities = next.filter(
+            (t) =>
+              t.sourceRunId === p.runId &&
+              t.skuCode === code &&
+              t.toBranchId === recipient,
+          );
+          if (
+            moneyProductsLessThan(
+              quantities.map((t) => [t.qty, price] as const),
+              p.config.skuAmountFilter.threshold,
+            )
+          )
+            throw new RebalanceError('INVALID_TRANSFER_BATCH');
+        }
+      }
     }
   }
   return change(
