@@ -236,7 +236,7 @@ describe('explicit accepted movement ledger', () => {
       ),
     ).toBe('TRANSFER_ID_CONFLICT');
   });
-  it('rechecks SKU total on the accepted subset and permits explicit revocation below the threshold', () => {
+  it('rechecks SKU total for the recipient on the accepted subset and permits explicit revocation below the threshold', () => {
     const input = acceptance();
     input.currentProposal.config.skuAmountFilter = {
       enabled: true,
@@ -263,9 +263,12 @@ describe('explicit accepted movement ledger', () => {
     });
     expect(revoked.nextAccepted[0]!.qty).toBe(6);
   });
-  it.each([10000, 7200])(
-    'reports retained accepted value at or below its strict threshold %s after revoke',
-    (threshold) => {
+  it.each([
+    [10000, true],
+    [7200, false],
+  ] as const)(
+    'warns only below the inclusive recipient threshold %s after revoke',
+    (threshold, warns) => {
       const input = acceptance();
       input.currentProposal.config.skuAmountFilter = {
         enabled: true,
@@ -297,14 +300,20 @@ describe('explicit accepted movement ledger', () => {
         threshold,
       });
       expect(revoked.nextAccepted.map((t) => t.qty)).toEqual([6]);
-      expect(revoked.diagnostics).toEqual([warning]);
+      expect(revoked.diagnostics).toEqual(warns ? [warning] : []);
       const recalculated = calculateRebalance(
         input.snapshot,
         input.currentProposal.config,
         revoked.nextAccepted,
       );
       expect(recalculated.transfers.length).toBeGreaterThan(0); // A new proposal must not mask the accepted run warning.
-      expect(recalculated.exclusions).toContainEqual(warning);
+      if (warns) expect(recalculated.exclusions).toContainEqual(warning);
+      else
+        expect(
+          recalculated.exclusions.some(
+            (i) => i.code === 'ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD',
+          ),
+        ).toBe(false);
       const unchanged = revokeTransfers({
         snapshot: input.snapshot,
         currentAccepted: revoked.nextAccepted,
@@ -313,7 +322,7 @@ describe('explicit accepted movement ledger', () => {
         expectedRevision: 2,
       });
       expect(unchanged.nextRevision).toBe(2);
-      expect(unchanged.diagnostics).toEqual([warning]);
+      expect(unchanged.diagnostics).toEqual(warns ? [warning] : []);
       const restored = acceptTransfers({
         ...input,
         currentAccepted: revoked.nextAccepted,
@@ -416,13 +425,7 @@ describe('explicit accepted movement ledger', () => {
       currentRevision: 1,
       expectedRevision: 1,
     });
-    expect(remaining.diagnostics).toEqual([
-      expect.objectContaining({
-        code: 'ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD',
-        quantity: 3,
-        threshold: 0.3,
-      }),
-    ]);
+    expect(remaining.diagnostics).toEqual([]); //3×0.1 equals0.3 exactly and satisfies the new inclusive minimum.
   });
   it('compares monetary thresholds exactly for decimal prices', () => {
     const input = acceptance();
@@ -435,8 +438,6 @@ describe('explicit accepted movement ledger', () => {
     };
     input.currentConfigFingerprint = input.currentProposal.configFingerprint =
       rebalanceConfigFingerprint(input.currentProposal.config);
-    expect(errorCode(() => acceptTransfers(input))).toBe(
-      'INVALID_TRANSFER_BATCH',
-    );
+    expect(acceptTransfers(input).nextAccepted[0]!.qty).toBe(3);
   });
 });

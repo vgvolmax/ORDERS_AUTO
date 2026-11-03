@@ -5,6 +5,155 @@ import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 
+test('E2E-18 SKU minimum amount is per recipient, includes equality and survives acceptance/reload', async ({
+  page,
+}, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const { readFile } = await import('node:fs/promises');
+  const evidence = observeRuntime(page);
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  const names = [
+    'Донор',
+    'Первый',
+    'Второй',
+    'Малый 1',
+    'Малый 2',
+    'Малый 3',
+    'Малый 4',
+  ];
+  const needs = [12, 10, 8, 7, 7, 6];
+  const min = buildWorkbook([
+    [
+      'Код',
+      'Артикул',
+      'Номенклатура',
+      'Количество',
+      'Минимальный остаток',
+      'Максимальный остаток',
+      'Цена',
+    ],
+    ['AMOUNT', 'A-1', 'Порог подразделений', 122, null, null, 1000],
+    [null, null, names[0], 122, 0, 100, null],
+    ...needs.map((max, i) => [null, null, names[i + 1], 0, max, max, null]),
+  ]);
+  const sup = buildWorkbook([
+    [
+      'Контрагент',
+      'Код',
+      'Номенклатура',
+      'Количество',
+      'Стоимость',
+      'Ед. изм.',
+    ],
+    [
+      'ИП Баранов Роман Борисович',
+      'AMOUNT',
+      'Порог подразделений',
+      1,
+      1000,
+      'шт',
+    ],
+  ]);
+  for (const [label, name, bytes] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'recipient-min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'recipient-sup.xlsx', sup],
+  ] as const) {
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: Buffer.from(bytes),
+    });
+    await expect(page.getByLabel(label)).toBeEnabled();
+    await expect(
+      page.getByText('Обработка отчёта…', { exact: true }),
+    ).toHaveCount(0);
+  }
+  await page
+    .getByRole('button', { name: 'Перейти к потребности', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page
+    .getByRole('checkbox', {
+      name: 'Сумма SKU у одного получателя не ниже порога',
+      exact: true,
+    })
+    .check();
+  await page.getByLabel('Порог суммы SKU', { exact: true }).fill('10000');
+  await page
+    .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Перемещения по направлениям · 2',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: 'Открыть перемещение Донор → Первый',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: 'Открыть перемещение Донор → Второй',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Открыть перемещение Донор → Малый/ }),
+  ).toHaveCount(0);
+  await page
+    .getByRole('checkbox', { name: 'Выбрать видимые предложения', exact: true })
+    .check();
+  await page
+    .getByRole('button', { name: 'Принять выбранные (2)', exact: true })
+    .click();
+  const confirmation = page.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+    exact: true,
+  });
+  await confirmation
+    .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  await expect(confirmation).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Перемещения по направлениям · 2',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', {
+      name: 'Открыть перемещение Донор → Второй',
+      exact: true,
+    })
+    .click();
+  const doc = page.getByRole('dialog');
+  const downloaded = page.waitForEvent('download');
+  await doc
+    .getByRole('button', {
+      name: 'Скачать CSV принятых позиций (1)',
+      exact: true,
+    })
+    .click();
+  const download = await downloaded;
+  const csv = await readFile((await download.path())!, 'utf8');
+  expect(csv).toContain(';Второй;10;шт;1000;10000');
+  expect(csv).not.toContain('Малый');
+  await page.screenshot({
+    path: testInfo.outputPath('18-recipient-amount.png'),
+    fullPage: true,
+  });
+  expect(evidence.remoteRequests).toEqual([]);
+  expect(evidence.pageErrors).toEqual([]);
+});
+
 test('E2E-17 calculation integrity survives import, export and reload offline', async ({
   page,
 }, testInfo) => {
@@ -59,14 +208,12 @@ test('E2E-17 calculation integrity survives import, export and reload offline', 
       ['Выбрать файл Отчёт MIN/MAX', 'audit-min.xlsx', [mh, ...min]],
       ['Выбрать файл Отчёт поставщиков', 'audit-sup.xlsx', [sh, ...sup]],
     ] as const) {
-      await page
-        .getByLabel(label)
-        .setInputFiles({
-          name,
-          mimeType:
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          buffer: Buffer.from(buildWorkbook([...rows])),
-        });
+      await page.getByLabel(label).setInputFiles({
+        name,
+        mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer: Buffer.from(buildWorkbook([...rows])),
+      });
       await expect(page.getByLabel(label)).toBeEnabled();
       await expect(
         page.getByText('Обработка отчёта…', { exact: true }),

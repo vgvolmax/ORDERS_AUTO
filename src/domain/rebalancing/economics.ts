@@ -1,6 +1,6 @@
-import { moneyProduct } from '../money';
+import { moneyProduct, moneyProductsLessThan } from '../money';
 import { rebalanceConfigFingerprint } from './constraints';
-import { moneyGreaterThan, sumQuantities } from './numbers';
+import { sumQuantities } from './numbers';
 import type {
   AcceptedTransfer,
   RebalanceConfig,
@@ -20,6 +20,7 @@ export function acceptedEconomicDiagnostics(
     string,
     {
       skuCode: string;
+      branchId: string;
       sourceRunId: string;
       config: RebalanceConfig;
       quantities: number[];
@@ -30,10 +31,12 @@ export function acceptedEconomicDiagnostics(
     const key = JSON.stringify([
       t.sourceRunId,
       t.skuCode,
+      t.toBranchId,
       rebalanceConfigFingerprint(t.acceptedConfig),
     ]);
     const group = groups.get(key) ?? {
       skuCode: t.skuCode,
+      branchId: t.toBranchId,
       sourceRunId: t.sourceRunId,
       config: t.acceptedConfig,
       quantities: [],
@@ -50,6 +53,7 @@ export function acceptedEconomicDiagnostics(
       threshold = group.config.skuAmountFilter.threshold;
     const context = {
       skuCode: group.skuCode,
+      branchId: group.branchId,
       sourceRunId: group.sourceRunId,
       configFingerprint: rebalanceConfigFingerprint(group.config),
       quantity,
@@ -64,12 +68,17 @@ export function acceptedEconomicDiagnostics(
         message: 'Нет цены для проверки суммы сохранённых принятых перемещений',
         amount: null,
       });
-    } else if (!moneyGreaterThan(quantity, price, threshold)) {
+    } else if (
+      moneyProductsLessThan(
+        group.quantities.map((qty) => [qty, price] as const),
+        threshold,
+      )
+    ) {
       issues.push({
         ...context,
         code: 'ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD',
         message:
-          'Оставшаяся сумма принятых перемещений артикула не строго больше сохранённого порога',
+          'Оставшаяся сумма принятых перемещений SKU у подразделения-получателя ниже сохранённого порога',
         amount: moneyProduct(quantity, price),
       });
     }

@@ -1,4 +1,4 @@
-import { moneyProduct } from '../money';
+import { moneyProduct, moneyProductsLessThan } from '../money';
 import { validatedSnapshot } from './validation';
 import {
   assertConfig,
@@ -32,7 +32,7 @@ import {
   type SkippedRebalanceSku,
 } from './types';
 
-export const ALGORITHM_VERSION = 'full-sku-network-flow-v3';
+export const ALGORITHM_VERSION = 'full-sku-recipient-amount-v4';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const transferKey = (skuCode: string, from: string, to: string) =>
   JSON.stringify([skuCode, from, to]);
@@ -178,8 +178,32 @@ export function calculateRebalance(
         }
         const target = receiverTarget(row.min!, row.max!, config.receiverPct);
         targetByKey.set(key, target);
-        eligibleRecipientKeys.push(key);
         const neededQty = Math.max(0, subtractQuantity(target, stock));
+        // A recipient must qualify on its own remaining need before any
+        // surplus is reserved. Other branches cannot subsidize its threshold.
+        if (
+          config.skuAmountFilter.enabled &&
+          sku.referencePrice !== null &&
+          moneyProductsLessThan(
+            [[neededQty, sku.referencePrice]],
+            config.skuAmountFilter.threshold,
+          )
+        ) {
+          emit(
+            'SKU_AMOUNT_FILTER',
+            'Сумма SKU у подразделения-получателя ниже порога',
+            sku.skuCode,
+            {
+              branchId: row.branchId,
+              sourceRow: row.sourceRow,
+              quantity: neededQty,
+              amount: moneyProduct(neededQty, sku.referencePrice),
+              threshold: config.skuAmountFilter.threshold,
+            },
+          );
+          continue;
+        }
+        eligibleRecipientKeys.push(key);
         if (neededQty > 0) {
           neededByRecipient.set(row.branchId, neededQty);
           if (!isStepQuantity(neededQty, step)) stepLimited = true;
@@ -269,25 +293,6 @@ export function calculateRebalance(
             : 'ROUTE_LIMIT',
         recipients,
       });
-      continue;
-    }
-    if (
-      config.skuAmountFilter.enabled &&
-      !moneyGreaterThan(
-        totalQty,
-        sku.referencePrice!,
-        config.skuAmountFilter.threshold,
-      )
-    ) {
-      emit(
-        'SKU_AMOUNT_FILTER',
-        'Общая сумма перемещений артикула не строго больше порога',
-        sku.skuCode,
-        {
-          quantity: totalQty,
-          amount: moneyProduct(totalQty, sku.referencePrice!),
-        },
-      );
       continue;
     }
     transfers.push(...allocation);

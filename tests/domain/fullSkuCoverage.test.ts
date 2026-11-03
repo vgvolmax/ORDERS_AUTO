@@ -343,20 +343,33 @@ describe('whole-SKU network coverage', () => {
   });
 });
 
-it('reports actual lack rather than filtering a trial partial volume below an amount threshold', () => {
+it('filters small recipients before capacity checks and retains shortages among qualifying recipients', () => {
   const out = calculateRebalance(
     network(),
     config({ skuAmountFilter: { enabled: true, threshold: 130 } }),
     [],
   );
-  expect(out.skippedSkus).toEqual([
+  // At130, individual needs80 and60 are both excluded, even though network140 passes.
+  expect(out.transfers).toEqual([]);
+  expect(out.skippedSkus).toEqual([]);
+  expect(
+    out.exclusions
+      .filter((i) => i.code === 'SKU_AMOUNT_FILTER')
+      .map((i) => i.amount),
+  ).toEqual([80, 60]);
+  const qualified = calculateRebalance(
+    network(),
+    config({ skuAmountFilter: { enabled: true, threshold: 60 } }),
+    [],
+  );
+  expect(qualified.skippedSkus).toEqual([
     expect.objectContaining({
       neededQty: 14,
       deliverableQty: 12,
       missingQty: 2,
     }),
   ]);
-  expect(out.exclusions.some((i) => i.code === 'SKU_AMOUNT_FILTER')).toBe(
+  expect(qualified.exclusions.some((i) => i.code === 'SKU_AMOUNT_FILTER')).toBe(
     false,
   );
 });

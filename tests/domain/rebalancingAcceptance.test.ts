@@ -133,7 +133,7 @@ describe('rebalancing business acceptance', () => {
       qty(s, config({ unitPriceFilter: { enabled: true, threshold: 0 } })),
     ).toBe(0);
   });
-  it('checks economic total for the SKU across every route and recomputes excluded balances', () => {
+  it('filters the SKU separately for each recipient and accepts an equal sum threshold', () => {
     const s = snapshot();
     s.stocks[0]!.stock = 71;
     s.branches.push({ id: 'R2', name: 'R2', active: true, aliases: [] });
@@ -150,12 +150,26 @@ describe('rebalancing business acceptance', () => {
       unitPriceFilter: { enabled: true, threshold: 1000 },
       skuAmountFilter: { enabled: true, threshold: 10000 },
     });
-    const good = calculateRebalance(s, c, []);
-    expect(good.transfers.map((t) => t.qty).sort((a, b) => a - b)).toEqual([
-      5, 6,
-    ]);
+    // The former network-total rule admitted7200+6000. Neither recipient
+    // individually meets the user-specified10000 minimum.
+    const filtered = calculateRebalance(s, c, []);
+    expect(filtered.transfers).toEqual([]);
+    expect(filtered.exclusions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SKU_AMOUNT_FILTER',
+          branchId: 'R',
+          amount: 7200,
+        }),
+        expect.objectContaining({
+          code: 'SKU_AMOUNT_FILTER',
+          branchId: 'R2',
+          amount: 6000,
+        }),
+      ]),
+    );
     s.stocks[0]!.stock = 66;
-    s.stocks[2]!.min = s.stocks[2]!.max = 0; // Fully feasible6, rejected for money rather than capacity.
+    s.stocks[2]!.min = s.stocks[2]!.max = 0;
     const small = calculateRebalance(s, c, []);
     expect(small.transfers).toEqual([]);
     expect(small.balances.find((b) => b.branchId === 'D')!.stockAfter).toBe(66);
@@ -179,7 +193,7 @@ describe('rebalancing business acceptance', () => {
           skuAmountFilter: { enabled: true, threshold: 24000 },
         }),
       ),
-    ).toBe(0);
+    ).toBe(20); // Exactly24000 at this single recipient qualifies.
   });
   it('keeps unmet needs visible when a pre-allocation price filter excludes the SKU', () => {
     const result = calculateRebalance(

@@ -1,9 +1,25 @@
 import { StoreContext } from '../../src/app/appStore';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { RebalancingPage } from '../../src/features/rebalancing/RebalancingPage';
 import { renderWithStore } from './renderWithStore';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
+it('identifies the excluded recipient instead of showing an unaddressed SKU amount warning', async () => {
+  const { createProposal } = await import('../../src/app/rebalanceActions');
+  const state = rebalanceAppState();
+  state.rebalance.config.skuAmountFilter = { enabled: true, threshold: 6000 }; // This receiver needs50×100=5000.
+  state.rebalance.proposal = createProposal(state);
+  state.rebalance.tab = 'results';
+  renderWithStore(<RebalancingPage />, state);
+  fireEvent.click(screen.getByText(/Исключения и проверки данных/));
+  const reason = screen.getByText(
+    'Сумма SKU у подразделения-получателя ниже порога',
+  );
+  const row = reason.closest('[role="row"]')!;
+  expect(
+    within(row as HTMLElement).getByText('Получатель', { exact: true }),
+  ).toBeVisible();
+});
 it('offers recipient settings, automatic whole-unit quantities and mirrored direct routes without a donor slider', () => {
   const state = rebalanceAppState();
   const patches: unknown[] = [];
@@ -38,7 +54,7 @@ it('shows saved economic diagnostics immediately after a partial revocation', as
     '../../src/app/rebalanceActions'
   );
   let state = rebalanceAppState();
-  state.rebalance.config.skuAmountFilter = { enabled: true, threshold: 1500 };
+  state.rebalance.config.skuAmountFilter = { enabled: true, threshold: 1600 }; // Retained1500 is genuinely below the inclusive minimum.
   state.rebalance.proposal = createProposal(state);
   state.rebalance.tab = 'results';
   state = {
