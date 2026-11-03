@@ -1,6 +1,8 @@
+import { moneySum } from '../../domain/money';
 import { VirtualTable } from '../../components/VirtualTable';
 import { productColumns } from '../../components/productColumns';
 import { QuantitySummary } from '../../components/QuantitySummary';
+import { PurchasingDataAlert } from '../../components/PurchasingDataAlert';
 import type { Sku } from '../../domain/types';
 import { useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
@@ -99,7 +101,7 @@ export function SuppliersPage() {
     (line) => line.purchaseAmount == null,
   )
     ? null
-    : problemDemand.reduce((sum, line) => sum + (line.purchaseAmount ?? 0), 0);
+    : moneySum(problemDemand.map((line) => line.purchaseAmount ?? 0));
 
   const autoOverrides = useMemo(
     () =>
@@ -238,6 +240,7 @@ export function SuppliersPage() {
           выбора и заказов; исходная история закупок сохранена.
         </p>
       </header>
+      <PurchasingDataAlert issues={derived.projection.dataIssues} />
 
       <ThresholdControls
         settings={state.settings}
@@ -469,7 +472,10 @@ function SupplierDecisions({
           </p>
 
           <div className="supplier-auto-toolbar">
-            <div className="supplier-auto-strategy"><span>Автовыбор</span><strong>Минимальная цена</strong></div>
+            <div className="supplier-auto-strategy">
+              <span>Автовыбор</span>
+              <strong>Минимальная цена</strong>
+            </div>
             <label className="checkbox-control overwrite-manual-control">
               <input
                 type="checkbox"
@@ -661,7 +667,17 @@ function SupplierRow({ summary }: { summary: SupplierSummary }) {
       <td className="num">{summary.skuCount}</td>
       <td className="num">{summary.branchCount}</td>
       <td className="num">{summary.belowMinSkuCount}</td>
-      <td className="num"><QuantitySummary rows={summary.orders.flatMap(order => order.lines.map(line => ({ skuCode: line.skuCode, qty: line.orderQty, unit: line.unit })))} /></td>
+      <td className="num">
+        <QuantitySummary
+          rows={summary.orders.flatMap((order) =>
+            order.lines.map((line) => ({
+              skuCode: line.skuCode,
+              qty: line.orderQty,
+              unit: line.unit,
+            })),
+          )}
+        />
+      </td>
       <td className="num">
         {summary.totalAmount == null ? (
           <span className="danger-text">
@@ -722,7 +738,7 @@ function buildSupplierSummaries(
         totalAmount:
           missingPriceLineCount > 0
             ? null
-            : positiveLines.reduce((sum, line) => sum + (line.amount ?? 0), 0),
+            : moneySum(positiveLines.map((line) => line.amount ?? 0)),
         missingPriceLineCount,
         belowThresholdOrderCount: supplierOrders.filter(
           (order) => order.belowThreshold,

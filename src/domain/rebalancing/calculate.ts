@@ -1,3 +1,4 @@
+import { moneyProduct } from '../money';
 import { validatedSnapshot } from './validation';
 import {
   assertConfig,
@@ -282,7 +283,10 @@ export function calculateRebalance(
         'SKU_AMOUNT_FILTER',
         'Общая сумма перемещений артикула не строго больше порога',
         sku.skuCode,
-        { quantity: totalQty, amount: totalQty * sku.referencePrice! },
+        {
+          quantity: totalQty,
+          amount: moneyProduct(totalQty, sku.referencePrice!),
+        },
       );
       continue;
     }

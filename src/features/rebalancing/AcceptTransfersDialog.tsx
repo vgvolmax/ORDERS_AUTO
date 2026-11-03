@@ -1,3 +1,4 @@
+import { moneySum } from '../../domain/money';
 import { productColumns } from '../../components/productColumns';
 import { useMemo } from 'react';
 import { Dialog } from '../../components/Dialog';
@@ -39,24 +40,36 @@ export function AcceptTransfersDialog({
   const changes = useMemo(() => {
     const key = (line: PurchaseDemandLine) =>
       JSON.stringify([line.skuCode, line.branch]);
-    const previous = new Map(
-      before.map((line) => [key(line), line]),
-    );
-    const rows: { line: PurchaseDemandLine; previousQty: number; previousAmount: number | null }[] = [];
+    const previous = new Map(before.map((line) => [key(line), line]));
+    const rows: {
+      line: PurchaseDemandLine;
+      previousQty: number;
+      previousAmount: number | null;
+    }[] = [];
     for (const line of after) {
       const old = previous.get(key(line));
       if (old && old.purchaseQty !== line.purchaseQty)
-        rows.push({ line, previousQty: old.purchaseQty, previousAmount: old.purchaseQty > 0 ? old.purchaseAmount : 0 });
+        rows.push({
+          line,
+          previousQty: old.purchaseQty,
+          previousAmount: old.purchaseQty > 0 ? old.purchaseAmount : 0,
+        });
     }
     return rows;
   }, [before, after]);
   const purchaseAmount = (side: 'before' | 'after') => {
-    let total = 0;
+    const amounts: number[] = [];
     for (const row of changes) {
-      const amount = side === 'before' ? row.previousAmount : row.line.purchaseQty > 0 ? row.line.purchaseAmount : 0;
+      const amount =
+        side === 'before'
+          ? row.previousAmount
+          : row.line.purchaseQty > 0
+            ? row.line.purchaseAmount
+            : 0;
       if (amount === null) return 'Сумма неизвестна';
-      total += amount;
+      amounts.push(amount);
     }
+    const total = moneySum(amounts);
     return Number.isFinite(total) ? money(total) : 'Сумма неизвестна';
   };
   return (
@@ -90,17 +103,30 @@ export function AcceptTransfersDialog({
           Донор: {scopeSummary.donor}. Получатели:{' '}
           {scopeSummary.recipients.join(', ')}. SKU: {scopeSummary.skuCount}.
           Сумма:{' '}
-          {scopeSummary.amount === null ? 'Сумма неизвестна' : money(scopeSummary.amount)}.
+          {scopeSummary.amount === null
+            ? 'Сумма неизвестна'
+            : money(scopeSummary.amount)}
+          .
           {scopeSummary.missingPriceLineCount > 0 &&
-            ` Без цены: ${scopeSummary.missingPriceLineCount}.`}
-          {' '}Цены перемещений — справочные MIN/MAX.
+            ` Без цены: ${scopeSummary.missingPriceLineCount}.`}{' '}
+          Цены перемещений — справочные MIN/MAX.
         </p>
       )}
-      <section role="group" aria-label="Изменение закупки" className="purchase-change-summary">
+      <section
+        role="group"
+        aria-label="Изменение закупки"
+        className="purchase-change-summary"
+      >
         <span>Расчётная закупка по изменённым строкам</span>
         <dl>
-          <div><dt>Было</dt><dd>{purchaseAmount('before')}</dd></div>
-          <div><dt>Станет</dt><dd>{purchaseAmount('after')}</dd></div>
+          <div>
+            <dt>Было</dt>
+            <dd>{purchaseAmount('before')}</dd>
+          </div>
+          <div>
+            <dt>Станет</dt>
+            <dd>{purchaseAmount('after')}</dd>
+          </div>
         </dl>
       </section>
       <p>Строк: {count}. Изменение текущей закупки:</p>

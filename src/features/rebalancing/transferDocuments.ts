@@ -1,3 +1,4 @@
+import { moneyProduct, moneySum } from '../../domain/money';
 import type { Sku } from '../../domain/types';
 import type { RebalanceResultScope } from '../../domain/workspace';
 import {
@@ -64,7 +65,7 @@ export function summarizeTransferDocuments(docs: TransferDocument[]) {
   const accepted = active.filter((line) => line.decision === 'ACCEPTED');
   const amount = (items: TransferDocumentLine[]) => {
     if (items.some((line) => line.amount === null)) return null;
-    const value = items.reduce((sum, line) => sum + line.amount!, 0);
+    const value = moneySum(items.map((line) => line.amount!));
     return Number.isFinite(value) ? value : null;
   };
   return {
@@ -157,8 +158,8 @@ export function buildTransferDocuments(
         ? price
         : null;
     const amount =
-      unitPrice !== null && Number.isFinite(unitPrice * t.qty)
-        ? unitPrice * t.qty
+      unitPrice !== null && Number.isFinite(moneyProduct(t.qty, unitPrice))
+        ? moneyProduct(t.qty, unitPrice)
         : null;
     const id = JSON.stringify([t.fromBranchId, t.toBranchId]);
     const doc: TransferDocument = groups.get(id) ?? {
@@ -202,7 +203,7 @@ export function buildTransferDocuments(
     const active = doc.lines.filter((l) => l.decision !== 'REJECTED');
     doc.totalAmount = active.some((l) => l.amount === null)
       ? null
-      : active.reduce((sum, l) => sum + l.amount!, 0);
+      : moneySum(active.map((line) => line.amount!));
     if (doc.totalAmount !== null && !Number.isFinite(doc.totalAmount))
       doc.totalAmount = null;
     const units = new Map<

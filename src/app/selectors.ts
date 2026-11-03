@@ -14,6 +14,7 @@ import type {
 import { calculateDemand, priceDemand } from '../domain/demand';
 import { getManualEditCount } from '../domain/orderWorkflow';
 import { buildOrderProjection } from '../domain/orders';
+import { collectPurchasingIssues } from '../domain/purchasingIssues';
 import { resolveSuppliers } from '../domain/suppliers';
 import { isSupplierInPool } from '../domain/supplierPool';
 import type {
@@ -29,10 +30,8 @@ export interface WorkflowOrder extends Order {
   manualEditCount: number;
 }
 
-export interface WorkflowOrderProjection extends Omit<
-  OrderProjection,
-  'orders'
-> {
+export interface WorkflowOrderProjection
+  extends Omit<OrderProjection, 'orders'> {
   orders: WorkflowOrder[];
 }
 
@@ -134,6 +133,7 @@ export function derive(state: AppState): DerivedState {
     resolutions,
     state.edits,
     state.settings,
+    collectPurchasingIssues(state.minMax, state.minMaxIssues),
   );
   const exportedIds = new Set(state.exportedOrderIds ?? []);
   const reviewedIds = new Set(state.reviewedOrderIds ?? []);

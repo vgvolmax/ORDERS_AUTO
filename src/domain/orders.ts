@@ -6,14 +6,28 @@ import type {
   OrderSettings,
   PricedDemandLine,
   SupplierResolution,
+  ValidationIssue,
 } from './types';
+import { normalizeKey } from './normalize';
+import { moneyProduct, moneySum, moneyProductsLessThan } from './money';
 
 export function buildOrderProjection(
   demand: (PricedDemandLine | PurchaseDemandLine)[],
   resolutions: SupplierResolution[],
   edits: OrderQtyEdit[],
   settings: OrderSettings,
+  dataIssues: ValidationIssue[] = [],
 ): OrderProjection {
+  const blockedSku = new Set<string>();
+  const blockedSlice = new Set<string>();
+  for (const issue of dataIssues) {
+    if (issue.severity !== 'ERROR' || !issue.skuCode) continue;
+    if (issue.branch)
+      blockedSlice.add(
+        JSON.stringify([issue.skuCode, normalizeKey(issue.branch)]),
+      );
+    else blockedSku.add(issue.skuCode);
+  }
   const resolutionBySku = new Map(
     resolutions.map((resolution) => [resolution.skuCode, resolution]),
   );
@@ -51,8 +65,8 @@ export function buildOrderProjection(
           fallbackResolution.status === 'MANUAL_REQUIRED'
             ? 'MULTIPLE_SUPPLIERS_REQUIRE_CHOICE'
             : fallbackResolution.status === 'STALE_OVERRIDE'
-            ? 'STALE_SUPPLIER_OVERRIDE'
-            : 'NO_SUPPLIER',
+              ? 'STALE_SUPPLIER_OVERRIDE'
+              : 'NO_SUPPLIER',
       });
       continue;
     }
@@ -74,6 +88,16 @@ export function buildOrderProjection(
       editBySkuBranch.get(`${line.skuCode}\0${line.branch}`) ?? calculatedQty;
     if (orderQty < 0) {
       throw new Error('Количество не может быть отрицательным');
+    }
+    if (
+      orderQty > 0 &&
+      (blockedSku.has(line.skuCode) ||
+        blockedSlice.has(
+          JSON.stringify([line.skuCode, normalizeKey(line.branch)]),
+        ))
+    ) {
+      const blocker = `Ошибка данных MIN/MAX: ${line.skuCode} / ${line.branch}`;
+      if (!order.blockers.includes(blocker)) order.blockers.push(blocker);
     }
 
     order.lines.push({
@@ -106,7 +130,8 @@ export function buildOrderProjection(
       unit: line.unit,
       unitPrice: line.unitPrice,
       priceSource: line.priceSource,
-      amount: line.unitPrice == null ? null : orderQty * line.unitPrice,
+      amount:
+        line.unitPrice == null ? null : moneyProduct(orderQty, line.unitPrice),
       warnings: orderQty > calculatedQty ? ['Количество выше расчётного'] : [],
       stock: line.stock,
       min: line.min,
@@ -133,31 +158,41 @@ export function buildOrderProjection(
     const hasMissingPrice = positiveLines.some((line) => line.amount == null);
     order.totalAmount = hasMissingPrice
       ? null
-      : positiveLines.reduce((sum, line) => sum + (line.amount ?? 0), 0);
+      : moneySum(positiveLines.map((line) => line.amount!));
 
     if (hasMissingPrice) {
       order.blockers.push('Не хватает цены');
     }
   }
 
-  const supplierTotals = new Map<string, number | null>();
+  const supplierLines = new Map<string, Order['lines']>();
   for (const order of orders) {
-    const previous = supplierTotals.get(order.supplier);
-    if (previous === null || order.totalAmount == null) {
-      supplierTotals.set(order.supplier, null);
-    } else {
-      supplierTotals.set(order.supplier, (previous ?? 0) + order.totalAmount);
-    }
+    const lines = supplierLines.get(order.supplier) ?? [];
+    lines.push(...order.lines.filter((line) => line.orderQty > 0));
+    supplierLines.set(order.supplier, lines);
   }
 
+  const belowSupplier = new Map(
+    [...supplierLines].map(([supplier, lines]) => [
+      supplier,
+      lines.every((line) => line.unitPrice !== null) &&
+        moneyProductsLessThan(
+          lines.map((line) => [line.orderQty, line.unitPrice!] as const),
+          settings.minimumOrderAmount,
+        ),
+    ]),
+  );
   for (const order of orders) {
-    const comparedAmount =
-      settings.thresholdMode === 'SUPPLIER_TOTAL'
-        ? supplierTotals.get(order.supplier)
-        : order.totalAmount;
-
     order.belowThreshold =
-      comparedAmount != null && comparedAmount < settings.minimumOrderAmount;
+      settings.thresholdMode === 'SUPPLIER_TOTAL'
+        ? (belowSupplier.get(order.supplier) ?? false)
+        : order.totalAmount !== null &&
+          moneyProductsLessThan(
+            order.lines
+              .filter((line) => line.orderQty > 0)
+              .map((line) => [line.orderQty, line.unitPrice!] as const),
+            settings.minimumOrderAmount,
+          );
 
     if (order.belowThreshold) {
       order.blockers.push('Ниже минимальной суммы');
@@ -166,5 +201,5 @@ export function buildOrderProjection(
     order.status = order.blockers.length > 0 ? 'BLOCKED' : 'READY';
   }
 
-  return { orders, unassigned };
+  return { orders, unassigned, ...(dataIssues.length ? { dataIssues } : {}) };
 }

@@ -1,3 +1,4 @@
+import { moneySum } from '../../domain/money';
 import { VirtualTable } from '../../components/VirtualTable';
 import { productColumns } from '../../components/productColumns';
 import { useMemo, useState } from 'react';
@@ -170,15 +171,16 @@ export function RebalancingPage() {
   ];
   const stale = Boolean(
     r.proposal &&
-    (r.proposal.algorithmVersion !== ALGORITHM_VERSION ||
-      hasIncompatibleTransferQuantities(
-        r.proposal.transfers,
-        d.snapshot?.issues ?? [],
-      ) ||
-      r.proposal.participationFingerprint !==
-        branchParticipationFingerprint(registryDraft) ||
-      r.proposal.snapshotId !== state.snapshotId ||
-      r.proposal.configFingerprint !== rebalanceConfigFingerprint(configDraft)),
+      (r.proposal.algorithmVersion !== ALGORITHM_VERSION ||
+        hasIncompatibleTransferQuantities(
+          r.proposal.transfers,
+          d.snapshot?.issues ?? [],
+        ) ||
+        r.proposal.participationFingerprint !==
+          branchParticipationFingerprint(registryDraft) ||
+        r.proposal.snapshotId !== state.snapshotId ||
+        r.proposal.configFingerprint !==
+          rebalanceConfigFingerprint(configDraft)),
   );
   function open(kind: 'accept' | 'revoke', ids: string[]) {
     if (busy) return;
@@ -287,7 +289,7 @@ export function RebalancingPage() {
     const missingPriceLineCount = chosen.filter(
       (line) => line.amount === null,
     ).length;
-    const amount = chosen.reduce((sum, line) => sum + (line.amount ?? 0), 0);
+    const amount = moneySum(chosen.map((line) => line.amount ?? 0));
     return {
       donor: [...new Set(chosen.map((line) => line.donor))].join(', '),
       recipients: [...new Set(chosen.map((line) => line.recipient))],
