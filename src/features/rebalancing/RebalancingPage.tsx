@@ -604,6 +604,10 @@ export function RebalancingPage() {
               documents={acceptedDocuments}
               filters={acceptedFilters}
               onFilters={changeAcceptedFilters}
+              onRevoke={(ids) => open('revoke', ids)}
+              busy={busy}
+              saving={Boolean(saving)}
+              error={confirmation ? '' : error}
               onExport={(ids) => {
                 const selected = new Set(ids);
                 const docs = buildAcceptedDocuments({
@@ -690,6 +694,7 @@ export function RebalancingPage() {
                       })
                     }
                     onRevoke={(id) => open('revoke', [id])}
+                    onRevokeMany={(ids) => open('revoke', ids)}
                     onAccept={(ids) => open('accept', ids)}
                     onExport={csv}
                     stale={stale}

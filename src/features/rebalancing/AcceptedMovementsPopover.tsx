@@ -127,9 +127,13 @@ export function MovementIndicator({
         aria-label={`Учтённые перемещения ${scope.skuCode ?? ''} ${
           scope.branch ?? ''
         }`.trim()}
+        title={`Потребность с учётом принятых перемещений: ${summary.transferCount}`}
         onClick={() => setOpen(true)}
       >
-        С учётом перемещений ({summary.transferCount})
+        <span className="movement-indicator-label">Перемещения</span>
+        <span className="movement-indicator-count">
+          ({summary.transferCount})
+        </span>
       </button>
       {open && (
         <AcceptedMovementsPopover

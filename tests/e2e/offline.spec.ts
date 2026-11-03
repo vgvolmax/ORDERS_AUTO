@@ -5,6 +5,261 @@ import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 
+test('E2E-20 bulk revoke respects SKU search and direction filters, survives reload and restores purchasing', async ({
+  page,
+}, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const evidence = observeRuntime(page);
+  const codes = ['CANCEL-A', 'CANCEL-B'];
+  const min = buildWorkbook([
+    [
+      'Код',
+      'Артикул',
+      'Номенклатура',
+      'Количество',
+      'Минимальный остаток',
+      'Максимальный остаток',
+      'Цена',
+    ],
+    ...codes.flatMap((code) => [
+      [code, `ART-${code}`, `Товар отмены ${code}`, 180, null, null, 100],
+      [null, null, 'Донор А', 75, 20, 60, null],
+      [null, null, 'Донор Б', 95, 20, 60, null],
+      [null, null, 'Получатель', 10, 20, 60, null],
+    ]),
+  ]);
+  const sup = buildWorkbook([
+    [
+      'Контрагент',
+      'Код',
+      'Номенклатура',
+      'Количество',
+      'Стоимость',
+      'Ед. изм.',
+    ],
+    ...codes.map((code) => [
+      'ИП Баранов Роман Борисович',
+      code,
+      `Товар отмены ${code}`,
+      1,
+      100,
+      'шт',
+    ]),
+  ]);
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  for (const [label, name, bytes] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'revoke-min.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'revoke-sup.xlsx', sup],
+  ] as const) {
+    await page
+      .getByLabel(label)
+      .setInputFiles({
+        name,
+        mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer: Buffer.from(bytes),
+      });
+    await expect(page.getByLabel(label)).toBeEnabled();
+    await expect(
+      page.getByText('Обработка отчёта…', { exact: true }),
+    ).toHaveCount(0);
+  }
+  await page
+    .getByRole('button', { name: 'Перейти к потребности', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page
+    .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
+    .click();
+  await page
+    .getByRole('checkbox', { name: 'Выбрать видимые предложения', exact: true })
+    .check();
+  await page
+    .getByRole('button', { name: 'Принять выбранные (4)', exact: true })
+    .click();
+  let confirmation = page.getByRole('dialog', {
+    name: 'Принять выбранные перемещения',
+    exact: true,
+  });
+  await confirmation
+    .getByRole('button', { name: 'Принять перемещения', exact: true })
+    .click();
+  await expect(confirmation).toHaveCount(0);
+  await page
+    .getByRole('button', {
+      name: 'Открыть перемещение Донор А → Получатель',
+      exact: true,
+    })
+    .click();
+  let drawer = page.getByRole('dialog', {
+    name: 'Состав перемещения',
+    exact: true,
+  });
+  await drawer
+    .getByRole('checkbox', {
+      name: 'Выбрать все принятые по поиску',
+      exact: true,
+    })
+    .check();
+  await drawer
+    .getByLabel('Поиск по составу перемещения', { exact: true })
+    .fill('CANCEL-A');
+  await expect(
+    drawer.getByText(/Скрыто поиском: 1; в отмену не попадут/),
+  ).toBeVisible();
+  await drawer
+    .getByRole('button', {
+      name: 'Отменить выбранные принятые (1)',
+      exact: true,
+    })
+    .click();
+  confirmation = page.getByRole('dialog', {
+    name: 'Отменить принятие перемещения',
+    exact: true,
+  });
+  await expect(confirmation).toContainText('Строк: 1.');
+  await expect(
+    confirmation.getByRole('group', { name: 'Изменение закупки', exact: true }),
+  ).toContainText('1 500,00');
+  await confirmation
+    .getByRole('button', { name: 'Отменить принятие', exact: true })
+    .click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(drawer).toContainText('Принято строк: 1 из 2');
+  await drawer
+    .getByRole('button', { name: 'Закрыть карточку', exact: true })
+    .click();
+  await page.reload();
+  await page.getByRole('tab', { name: 'Принятые', exact: true }).click();
+  await page
+    .getByLabel('Отправитель принятых', { exact: true })
+    .selectOption({ label: 'Донор Б' });
+  await page
+    .getByRole('checkbox', {
+      name: 'Выбрать все направления по фильтрам',
+      exact: true,
+    })
+    .check();
+  await page
+    .getByRole('button', {
+      name: 'Отменить принятие выбранных направлений (1)',
+      exact: true,
+    })
+    .click();
+  confirmation = page.getByRole('dialog', {
+    name: 'Отменить принятие перемещений',
+    exact: true,
+  });
+  await expect(confirmation).toContainText('Строк: 2.');
+  await expect(confirmation).toContainText('Донор: Донор Б.');
+  await confirmation
+    .getByRole('button', { name: 'Отменить принятие', exact: true })
+    .click();
+  await expect(confirmation).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Сбросить фильтры принятых', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Принятые перемещения · 1',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'CSV Донор Б → Получатель', exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: 'Все товары', exact: true }).click();
+  const indicator = page.getByRole('button', {
+    name: 'Учтённые перемещения CANCEL-B',
+    exact: true,
+  });
+  await expect(indicator).toBeVisible();
+  const geometry = await indicator.evaluate((el) => {
+    const cell = el.closest('[role="cell"]')!,
+      rect = el.getBoundingClientRect();
+    const count = el
+      .querySelector('.movement-indicator-count')!
+      .getBoundingClientRect();
+    const label = el
+      .querySelector('.movement-indicator-label')!
+      .getBoundingClientRect();
+    const outer = cell.getBoundingClientRect();
+    return {
+      fits: rect.left >= outer.left && rect.right <= outer.right,
+      sameLine: Math.abs(count.top - label.top) <= 1,
+    };
+  });
+  expect(geometry).toEqual({ fits: true, sameLine: true });
+  await indicator.click();
+  const movements = page.getByRole('dialog', {
+    name: 'Учтённые перемещения',
+    exact: true,
+  });
+  const totals = movements.locator('.movement-totals');
+  await expect(totals).toContainText('Текущая потребность');
+  await expect(totals).toContainText('35');
+  await page.screenshot({
+    path: testInfo.outputPath('20-restored-purchasing.png'),
+    fullPage: true,
+  });
+  await page.keyboard.press('Escape');
+  await page
+    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Принятые', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Состав Донор А → Получатель', exact: true })
+    .click();
+  drawer = page.getByRole('dialog', {
+    name: 'Принято: Донор А → Получатель',
+    exact: true,
+  });
+  await drawer
+    .getByRole('checkbox', {
+      name: 'Выбрать все принятые по поиску',
+      exact: true,
+    })
+    .check();
+  await drawer
+    .getByRole('button', {
+      name: 'Отменить выбранные принятые (1)',
+      exact: true,
+    })
+    .click();
+  confirmation = page.getByRole('dialog', {
+    name: 'Отменить принятие перемещения',
+    exact: true,
+  });
+  await confirmation
+    .getByRole('button', { name: 'Отменить принятие', exact: true })
+    .click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(drawer).toContainText('В этом направлении больше нет позиций.');
+  await drawer
+    .getByRole('button', { name: 'Закрыть карточку', exact: true })
+    .click();
+  await expect(
+    page.getByText(
+      'Принятых перемещений пока нет. Примите предложения на вкладке «Результаты».',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByText(
+      'Принятых перемещений пока нет. Примите предложения на вкладке «Результаты».',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
 test('E2E-19 stable rebalancing chrome and accepted route register export full compositions offline', async ({
   page,
 }, testInfo) => {

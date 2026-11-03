@@ -16,6 +16,7 @@ export function ResultsTable({
   onSelection,
   onReject,
   onRevoke,
+  onRevokeMany,
   onAccept,
   onExport,
   stale,
@@ -30,6 +31,7 @@ export function ResultsTable({
   onSelection: (ids: string[]) => void;
   onReject: (id: string) => void;
   onRevoke: (id: string) => void;
+  onRevokeMany?: (ids: string[]) => void;
   onAccept: (ids: string[]) => void;
   onExport: (documentId: string) => void;
   stale: boolean;
@@ -357,6 +359,7 @@ export function ResultsTable({
           onSelection={onSelection}
           onReject={onReject}
           onRevoke={onRevoke}
+          onRevokeMany={onRevokeMany}
           onAccept={onAccept}
           onExport={() => onExport(opened.id)}
           exportCount={

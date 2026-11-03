@@ -78,7 +78,9 @@ export function AcceptTransfersDialog({
       title={
         kind === 'accept'
           ? 'Принять выбранные перемещения'
-          : 'Отменить принятие перемещения'
+          : count === 1
+            ? 'Отменить принятие перемещения'
+            : 'Отменить принятие перемещений'
       }
       onClose={() => {
         if (!busy) onClose();

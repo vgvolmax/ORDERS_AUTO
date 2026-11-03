@@ -18,6 +18,7 @@ export function TransferDrawer({
   onSelection,
   onReject,
   onRevoke,
+  onRevokeMany,
   onAccept,
   onExport,
   exportCount,
@@ -26,12 +27,14 @@ export function TransferDrawer({
   busy,
   saving,
   error,
+  ariaLabel = 'Состав перемещения',
 }: {
   document: TransferDocument;
   selected: string[];
   onSelection: (ids: string[]) => void;
   onReject: (id: string) => void;
-  onRevoke: (id: string) => void;
+  onRevoke?: ((id: string) => void) | undefined;
+  onRevokeMany?: ((ids: string[]) => void) | undefined;
   onAccept: (ids: string[]) => void;
   onExport: () => void;
   exportCount: number;
@@ -40,10 +43,12 @@ export function TransferDrawer({
   busy: boolean;
   saving: boolean;
   error: string;
+  ariaLabel?: string;
 }) {
   const ref = useRef<HTMLElement>(null);
   useModalLayer(ref, onClose);
   const [query, setQuery] = useState('');
+  const [acceptedSelection, setAcceptedSelection] = useState<string[]>([]);
   const [product, setProduct] = useState<TransferDocumentLine | null>(null);
   const rows = doc.lines.filter((l) =>
     [l.skuCode, l.article ?? '', l.name]
@@ -52,6 +57,21 @@ export function TransferDrawer({
       .includes(query.trim().toLocaleLowerCase('ru')),
   );
   const eligible = rows.filter((l) => l.decision === 'PROPOSED');
+  const acceptedRows = rows.filter(
+    (l) => l.decision === 'ACCEPTED' && l.transferId,
+  );
+  const acceptedSelected = new Set(acceptedSelection);
+  const revokeIds = acceptedRows
+    .filter((l) => acceptedSelected.has(l.transferId!))
+    .map((l) => l.transferId!);
+  const hiddenRevokeCount = doc.lines.filter(
+    (l) =>
+      l.decision === 'ACCEPTED' &&
+      l.transferId &&
+      acceptedSelected.has(l.transferId) &&
+      !acceptedRows.includes(l),
+  ).length;
+  const hasProposals = doc.lines.some((l) => l.decision !== 'ACCEPTED');
   const routeSelected = eligible
     .filter((l) => l.selected)
     .map((l) => l.sourceLineId);
@@ -59,6 +79,12 @@ export function TransferDrawer({
   const summary = summarizeTransferDocuments([doc]);
   const selectedAmount = summarizeTransferDocuments([
     { ...doc, lines: eligible.filter((line) => line.selected) },
+  ]).totalAmount;
+  const revokeAmount = summarizeTransferDocuments([
+    {
+      ...doc,
+      lines: acceptedRows.filter((l) => acceptedSelected.has(l.transferId!)),
+    },
   ]).totalAmount;
   const amount = (value: number | null) =>
     value === null ? 'Сумма неизвестна' : money(value);
@@ -76,7 +102,7 @@ export function TransferDrawer({
         className="drawer transfer-drawer"
         role="dialog"
         aria-modal="true"
-        aria-label="Состав перемещения"
+        aria-label={ariaLabel}
       >
         <div className="drawer-head">
           <div className="transfer-heading">
@@ -99,8 +125,13 @@ export function TransferDrawer({
               <strong>{amount(summary.acceptedAmount)}</strong>
             </div>
             <div aria-label="Выбрано на сумму в перемещении">
-              <small>Выбрано по поиску · {routeSelected.length} поз.</small>
-              <strong>{amount(selectedAmount)}</strong>
+              <small>
+                {hasProposals ? 'К принятию' : 'К отмене'} по поиску ·{' '}
+                {hasProposals ? routeSelected.length : revokeIds.length} поз.
+              </small>
+              <strong>
+                {amount(hasProposals ? selectedAmount : revokeAmount)}
+              </strong>
             </div>
           </div>
           <button className="close" aria-label="Закрыть" onClick={onClose}>
@@ -126,25 +157,49 @@ export function TransferDrawer({
               }}
             />
           </label>
-          <label className="checkbox-control">
-            <input
-              type="checkbox"
-              aria-label="Выбрать все предложения по поиску"
-              checked={
-                eligible.length > 0 && eligible.every((line) => line.selected)
-              }
-              disabled={disabled || !eligible.length}
-              onChange={(e) => {
-                const ids = new Set(eligible.map((l) => l.sourceLineId));
-                onSelection(
-                  e.target.checked
-                    ? [...new Set([...selected, ...ids])]
-                    : selected.filter((id) => !ids.has(id)),
-                );
-              }}
-            />
-            Отметить все по поиску ({eligible.length})
-          </label>
+          {hasProposals && (
+            <label className="checkbox-control">
+              <input
+                type="checkbox"
+                aria-label="Выбрать все предложения по поиску"
+                checked={
+                  eligible.length > 0 && eligible.every((line) => line.selected)
+                }
+                disabled={disabled || !eligible.length}
+                onChange={(e) => {
+                  const ids = new Set(eligible.map((l) => l.sourceLineId));
+                  onSelection(
+                    e.target.checked
+                      ? [...new Set([...selected, ...ids])]
+                      : selected.filter((id) => !ids.has(id)),
+                  );
+                }}
+              />
+              Предложения по поиску ({eligible.length})
+            </label>
+          )}
+          {onRevokeMany && (
+            <label className="checkbox-control">
+              <input
+                type="checkbox"
+                aria-label="Выбрать все принятые по поиску"
+                checked={
+                  acceptedRows.length > 0 &&
+                  acceptedRows.every((l) => acceptedSelected.has(l.transferId!))
+                }
+                disabled={busy || !acceptedRows.length}
+                onChange={(e) => {
+                  const ids = new Set(acceptedRows.map((l) => l.transferId!));
+                  setAcceptedSelection(
+                    e.target.checked
+                      ? [...new Set([...acceptedSelection, ...ids])]
+                      : acceptedSelection.filter((id) => !ids.has(id)),
+                  );
+                }}
+              />
+              Принятые по поиску ({acceptedRows.length})
+            </label>
+          )}
           <span aria-live="polite">Позиций по поиску: {rows.length}</span>
         </div>
         <p className="transfer-stock-help">
@@ -169,7 +224,30 @@ export function TransferDrawer({
                 width: '36px',
                 render: (l) =>
                   l.decision === 'ACCEPTED' ? (
-                    '—'
+                    onRevokeMany ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Выбрать принятое перемещение ${l.skuCode} ${doc.fromName} → ${doc.toName}`}
+                        checked={acceptedSelected.has(l.transferId!)}
+                        disabled={busy}
+                        onChange={(e) =>
+                          setAcceptedSelection(
+                            e.target.checked
+                              ? [
+                                  ...new Set([
+                                    ...acceptedSelection,
+                                    l.transferId!,
+                                  ]),
+                                ]
+                              : acceptedSelection.filter(
+                                  (id) => id !== l.transferId,
+                                ),
+                          )
+                        }
+                      />
+                    ) : (
+                      '—'
+                    )
                   ) : (
                     <input
                       type="checkbox"
@@ -258,20 +336,22 @@ export function TransferDrawer({
                           : 'Предложено'}
                     </span>
                     {l.transferId ? (
-                      <button
-                        className="link"
-                        disabled={busy}
-                        aria-label={[
-                          'Отменить принятие',
-                          l.skuCode,
-                          doc.fromName,
-                          '→',
-                          doc.toName,
-                        ].join(' ')}
-                        onClick={() => onRevoke(l.transferId!)}
-                      >
-                        Отменить принятие
-                      </button>
+                      onRevoke && (
+                        <button
+                          className="link"
+                          disabled={busy}
+                          aria-label={[
+                            'Отменить принятие',
+                            l.skuCode,
+                            doc.fromName,
+                            '→',
+                            doc.toName,
+                          ].join(' ')}
+                          onClick={() => onRevoke(l.transferId!)}
+                        >
+                          Отменить принятие
+                        </button>
+                      )
                     ) : (
                       <button
                         className="link"
@@ -288,13 +368,31 @@ export function TransferDrawer({
           />
         </div>
         <p className="transfer-scope-note">
-          Принятие — все отмеченные позиции текущего поиска, включая строки за
-          пределами экрана. CSV — принятые позиции всего перемещения.
+          {hasProposals &&
+            'Принятие — все отмеченные позиции текущего поиска, включая строки за пределами экрана. '}
+          CSV — принятые позиции всего перемещения.
+          {onRevokeMany && (
+            <>
+              {' '}
+              Отмена — отмеченные принятые строки текущего поиска.
+              {hiddenRevokeCount > 0 &&
+                ` Скрыто поиском: ${hiddenRevokeCount}; в отмену не попадут.`}
+            </>
+          )}
         </p>
         <div className="drawer-actions transfer-drawer-actions">
           <div className="transfer-selection-summary">
-            <strong>Выбрано к принятию: {routeSelected.length}</strong>
-            <span>{amount(selectedAmount)}</span>
+            {hasProposals && (
+              <>
+                <strong>Выбрано к принятию: {routeSelected.length}</strong>
+                <span>{amount(selectedAmount)}</span>
+              </>
+            )}
+            {onRevokeMany && (
+              <small>
+                К отмене: {revokeIds.length} · {amount(revokeAmount)}
+              </small>
+            )}
             {saving && <small role="status">Сохраняем выбор…</small>}
           </div>
           <div className="transfer-action-buttons">
@@ -313,15 +411,27 @@ export function TransferDrawer({
             >
               Закрыть
             </Button>
-            <Button
-              disabled={disabled || !routeSelected.length}
-              aria-label={`Принять выбранные в перемещении (${routeSelected.length})`}
-              onClick={() => onAccept(routeSelected)}
-            >
-              {busy
-                ? 'Подготовка…'
-                : `Принять выбранные (${routeSelected.length})`}
-            </Button>
+            {onRevokeMany && (
+              <Button
+                className="secondary"
+                disabled={busy || !revokeIds.length}
+                aria-label={`Отменить выбранные принятые (${revokeIds.length})`}
+                onClick={() => onRevokeMany(revokeIds)}
+              >
+                Отменить принятые ({revokeIds.length})
+              </Button>
+            )}
+            {hasProposals && (
+              <Button
+                disabled={disabled || !routeSelected.length}
+                aria-label={`Принять выбранные в перемещении (${routeSelected.length})`}
+                onClick={() => onAccept(routeSelected)}
+              >
+                {busy
+                  ? 'Подготовка…'
+                  : `Принять выбранные (${routeSelected.length})`}
+              </Button>
+            )}
           </div>
         </div>
         {product && (
