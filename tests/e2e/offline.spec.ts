@@ -5,6 +5,179 @@ import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 
+test('E2E-17 calculation integrity survives import, export and reload offline', async ({
+  page,
+}, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const { readFile } = await import('node:fs/promises');
+  const supplier = 'ИП Баранов Роман Борисович';
+  const mh = [
+    'Код',
+    'Артикул',
+    'Номенклатура',
+    'Количество',
+    'Минимальный остаток',
+    'Максимальный остаток',
+    'Цена',
+  ];
+  const sh = [
+    'Контрагент',
+    'Код',
+    'Номенклатура',
+    'Количество',
+    'Стоимость',
+    'Ед. изм.',
+  ];
+  const parent = (code: string, price: number | null = 100) => [
+    code,
+    code,
+    'Товар ' + code,
+    null,
+    null,
+    null,
+    price,
+  ];
+  const stock = (branch: string, qty: unknown = 0, max = 1) => [
+    null,
+    null,
+    branch,
+    qty,
+    Math.min(1, max),
+    max,
+    null,
+  ];
+  const hist = (code: string, amount: number | null, qty = 1) => [
+    supplier,
+    code,
+    'Товар ' + code,
+    qty,
+    amount,
+    'шт',
+  ];
+  const upload = async (min: unknown[][], sup: unknown[][]) => {
+    for (const [label, name, rows] of [
+      ['Выбрать файл Отчёт MIN/MAX', 'audit-min.xlsx', [mh, ...min]],
+      ['Выбрать файл Отчёт поставщиков', 'audit-sup.xlsx', [sh, ...sup]],
+    ] as const) {
+      await page
+        .getByLabel(label)
+        .setInputFiles({
+          name,
+          mimeType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          buffer: Buffer.from(buildWorkbook([...rows])),
+        });
+      await expect(page.getByLabel(label)).toBeEnabled();
+      await expect(
+        page.getByText('Обработка отчёта…', { exact: true }),
+      ).toHaveCount(0);
+    }
+    await page.getByRole('button', { name: 'Перейти к потребности' }).click();
+    await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+  };
+  const evidence = observeRuntime(page);
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  await upload(
+    [
+      parent('FALLBACK'),
+      stock('Ленина'),
+      parent('DEC1'),
+      stock('Раменское'),
+      parent('DEC2'),
+      stock('Раменское'),
+    ],
+    [hist('FALLBACK', null, 10), hist('DEC1', 10.1), hist('DEC2', 20.2)],
+  );
+  await page.getByLabel('Минимальная сумма закупки, ₽').fill('30.3');
+  await expect(
+    page.getByRole('button', { name: 'Скачать все (2)', exact: true }),
+  ).toBeEnabled();
+  const decimalCell = page.locator('.order-cell').filter({ hasText: '30,30' });
+  await decimalCell.click();
+  const order = page.getByRole('dialog');
+  const downloaded = page.waitForEvent('download');
+  await order
+    .getByRole('button', { name: 'Скачать CSV заказа', exact: true })
+    .click();
+  const download = await downloaded;
+  const csv = await readFile((await download.path())!, 'utf8');
+  expect(csv).toContain(';10.1;10.1');
+  expect(csv).toContain(';20.2;20.2');
+  expect(csv).not.toContain('999999');
+  await page.reload();
+  await expect(
+    page.getByRole('button', { name: 'Скачать все (2)', exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByLabel('Минимальная сумма закупки, ₽')).toHaveValue(
+    '30.3',
+  );
+  // Enter the existing import route, then replace the reports with damaged data.
+  await page
+    .getByRole('button', { name: 'Загрузить новые отчёты', exact: true })
+    .click();
+  await page
+    .getByRole('dialog', { name: 'Загрузить новые отчёты?', exact: true })
+    .getByRole('button', { name: 'Начать новый сеанс', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Импорт отчётов 1С', exact: true }),
+  ).toBeVisible();
+  await upload(
+    [
+      parent('DUP'),
+      stock('Ленина', 0, 10),
+      stock('Ленина', 8, 10),
+      parent('OMITTED'),
+      stock('Щурово', 'ошибка', 10),
+      parent('PRICE', 100),
+      stock('Ленина'),
+      parent('PRICE', 200),
+      stock('Ступино'),
+      parent('NEG', -100),
+      stock('Ленина'),
+      parent('GOOD'),
+      stock('Раменское'),
+    ],
+    [
+      hist('DUP', 100),
+      hist('OMITTED', 100),
+      hist('PRICE', 0, 0),
+      hist('NEG', 0, 0),
+      hist('GOOD', 100),
+    ],
+  );
+  await expect(
+    page.getByText('Расчёт неполный: есть ошибки в MIN/MAX'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Скачать все (1)', exact: true }),
+  ).toBeEnabled();
+  const blocked = page
+    .locator('.order-cell')
+    .filter({ hasText: 'Ошибка данных MIN/MAX: DUP' });
+  await blocked.click();
+  await expect(
+    page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Скачать CSV заказа', exact: true }),
+  ).toBeDisabled();
+  await page.reload();
+  await expect(
+    page.getByText('Расчёт неполный: есть ошибки в MIN/MAX'),
+  ).toBeVisible();
+  await page.getByText(/Показать ошибки MIN\/MAX/).click();
+  await expect(
+    page.getByText(/Некорректные числовые данные.*OMITTED.*Щурово/),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath('17-calculation-integrity.png'),
+    fullPage: true,
+  });
+  expect(evidence.remoteRequests).toEqual([]);
+  expect(evidence.pageErrors).toEqual([]);
+});
+
 interface RuntimeEvidence {
   consoleErrors: string[];
   fileRequests: string[];
@@ -1796,8 +1969,9 @@ test('E2E-12 extended registry preserves off-page mass routes and long names', a
 test('E2E-13 monetary threshold rolls back after an offline storage failure and survives retry/reload', async ({
   page,
 }) => {
-  const { buildMinMaxFixture, buildSupplierFixture } =
-    await import('../fixtures/workbookBuilders');
+  const { buildMinMaxFixture, buildSupplierFixture } = await import(
+    '../fixtures/workbookBuilders'
+  );
   const evidence = observeRuntime(page);
   await expectOfflineApp(page, resolve('dist/ORDERS_AUTO'));
   await page.setViewportSize({ width: 1280, height: 720 });

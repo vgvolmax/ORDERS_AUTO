@@ -1,3 +1,4 @@
+import { moneyProduct, moneySum } from '../../domain/money';
 import type { Sku } from '../../domain/types';
 import type {
   AcceptedTransfer,
@@ -36,7 +37,7 @@ export function buildFullCoverageSummary(input: {
       { unit: string | null; skuCode?: string; values: number[] }
     >();
     const missing = new Set<string>();
-    let amount = 0;
+    const amounts: number[] = [];
     for (const row of rows) {
       const unit = units.get(row.skuCode) ?? null,
         key = unit ? 'unit:' + unit : 'sku:' + row.skuCode;
@@ -52,11 +53,12 @@ export function buildFullCoverageSummary(input: {
         price == null ||
         !Number.isFinite(price) ||
         price < 0 ||
-        !Number.isFinite(price * row.qty)
+        !Number.isFinite(moneyProduct(row.qty, price))
       )
         missing.add(row.skuCode);
-      else amount += price * row.qty;
+      else amounts.push(moneyProduct(row.qty, price));
     }
+    const amount = moneySum(amounts);
     const knownAmount = Number.isFinite(amount) ? amount : null;
     return {
       byUnit: [...groups.values()]

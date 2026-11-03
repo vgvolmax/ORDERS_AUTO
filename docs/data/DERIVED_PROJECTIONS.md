@@ -162,3 +162,10 @@ buildDonorPrioritySummary — единственная проекция груп
 Прежние проекции приоритетов и уровней больше не действуют. Чистый calculateRebalance строит один поток SKU по всей сети, проверяет каждого получателя до настроенной цели и публикует весь поток либо ноль. Недопустимые дробные остатки не считаются полным покрытием после округления вниз. Структурированный skippedSkus содержит диагностическую ёмкость; balances/uncoveredNeed строятся только из действительно опубликованных предложений и accepted.
 
 `features/rebalancing/skippedRebalance.ts` — чистый владелец сводки pending и всей пропущенной потребности, справочных сумм и количества по единицам. Pending исключает rejected и sourceRunId×sourceLineId уже принятых строк, не зависит от поисковых фильтров. Количества разных единиц не объединяются; missing-price сумма остаётся null. Потребность14/максимум12 даёт «Не распределено14», missing2 только в подробностях. Заказовый pipeline продолжает получать только accepted, без trial/pending/skipped.
+
+
+### Закупочные ограничения данных ·03.11.2026
+
+collectPurchasingIssues(dataset,sourceIssues) индексирует дубли кодов/срезов и source errors. buildOrderProjection принимает необязательный пятый аргумент dataIssues; positive affected lines дают жёсткий blocker MIN/MAX. Пропущенные повреждённые строки представлены в projection.dataIssues, не заменяются нулевой потребностью и не добавляются в unassigned как выдуманные физические данные. buildAcceptedTransferStatePatch сохраняет тот же список ограничений при адресной инвалидации заказа.
+
+Для старого нормализованного дубля calculateDemand оставляет одну provisional строку для просмотра, а issue блокирует её заказ; отдельная валидация accepted ledger сохраняется. Все источники unitPrice проверяются на конечность/неотрицательность, конфликтный fallback повторного SKU неизвестен. moneyProduct/moneySum используют общий domain/decimal, а moneyProductsLessThan сравнивает исходные qty×price до Number-conversion.

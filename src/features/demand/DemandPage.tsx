@@ -1,8 +1,10 @@
+import { moneySum } from '../../domain/money';
 import { useMemo, type ReactNode } from 'react';
 import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
 import { useTablePreferences } from '../../app/tablePreferences';
 import { QuantitySummary } from '../../components/QuantitySummary';
+import { PurchasingDataAlert } from '../../components/PurchasingDataAlert';
 import { money, fmtQty } from '../../format/numbers';
 export { money, fmtQty } from '../../format/numbers';
 import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
@@ -106,10 +108,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       filters,
       orderLineKeys,
     );
-    const amount = groups.reduce(
-      (sum, group) => sum + group.totalDemandAmount,
-      0,
-    );
+    const amount = moneySum(groups.map((group) => group.totalDemandAmount));
     const missing = groups.reduce(
       (sum, group) => sum + group.missingPriceCount,
       0,
@@ -222,6 +221,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         title="Потребность всей сети"
         subtitle="Одна строка на товар. Раскройте товар, чтобы увидеть распределение по подразделениям."
       >
+        <PurchasingDataAlert issues={derived.projection.dataIssues} />
         <Metrics
           count={groups.length}
           below={belowMin}
@@ -278,10 +278,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     (left, right) =>
       severity[right.purchaseStatus] - severity[left.purchaseStatus],
   );
-  const amount = rows.reduce(
-    (sum, line) => sum + (line.purchaseAmount ?? 0),
-    0,
-  );
+  const amount = moneySum(rows.map((line) => line.purchaseAmount ?? 0));
   const missing = rows.filter(
     (line) => line.purchaseQty > 0 && line.purchaseAmount == null,
   ).length;
@@ -427,6 +424,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       title={branch}
       subtitle="Потребность подразделения до MAX. Критичные позиции автоматически подняты выше."
     >
+      <PurchasingDataAlert issues={derived.projection.dataIssues} />
       <Metrics
         count={rows.length}
         below={belowMin}
@@ -510,9 +508,8 @@ function buildNetworkGroups(
         (sum, line) => sum + line.purchaseQty,
         0,
       ),
-      totalDemandAmount: positiveLines.reduce(
-        (sum, line) => sum + (line.purchaseAmount ?? 0),
-        0,
+      totalDemandAmount: moneySum(
+        positiveLines.map((line) => line.purchaseAmount ?? 0),
       ),
       missingPriceCount: positiveLines.filter(
         (line) => line.purchaseAmount == null,
@@ -568,11 +565,13 @@ function filterBranchLines(
   const query = filters.query.trim().toLocaleLowerCase('ru-RU');
   const diagnosticStatus = getDiagnosticNormStatus(filters.status);
   return lines.filter((line) => {
-    if (!(
-      line.purchaseQty > 0 ||
-      (showCovered && line.acceptedTransferIds.length > 0) ||
-      (diagnosticStatus !== null && line.purchaseStatus === diagnosticStatus)
-    ))
+    if (
+      !(
+        line.purchaseQty > 0 ||
+        (showCovered && line.acceptedTransferIds.length > 0) ||
+        (diagnosticStatus !== null && line.purchaseStatus === diagnosticStatus)
+      )
+    )
       return false;
     if (
       query &&

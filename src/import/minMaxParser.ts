@@ -44,6 +44,7 @@ export function parseMinMaxWorkbook(
     const data: MinMaxDataset = { skus: [], branchStocks: [], branches: [] };
     const issues: ValidationIssue[] = [];
     const seenSkuBranch = new Set<string>();
+    const seenSku = new Set<string>();
     // Resolve identities before reading blocks: a malformed row can precede
     // the only valid occurrence of its branch, or be known only by a saved alias.
     const knownBranches = new Set(savedBranchNames.map(normalizeKey));
@@ -51,7 +52,7 @@ export function parseMinMaxWorkbook(
       if (isBranchRow(row, header.columns))
         knownBranches.add(normalizeKey(row[header.columns.name]));
 
-    for (let index = header.rowIndex + 1; index < rows.length;) {
+    for (let index = header.rowIndex + 1; index < rows.length; ) {
       const parentRow = rows[index]!;
       const code = normalizeText(parentRow[header.columns.code]);
       if (!code) {
@@ -120,7 +121,28 @@ export function parseMinMaxWorkbook(
               ? parseOptionalNumber(parentRow[header.columns.price])
               : null,
         };
+        if (seenSku.has(code)) {
+          issues.push({
+            severity: 'ERROR',
+            code: 'DUPLICATE_SKU',
+            skuCode: code,
+            row: index + 1,
+            message: `Повторный товарный блок с кодом ${code}. Исправьте дубли в отчёте MIN/MAX.`,
+          });
+        }
+        seenSku.add(code);
         data.skus.push(sku);
+
+        if (sku.referencePrice !== null && sku.referencePrice < 0) {
+          issues.push({
+            severity: 'WARNING',
+            code: 'INVALID_REFERENCE_PRICE',
+            skuCode: code,
+            row: index + 1,
+            message: `Некорректная цена MIN/MAX: ${code}. Цена должна быть неотрицательной.`,
+          });
+          sku.referencePrice = null;
+        }
 
         if (sku.referencePrice == null) {
           issues.push({

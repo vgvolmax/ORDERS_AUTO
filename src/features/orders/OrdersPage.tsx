@@ -1,3 +1,4 @@
+import { moneySum } from '../../domain/money';
 import { useMemo, useState } from 'react';
 import { orderToCsv } from '../../export/csv';
 import { useStore } from '../../app/appStore';
@@ -5,6 +6,7 @@ import { derive, type WorkflowOrder } from '../../app/selectors';
 import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
 import { QuantitySummary } from '../../components/QuantitySummary';
+import { PurchasingDataAlert } from '../../components/PurchasingDataAlert';
 import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import {
@@ -316,6 +318,7 @@ export function OrdersPage() {
           </Button>
         </div>
       </header>
+      <PurchasingDataAlert issues={derived.projection.dataIssues} />
       {exportError && <Alert tone="danger">{exportError}</Alert>}
 
       <ThresholdControls
@@ -613,7 +616,8 @@ export function OrdersPage() {
           branchOrder={branches}
           widthPreferences={
             state.uiPreferences.supplierMatrixWidths as
-              Record<string, number> | undefined
+              | Record<string, number>
+              | undefined
           }
           onWidthsChange={(supplierMatrixWidths) =>
             set((s) => ({
@@ -647,7 +651,7 @@ function summarizeOrders(orders: WorkflowOrder[]) {
     qty: positiveLines.reduce((sum, line) => sum + line.orderQty, 0),
     amount: missing
       ? null
-      : positiveLines.reduce((sum, line) => sum + (line.amount ?? 0), 0),
+      : moneySum(positiveLines.map((line) => line.amount ?? 0)),
   };
 }
 

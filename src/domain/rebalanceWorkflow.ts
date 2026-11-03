@@ -67,6 +67,7 @@ export function buildAcceptedTransferStatePatch(
     input.resolutions,
     edits,
     input.settings,
+    input.previousProjection.dataIssues,
   );
   const beforeById = new Map(
       input.previousProjection.orders.map((o) => [o.id, o]),

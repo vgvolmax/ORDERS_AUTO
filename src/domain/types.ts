@@ -167,6 +167,8 @@ export interface UnassignedDemand {
 export interface OrderProjection {
   orders: Order[];
   unassigned: UnassignedDemand[];
+  /** Source problems include rows for which no physical demand can be calculated. */
+  dataIssues?: ValidationIssue[];
 }
 
 export type ValidationIssueCode =
@@ -174,7 +176,10 @@ export type ValidationIssueCode =
   | 'NO_SKU_BLOCKS'
   | 'NO_BRANCHES'
   | 'DUPLICATE_SKU_BRANCH'
+  | 'DUPLICATE_SKU'
   | 'INVALID_BRANCH_VALUES'
+  | 'INVALID_REFERENCE_PRICE'
+  | 'INCOMPLETE_SUPPLIER_PRICE'
   | 'INVALID_NORM'
   | 'TOTAL_STOCK_MISMATCH'
   | 'MISSING_REFERENCE_PRICE'

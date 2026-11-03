@@ -1,11 +1,12 @@
 import ExcelJS from 'exceljs';
 import type { Order, OrderLine } from '../domain/types';
 import { uniqueSheetName } from './filenames';
+import { moneySum } from '../domain/money';
 
 interface AggregatedLine {
   sample: OrderLine;
   qty: number;
-  amount: number;
+  amounts: number[];
 }
 
 export async function buildSupplierWorkbook(
@@ -25,10 +26,7 @@ export async function buildSupplierWorkbook(
   const skuCount = new Set(positiveLines.map((line) => line.skuCode)).size;
   const branchCount = new Set(supplierOrders.map((order) => order.branch)).size;
   const totalQty = positiveLines.reduce((sum, line) => sum + line.orderQty, 0);
-  const totalAmount = positiveLines.reduce(
-    (sum, line) => sum + (line.amount ?? 0),
-    0,
-  );
+  const totalAmount = moneySum(positiveLines.map((line) => line.amount ?? 0));
 
   dashboard.addRows([
     ['Поставщик', supplier],
@@ -37,7 +35,15 @@ export async function buildSupplierWorkbook(
     ['Подразделений', branchCount],
     ['Общее количество', totalQty],
     [],
-    ['Код', 'Артикул', 'Номенклатура', 'Всего количество', 'Ед.', 'Цена', 'Сумма'],
+    [
+      'Код',
+      'Артикул',
+      'Номенклатура',
+      'Всего количество',
+      'Ед.',
+      'Цена',
+      'Сумма',
+    ],
   ]);
 
   const aggregated = new Map<string, AggregatedLine>();
@@ -45,17 +51,17 @@ export async function buildSupplierWorkbook(
     const current = aggregated.get(line.skuCode);
     if (current) {
       current.qty += line.orderQty;
-      current.amount += line.amount ?? 0;
+      current.amounts.push(line.amount ?? 0);
     } else {
       aggregated.set(line.skuCode, {
         sample: line,
         qty: line.orderQty,
-        amount: line.amount ?? 0,
+        amounts: [line.amount ?? 0],
       });
     }
   }
 
-  for (const { sample, qty, amount } of aggregated.values()) {
+  for (const { sample, qty, amounts } of aggregated.values()) {
     dashboard.addRow([
       sample.skuCode,
       sample.article,
@@ -63,7 +69,7 @@ export async function buildSupplierWorkbook(
       qty,
       sample.unit,
       sample.unitPrice,
-      amount,
+      moneySum(amounts),
     ]);
   }
   styleSheet(dashboard, 7);

@@ -10,6 +10,8 @@ import type {
   ValidationIssue,
 } from '../domain/types';
 import { readFirstSheetRows } from './workbook';
+import { moneySum } from '../domain/money';
+import { sumQuantities } from '../domain/rebalancing/numbers';
 
 const aliases = {
   supplier: ['контрагент', 'поставщик'],
@@ -38,6 +40,9 @@ interface SupplierHeader {
 
 interface AggregatedHistory extends SupplierHistory {
   normalizedUnits: Set<string>;
+  incompletePrice: boolean;
+  quantities: number[];
+  amounts: number[];
 }
 
 export function parseSupplierWorkbook(
@@ -140,6 +145,16 @@ export function parseSupplierWorkbook(
     }
 
     const history = [...aggregated.values()].map((item): SupplierHistory => {
+      item.purchaseQty = sumQuantities(item.quantities);
+      item.purchaseAmount = moneySum(item.amounts);
+      if (item.incompletePrice) {
+        issues.push({
+          severity: 'WARNING',
+          code: 'INCOMPLETE_SUPPLIER_PRICE',
+          skuCode: item.skuCode,
+          message: `Неполные количество или стоимость закупок: ${item.supplier} / ${item.skuCode}. Цена истории неизвестна.`,
+        });
+      }
       if (item.normalizedUnits.size > 1) {
         issues.push({
           severity: 'WARNING',
@@ -151,7 +166,9 @@ export function parseSupplierWorkbook(
       }
 
       const weightedUnitCost =
-        item.purchaseQty > 0 && item.purchaseAmount >= 0
+        !item.incompletePrice &&
+        item.purchaseQty > 0 &&
+        item.purchaseAmount >= 0
           ? item.purchaseAmount / item.purchaseQty
           : null;
 
@@ -200,15 +217,17 @@ export function parseSupplierWorkbook(
     return {
       data: {
         history,
-        suppliers: [...new Set(history.map((item) => item.supplier))].sort((a, b) =>
-          a.localeCompare(b, 'ru'),
+        suppliers: [...new Set(history.map((item) => item.supplier))].sort(
+          (a, b) => a.localeCompare(b, 'ru'),
         ),
       },
       issues,
       fatal: false,
     };
   } catch {
-    return fatal('Не удалось прочитать отчёт поставщиков. Поддерживаются XLS и XLSX.');
+    return fatal(
+      'Не удалось прочитать отчёт поставщиков. Поддерживаются XLS и XLSX.',
+    );
   }
 }
 
@@ -238,10 +257,6 @@ function addHistoryRow({
       ? parseOptionalNumber(row[header.columns.amount])
       : null;
 
-  if (quantity == null && amount == null) {
-    return;
-  }
-
   const key = `${supplier}\0${skuCode}`;
   const item = aggregated.get(key) ?? {
     supplier,
@@ -252,10 +267,14 @@ function addHistoryRow({
     purchaseAmount: 0,
     weightedUnitCost: null,
     normalizedUnits: new Set<string>(),
+    incompletePrice: false,
+    quantities: [],
+    amounts: [],
   };
 
-  item.purchaseQty += quantity ?? 0;
-  item.purchaseAmount += amount ?? 0;
+  item.incompletePrice ||= quantity === null || amount === null;
+  if (quantity !== null) item.quantities.push(quantity);
+  if (amount !== null) item.amounts.push(amount);
   if (unit) {
     item.normalizedUnits.add(normalizeKey(unit));
     if (!item.unit) {
@@ -328,7 +347,9 @@ function findHeader(rows: unknown[][]): SupplierHeader | null {
 
 function columnsFromRow(normalized: string[]): SupplierColumns {
   const findAlias = (names: string[]) =>
-    normalized.findIndex((cell) => names.some((name) => cell === name || cell.startsWith(name)));
+    normalized.findIndex((cell) =>
+      names.some((name) => cell === name || cell.startsWith(name)),
+    );
 
   return {
     supplier: findAlias(aliases.supplier),
@@ -340,7 +361,10 @@ function columnsFromRow(normalized: string[]): SupplierColumns {
   };
 }
 
-function splitCombinedNameAndUnit(value: string): { name: string; unit: string } {
+function splitCombinedNameAndUnit(value: string): {
+  name: string;
+  unit: string;
+} {
   const separator = value.lastIndexOf(',');
   if (separator < 0) {
     return { name: value.trim(), unit: '' };

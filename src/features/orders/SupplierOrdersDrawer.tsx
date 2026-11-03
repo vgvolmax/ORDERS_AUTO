@@ -1,3 +1,4 @@
+import { moneySum } from '../../domain/money';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalLayer } from '../../components/Dialog';
@@ -519,10 +520,7 @@ export function buildMatrixModel(
         totalQty: cells.reduce((sum, cell) => sum + cell.line.orderQty, 0),
         totalAmount: hasMissingAmount
           ? null
-          : positiveCells.reduce(
-              (sum, cell) => sum + (cell.line.amount ?? 0),
-              0,
-            ),
+          : moneySum(positiveCells.map((cell) => cell.line.amount ?? 0)),
       };
     })
     .sort(
@@ -668,7 +666,7 @@ function completeOrderTotal(orders: WorkflowOrder[]): number | null {
   if (orders.some((order) => order.totalAmount == null)) {
     return null;
   }
-  return orders.reduce((sum, order) => sum + (order.totalAmount ?? 0), 0);
+  return moneySum(orders.map((order) => order.totalAmount ?? 0));
 }
 
 function hasHardBlocker(order: WorkflowOrder): boolean {

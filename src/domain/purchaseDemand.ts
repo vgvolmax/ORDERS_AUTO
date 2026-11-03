@@ -1,5 +1,6 @@
 import { calculateStockStatus } from './demand';
 import { normalizeKey } from './normalize';
+import { moneyProduct, moneySum } from './money';
 import type { PricedDemandLine, PurchaseDemandContext } from './types';
 import { acceptedTotals } from './rebalancing/constraints';
 import { subtractQuantity, sumQuantities } from './rebalancing/numbers';
@@ -108,7 +109,9 @@ export function buildPurchaseDemand(
       projectedStock,
       purchaseQty,
       purchaseAmount:
-        line.unitPrice === null ? null : purchaseQty * line.unitPrice,
+        line.unitPrice === null
+          ? null
+          : moneyProduct(purchaseQty, line.unitPrice),
       purchaseStatus: calculation.status,
       purchaseDeficitPct: calculation.deficitPct,
       acceptedTransferIds: [...(transferIdsByKey.get(key) ?? [])].sort(),
@@ -139,7 +142,7 @@ export function buildPurchaseDemand(
     return {
       ...line,
       networkPurchaseQty: sumQuantities(network.quantities),
-      networkPurchaseAmount: sumQuantities(network.amounts),
+      networkPurchaseAmount: moneySum(network.amounts),
       networkPurchaseMissingPriceCount: network.missing,
     };
   });
