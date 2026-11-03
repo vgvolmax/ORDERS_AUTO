@@ -31,6 +31,14 @@ it('shows effective need and status, with baseline and accepted movement in a co
   const row = screen.getAllByRole('row')[1]!;
   expect(row).toHaveTextContent('35');
   expect(row).not.toHaveTextContent('Ниже MIN');
+  const indicator = within(row).getByRole('button', {
+    name: /Учтённые перемещения/,
+  });
+  expect(indicator).toHaveTextContent('Перемещения(1)');
+  expect(indicator).toHaveAttribute(
+    'title',
+    'Потребность с учётом принятых перемещений: 1',
+  );
   fireEvent.click(
     within(row).getByRole('button', { name: /Учтённые перемещения/ }),
   );

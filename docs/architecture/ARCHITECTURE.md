@@ -213,3 +213,8 @@ UI ownership и миграция существующих controls описан�
 ### Реестр принятых и стабильная шапка ·03.11.2026
 
 AcceptedTransfersView — read-only UI, acceptedTransfersViewModel переиспользует существующую projection и фильтрует документы целиком. transferCsv.ts разделяет сериализатор одиночной/массовой выгрузки, download.ts владеет Blob/именами и скачиванием. Новых доменных правил, storage layer или зависимостей нет. Общие компактные стили шапки принадлежат .rebalancing-page; отдельная accepted viewport-компоновка ограничивает только реестр и не клиппирует Conditions.
+
+
+### Массовая отмена принятия ·03.11.2026
+
+TransferDrawer является общим владельцем состава из результатов и реестра принятых. Optional bulk revoke callbacks маршрутизируют temporary accepted selection в существующий RebalancingPage confirmation/commit. Дублирующий composition Dialog реестра заменён этим владельцем. Исчезновение последнего принятого направления сохраняет пустую оболочку drawer до закрытия подтверждения; вложенные useModalLayer продолжают соблюдать inert/focus. Нового undo-движка и копии доменной логики нет.

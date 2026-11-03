@@ -1,7 +1,6 @@
+import { TransferDrawer } from './TransferDrawer';
 import { useEffect, useMemo, useState } from 'react';
 import { VirtualTable, type TableSort } from '../../components/VirtualTable';
-import { Dialog } from '../../components/Dialog';
-import { productColumns } from '../../components/productColumns';
 import {
   Alert,
   Button,
@@ -9,12 +8,11 @@ import {
   SearchInput,
   Select,
 } from '../../components/ui';
-import { fmtQty, money } from '../../format/numbers';
+import { money } from '../../format/numbers';
 import type { AcceptedTransferFilters } from '../../domain/workspace';
 import {
   summarizeTransferDocuments,
   type TransferDocument,
-  type TransferDocumentLine,
 } from './transferDocuments';
 import {
   emptyAcceptedFilters,
@@ -26,14 +24,24 @@ export function AcceptedTransfersView({
   filters,
   onFilters,
   onExport,
+  onRevoke,
+  busy = false,
+  saving = false,
+  error = '',
 }: {
   documents: TransferDocument[];
   filters: AcceptedTransferFilters;
   onFilters: (filters: AcceptedTransferFilters) => void | Promise<void>;
   onExport: (ids: string[]) => void;
+  onRevoke?: ((ids: string[]) => void) | undefined;
+  busy?: boolean;
+  saving?: boolean;
+  error?: string;
 }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [openedId, setOpenedId] = useState<string | null>(null);
+  const [openedDocument, setOpenedDocument] = useState<TransferDocument | null>(
+    null,
+  );
   const [sort, setSort] = useState<TableSort | null>(null);
   const [exportError, setExportError] = useState('');
   function exportCsv(ids: string[]) {
@@ -67,7 +75,24 @@ export function AcceptedTransfersView({
   const activeFilters = Boolean(
     filters.query || filters.fromBranchId || filters.toBranchId,
   );
-  const opened = openedId ? byId.get(openedId) : null;
+  const opened =
+    openedDocument &&
+    (byId.get(openedDocument.id) ?? {
+      ...openedDocument,
+      lines: [],
+      skuCount: 0,
+      totalAmount: 0,
+      totalsByUnit: [],
+    });
+  const revokeIds = [
+    ...new Set(
+      documents
+        .filter((d) => selectedSet.has(d.id))
+        .flatMap((d) =>
+          d.lines.flatMap((l) => (l.transferId ? [l.transferId] : [])),
+        ),
+    ),
+  ];
   function options(side: 'from' | 'to') {
     return [
       ...new Map(
@@ -192,10 +217,22 @@ export function AcceptedTransfersView({
         <Button disabled={!selected.length} onClick={() => exportCsv(selected)}>
           CSV выбранных ({selected.length})
         </Button>
+        {onRevoke && (
+          <Button
+            className="secondary"
+            disabled={busy || !revokeIds.length}
+            aria-label={`Отменить принятие выбранных направлений (${selected.length})`}
+            onClick={() => onRevoke(revokeIds)}
+          >
+            Отменить принятие ({selected.length} напр.)
+          </Button>
+        )}
       </div>
       <p className="accepted-export-help">
         Поиск отбирает направления. CSV содержит все принятые товары выбранных
         направлений, включая скрытые поиском.
+        {onRevoke &&
+          ' Отмена направлений также охватывает весь отмеченный набор; состав и изменение закупки показаны перед подтверждением.'}
       </p>
       {exportError && !opened && <Alert tone="danger">{exportError}</Alert>}
       {!documents.length ? (
@@ -265,7 +302,7 @@ export function AcceptedTransfersView({
                   <button
                     className="link"
                     aria-label={`Состав ${d.fromName} → ${d.toName}`}
-                    onClick={() => setOpenedId(d.id)}
+                    onClick={() => setOpenedDocument(d)}
                   >
                     {d.skuCount} SKU
                   </button>
@@ -290,53 +327,23 @@ export function AcceptedTransfersView({
         </div>
       )}
       {opened && (
-        <Dialog
-          title={`Принято: ${opened.fromName} → ${opened.toName}`}
-          onClose={() => setOpenedId(null)}
-          actions={
-            <>
-              <Button className="secondary" onClick={() => setOpenedId(null)}>
-                Закрыть
-              </Button>
-              <Button onClick={() => exportCsv([opened.id])}>
-                Скачать CSV направления
-              </Button>
-            </>
-          }
-        >
-          {exportError && <Alert tone="danger">{exportError}</Alert>}
-          <p>
-            {opened.skuCount} SKU ·{' '}
-            {opened.totalAmount === null
-              ? 'Сумма неизвестна'
-              : money(opened.totalAmount)}
-          </p>
-          <VirtualTable
-            rows={opened.lines}
-            getRowKey={(l) => l.id}
-            maxHeight="min(50dvh, 480px)"
-            columns={[
-              ...productColumns<TransferDocumentLine>((l) => ({
-                code: l.skuCode,
-                article: l.article,
-                name: l.name,
-              })),
-              {
-                key: 'qty',
-                header: 'Принято',
-                width: '110px',
-                render: (l) => `${fmtQty(l.qty)} ${l.unit ?? ''}`,
-              },
-              {
-                key: 'amount',
-                header: 'Сумма',
-                width: '140px',
-                render: (l) =>
-                  l.amount === null ? 'Сумма неизвестна' : money(l.amount),
-              },
-            ]}
-          />
-        </Dialog>
+        <TransferDrawer
+          document={opened}
+          ariaLabel={`Принято: ${opened.fromName} → ${opened.toName}`}
+          selected={[]}
+          onSelection={() => undefined}
+          onReject={() => undefined}
+          onRevoke={onRevoke ? (id) => onRevoke([id]) : undefined}
+          onRevokeMany={onRevoke}
+          onAccept={() => undefined}
+          onExport={() => exportCsv([opened.id])}
+          exportCount={opened.lines.length}
+          onClose={() => setOpenedDocument(null)}
+          stale={false}
+          busy={busy}
+          saving={saving}
+          error={error || exportError}
+        />
       )}
     </section>
   );
