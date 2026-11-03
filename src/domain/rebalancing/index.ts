@@ -8,6 +8,7 @@ export {
 export { buildRouteIndex } from './routes';
 export { calculateRebalance, ALGORITHM_VERSION } from './calculate';
 export { acceptedEconomicDiagnostics } from './economics';
+export { getTransferAmountFilter } from './transferAmounts';
 export {
   buildMovementSummary,
   type MovementScope,

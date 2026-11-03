@@ -155,6 +155,10 @@ export async function buildRebalancingWorkbook(
     'Подразделение',
     'Строка отчёта',
     'Сообщение',
+    'Отправитель',
+    'Получатель',
+    'Сумма, ₽',
+    'Порог, ₽',
   ]);
   const unique = new Map(
     [
@@ -172,6 +176,10 @@ export async function buildRebalancingWorkbook(
       i.branchId ? (branches.get(i.branchId) ?? i.branchId) : null,
       i.sourceRow,
       i.message,
+      i.fromBranchId ? (branches.get(i.fromBranchId) ?? i.fromBranchId) : null,
+      i.toBranchId ? (branches.get(i.toBranchId) ?? i.toBranchId) : null,
+      i.amount ?? null,
+      i.threshold ?? null,
     ]);
   const skippedSheet = sheet('Не распределено', [
     'Код',
@@ -227,7 +235,7 @@ export async function buildRebalancingWorkbook(
     ['Версия алгоритма', proposal?.algorithmVersion ?? null],
     [
       'Правило распределения',
-      'Только полное покрытие артикула по всей сети; ручные приоритеты отсутствуют',
+      'Полное покрытие SKU по запасам и маршрутам, затем минимальная сумма одного SKU от одного донора одному получателю. Строки ниже порога исключаются, остальные сохраняются; остаток до MAX остаётся в закупке после принятия.',
     ],
     ['Участие подразделений', proposal?.participationFingerprint ?? null],
     ['Исходная ревизия принятых', proposal?.baseAcceptedRevision ?? null],

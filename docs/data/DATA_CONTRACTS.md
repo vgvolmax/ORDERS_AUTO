@@ -1,3 +1,5 @@
+> **Окончательное уточнение03.11.2026: один денежный фильтр SKU×донор×получатель.** Последний раздел заменяет трактовку SKU×получатель; после денежного постфильтра разрешено частичное покрытие доMAX.
+
 > **Правила29.10.2026 имеют приоритет:** полное покрытие SKU и маршруты по согласованной `2026-10-29-routes-full-coverage-design.md`. Частичное распределение и ручные приоритеты23–28.10 ниже — исторические и заменены уточнением в конце документа.
 
 > **Rebalancing20.10.2026:** для изменённой функции действуют уточнения в конце этого документа и `docs/superpowers/specs/2026-10-20-rebalancing-order-integration-design.md`; исторические правила03.09 в конфликтующей части заменены. PR1 реализует только домен, остальная интеграция — PR2.
@@ -262,3 +264,8 @@ ValidationIssueCode дополнен DUPLICATE_SKU (ERROR), INVALID_REFERENCE_PR
 ### Порог SKU×получатель ·03.11.2026
 
 Структура skuAmountFilter.enabled/threshold и схема workspace/IndexedDB сохраняются. RebalanceIssue кода SKU_AMOUNT_FILTER содержит branchId, sourceRow, quantity, amount и threshold для исключённого получателя. ACCEPTED_SKU_AMOUNT_BELOW_THRESHOLD/UNKNOWN также содержит branchId; группировка run×SKU×recipient×savedConfig. algorithmVersion нового плана — full-sku-recipient-amount-v4. Числовое равенство суммы порогу допустимо.
+
+
+### Минимальная сумма SKU в перемещении ·03.11.2026
+
+RebalanceConfig.transferAmountFilter?:MoneyFilter — явный минимум SKU×донор×получатель; skuAmountFilter/unitPriceFilter сохраняются как legacy-поля для чтения замороженных условий. Для текущего порога при отсутствии transferAmountFilter берутся enabled/threshold skuAmountFilter; unitPriceFilter игнорируется при новых расчётах/принятии. Новые acceptedConfig всегда содержат transferAmountFilter. Исторические acceptedConfig без него не изменяются и сохраняют прежние SKU×получатель diagnostics. Fingerprint старой структуры сохраняет прежний формат; при новом поле включает его enabled/threshold. algorithmVersion=full-sku-route-sku-amount-v5; старые планы требуют пересчёта, accepted/no-op/revoke доступны. Workspace/IndexedDB schema не меняется. RebalanceIssue получает optional fromBranchId/toBranchId; TRANSFER_AMOUNT_FILTER/UNKNOWN и ACCEPTED_TRANSFER_AMOUNT_BELOW_THRESHOLD/UNKNOWN содержат skuCode, направленную пару, amount и threshold.

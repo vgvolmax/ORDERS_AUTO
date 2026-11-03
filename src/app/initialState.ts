@@ -42,6 +42,7 @@ export function createInitialState(patch: Partial<AppState> = {}): AppState {
         routeConfig: { mode: 'ALL_ALLOWED', pairs: [] },
         unitPriceFilter: { enabled: false, threshold: 1000 },
         skuAmountFilter: { enabled: false, threshold: 10000 },
+        transferAmountFilter: { enabled: false, threshold: 10000 },
       },
     },
     ...patch,

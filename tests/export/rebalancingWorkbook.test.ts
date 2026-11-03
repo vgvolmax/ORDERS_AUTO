@@ -9,6 +9,46 @@ import {
 } from '../../src/app/rebalanceActions';
 import { derive } from '../../src/app/selectors';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
+
+it('exports excluded document direction, amount and threshold alongside retained partial coverage', async () => {
+  const s = rebalanceAppState();
+  s.minMax!.skus[0]!.referencePrice = 1000;
+  s.minMax!.branchStocks.forEach((r, i) => {
+    r.stock = [68, 62, 50][i]!;
+    if (i === 2) r.min = 60;
+  });
+  s.rebalance.config.transferAmountFilter = { enabled: true, threshold: 5000 };
+  s.rebalance.proposal = createProposal(s);
+  const d = derive(s),
+    wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(
+    await buildRebalancingWorkbook({
+      snapshot: d.snapshot!.snapshot,
+      config: s.rebalance.config,
+      proposal: s.rebalance.proposal,
+      accepted: [],
+      purchaseDemand: d.purchaseDemand,
+      issues: [],
+      workspaceId: s.workspaceId,
+      exportedAt: '2026-11-03T09:00:00Z',
+    }),
+  );
+  expect(wb.getWorksheet('Предложения')!.rowCount).toBe(2);
+  expect(wb.getWorksheet('Предложения')!.getCell('D2').value).toBe(8);
+  expect(wb.getWorksheet('Исключения')!.getRow(2).values).toEqual([
+    undefined,
+    'TRANSFER_AMOUNT_FILTER',
+    'WARNING',
+    'SKU1',
+    undefined,
+    undefined,
+    'Сумма SKU в перемещении ниже порога',
+    'Донор Б',
+    'Получатель',
+    2000,
+    5000,
+  ]);
+});
 function state() {
   let s = rebalanceAppState();
   s.rebalance.proposal = createProposal(s);

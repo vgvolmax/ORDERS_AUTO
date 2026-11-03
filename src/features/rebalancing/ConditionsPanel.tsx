@@ -1,3 +1,4 @@
+import { getTransferAmountFilter } from '../../domain/rebalancing';
 import { Input, Select } from '../../components/ui';
 import { QuantityInput } from '../../components/QuantityInput';
 import type { RebalanceConfig } from '../../domain/rebalancing';
@@ -9,14 +10,14 @@ export function ConditionsPanel({
   config: RebalanceConfig;
   onChange: (config: RebalanceConfig) => void | Promise<void>;
 }) {
+  const filter = getTransferAmountFilter(config);
   return (
     <>
       <section className="panel">
         <h2>Условия перемещений</h2>
         <p>
-          Денежные фильтры используют справочную цену MIN/MAX. Позиции с
-          неизвестной ценой попадут в исключения при включённых денежных
-          фильтрах.
+          Сумма перемещения SKU рассчитывается по справочной цене MIN/MAX. При
+          включённом фильтре позиции с неизвестной ценой попадут в исключения.
         </p>
         <div className="rebalance-fields">
           <label>
@@ -60,49 +61,47 @@ export function ConditionsPanel({
           становится источником для нового перемещения.
         </p>
         <div className="rebalance-fields">
-          {(['unitPriceFilter', 'skuAmountFilter'] as const).map((key) => (
-            <div key={key}>
-              <label className="checkbox-control">
-                <input
-                  type="checkbox"
-                  checked={config[key].enabled}
-                  onChange={(e) =>
-                    onChange({
-                      ...config,
-                      [key]: { ...config[key], enabled: e.target.checked },
-                    })
-                  }
-                />
-                {key === 'unitPriceFilter'
-                  ? 'Цена единицы строго выше порога'
-                  : 'Сумма SKU у одного получателя не ниже порога'}
-              </label>
-              <label>
-                Порог, ₽
-                <QuantityInput
-                  aria-label={
-                    key === 'unitPriceFilter' ? 'Порог цены' : 'Порог суммы SKU'
-                  }
-                  value={config[key].threshold}
-                  onCommit={(threshold) =>
-                    onChange({
-                      ...config,
-                      [key]: { ...config[key], threshold },
-                    })
-                  }
-                  saveErrorMessage="Порог не сохранён. Повторите ввод."
-                  invalidValueMessage="Введите неотрицательный порог."
-                />
-              </label>
-            </div>
-          ))}
+          <div>
+            <label className="checkbox-control">
+              <input
+                type="checkbox"
+                checked={filter.enabled}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    transferAmountFilter: {
+                      ...filter,
+                      enabled: e.target.checked,
+                    },
+                  })
+                }
+              />
+              Минимальная сумма SKU в перемещении
+            </label>
+            <label>
+              Порог, ₽
+              <QuantityInput
+                aria-label="Порог суммы SKU"
+                value={filter.threshold}
+                onCommit={(threshold) =>
+                  onChange({
+                    ...config,
+                    transferAmountFilter: { ...filter, threshold },
+                  })
+                }
+                saveErrorMessage="Порог не сохранён. Повторите ввод."
+                invalidValueMessage="Введите неотрицательный порог."
+              />
+            </label>
+          </div>
         </div>
         <p>
-          Порог суммы SKU применяется отдельно к потребности каждого
-          подразделения-получателя до выбранной цели, включая равенство порогу.
-          Входы от нескольких доноров одному получателю суммируются. Суммы
-          разных получателей не складываются; при принятии выбранная сумма
-          также проверяется отдельно по каждому получателю.
+          Количество одного SKU × цена MIN/MAX проверяется отдельно для каждого
+          направления «донор → получатель». Сумма должна быть не ниже порога;
+          равенство допускается. Разные SKU, доноры и получатели не
+          складываются. Строки ниже порога исключаются, остальные сохраняются.
+          После принятия недостающий до MAX остаток остаётся в потребности на
+          закупку.
         </p>
       </section>
     </>

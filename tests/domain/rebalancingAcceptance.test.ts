@@ -130,10 +130,10 @@ describe('rebalancing business acceptance', () => {
     s.skus[0]!.referencePrice = null;
     expect(qty(s, config({ receiverPct: 25 }))).toBe(20);
     expect(
-      qty(s, config({ unitPriceFilter: { enabled: true, threshold: 0 } })),
+      qty(s, config({ transferAmountFilter: { enabled: true, threshold: 0 } })),
     ).toBe(0);
   });
-  it('filters the SKU separately for each recipient and accepts an equal sum threshold', () => {
+  it('filters separate directed documents and accepts an equal sum threshold', () => {
     const s = snapshot();
     s.stocks[0]!.stock = 71;
     s.branches.push({ id: 'R2', name: 'R2', active: true, aliases: [] });
@@ -150,20 +150,21 @@ describe('rebalancing business acceptance', () => {
       unitPriceFilter: { enabled: true, threshold: 1000 },
       skuAmountFilter: { enabled: true, threshold: 10000 },
     });
-    // The former network-total rule admitted7200+6000. Neither recipient
-    // individually meets the user-specified10000 minimum.
+    // The two separate documents must not subsidize each other.
     const filtered = calculateRebalance(s, c, []);
     expect(filtered.transfers).toEqual([]);
     expect(filtered.exclusions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'SKU_AMOUNT_FILTER',
-          branchId: 'R',
+          code: 'TRANSFER_AMOUNT_FILTER',
+          fromBranchId: 'D',
+          toBranchId: 'R',
           amount: 7200,
         }),
         expect.objectContaining({
-          code: 'SKU_AMOUNT_FILTER',
-          branchId: 'R2',
+          code: 'TRANSFER_AMOUNT_FILTER',
+          fromBranchId: 'D',
+          toBranchId: 'R2',
           amount: 6000,
         }),
       ]),
@@ -174,7 +175,7 @@ describe('rebalancing business acceptance', () => {
     expect(small.transfers).toEqual([]);
     expect(small.balances.find((b) => b.branchId === 'D')!.stockAfter).toBe(66);
     expect(small.exclusions).toContainEqual(
-      expect.objectContaining({ code: 'SKU_AMOUNT_FILTER', amount: 7200 }),
+      expect.objectContaining({ code: 'TRANSFER_AMOUNT_FILTER', amount: 7200 }),
     );
     expect(
       qty(
@@ -184,7 +185,7 @@ describe('rebalancing business acceptance', () => {
           unitPriceFilter: { enabled: true, threshold: 1200 },
         }),
       ),
-    ).toBe(0);
+    ).toBe(20); // Removed unit-price filter never blocks a new transfer.
     expect(
       qty(
         snapshot(),
@@ -195,10 +196,13 @@ describe('rebalancing business acceptance', () => {
       ),
     ).toBe(20); // Exactly24000 at this single recipient qualifies.
   });
-  it('keeps unmet needs visible when a pre-allocation price filter excludes the SKU', () => {
+  it('keeps unmet needs visible when price is unknown for the active amount filter', () => {
+    const s = snapshot();
+    s.stocks[0]!.stock = 200;
+    s.skus[0]!.referencePrice = null;
     const result = calculateRebalance(
-      snapshot(),
-      config({ unitPriceFilter: { enabled: true, threshold: 1200 } }),
+      s,
+      config({ transferAmountFilter: { enabled: true, threshold: 1200 } }),
       [],
     );
     expect(result.transfers).toEqual([]);

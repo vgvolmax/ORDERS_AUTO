@@ -5,11 +5,38 @@ import { StoreContext, type StatePatch } from '../../src/app/appStore';
 import { createWorkspaceSession } from '../../src/app/workspaceSession';
 import { RebalancingPage } from '../../src/features/rebalancing/RebalancingPage';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
+import { ConditionsPanel } from '../../src/features/rebalancing/ConditionsPanel';
 
-it.each([
-  ['unitPriceFilter', 'Порог цены', 1000],
-  ['skuAmountFilter', 'Порог суммы SKU', 10000],
-] as const)(
+it('reads legacy enabled/value and writes the explicit SKU-route filter without mutating legacy conditions', () => {
+  const state = rebalanceAppState();
+  delete state.rebalance.config.transferAmountFilter;
+  state.rebalance.config.skuAmountFilter = { enabled: true, threshold: 5000 };
+  const before = structuredClone(state.rebalance.config);
+  let changed = before;
+  render(
+    <ConditionsPanel
+      config={state.rebalance.config}
+      onChange={(next) => {
+        changed = next;
+      }}
+    />,
+  );
+  expect(
+    screen.getByLabelText('Минимальная сумма SKU в перемещении'),
+  ).toBeChecked();
+  expect(screen.queryByLabelText('Порог цены')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+  expect(screen.getByLabelText('Порог суммы SKU')).toHaveValue(5000);
+  fireEvent.click(screen.getByLabelText('Минимальная сумма SKU в перемещении'));
+  expect(changed.transferAmountFilter).toEqual({
+    enabled: false,
+    threshold: 5000,
+  });
+  expect(state.rebalance.config).toEqual(before);
+  expect(changed.skuAmountFilter).toEqual(before.skuAmountFilter);
+});
+
+it.each([['transferAmountFilter', 'Порог суммы SKU', 10000]] as const)(
   'rolls back the visible %s threshold after a failed write and supports retry',
   async (key, label, original) => {
     const initial = rebalanceAppState();
@@ -50,13 +77,13 @@ it.each([
     fireEvent.change(input, { target: { value: '5000' } });
     fireEvent.blur(input);
     await waitFor(() => expect(input).toHaveValue(original));
-    expect(session.getState().rebalance.config[key].threshold).toBe(original);
+    expect(session.getState().rebalance.config[key]!.threshold).toBe(original);
     expect(screen.getByRole('alert')).toHaveTextContent('Порог не сохранён');
     fail = false;
     fireEvent.change(input, { target: { value: '5000' } });
     fireEvent.blur(input);
     await waitFor(() =>
-      expect(session.getState().rebalance.config[key].threshold).toBe(5000),
+      expect(session.getState().rebalance.config[key]!.threshold).toBe(5000),
     );
     expect(input).toHaveValue(5000);
   },
@@ -95,7 +122,7 @@ it('keeps a pending threshold when another condition changes before the save fin
     );
   }
   render(<Harness />);
-  fireEvent.change(screen.getByLabelText('Порог цены'), {
+  fireEvent.change(screen.getByLabelText('Порог суммы SKU'), {
     target: { value: '5000' },
   });
   fireEvent.change(screen.getByLabelText('Получатель'), {
@@ -107,8 +134,8 @@ it('keeps a pending threshold when another condition changes before the save fin
       'BELOW_MAX',
     ),
   );
-  expect(session.getState().rebalance.config.unitPriceFilter.threshold).toBe(
-    5000,
-  );
-  expect(screen.getByLabelText('Порог цены')).toHaveValue(5000);
+  expect(
+    session.getState().rebalance.config.transferAmountFilter!.threshold,
+  ).toBe(5000);
+  expect(screen.getByLabelText('Порог суммы SKU')).toHaveValue(5000);
 });

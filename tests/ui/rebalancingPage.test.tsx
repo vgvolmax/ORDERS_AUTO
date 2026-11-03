@@ -4,20 +4,23 @@ import { expect, it, vi } from 'vitest';
 import { RebalancingPage } from '../../src/features/rebalancing/RebalancingPage';
 import { renderWithStore } from './renderWithStore';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
-it('identifies the excluded recipient instead of showing an unaddressed SKU amount warning', async () => {
+it('identifies both ends of an excluded transfer document', async () => {
   const { createProposal } = await import('../../src/app/rebalanceActions');
   const state = rebalanceAppState();
-  state.rebalance.config.skuAmountFilter = { enabled: true, threshold: 6000 }; // This receiver needs50×100=5000.
+  state.rebalance.config.transferAmountFilter = {
+    enabled: true,
+    threshold: 6000,
+  }; // This receiver needs50×100=5000.
   state.rebalance.proposal = createProposal(state);
   state.rebalance.tab = 'results';
   renderWithStore(<RebalancingPage />, state);
   fireEvent.click(screen.getByText(/Исключения и проверки данных/));
-  const reason = screen.getByText(
-    'Сумма SKU у подразделения-получателя ниже порога',
-  );
+  const reason = screen.getAllByText('Сумма SKU в перемещении ниже порога')[0]!;
   const row = reason.closest('[role="row"]')!;
   expect(
-    within(row as HTMLElement).getByText('Получатель', { exact: true }),
+    within(row as HTMLElement).getByText('Донор А → Получатель', {
+      exact: true,
+    }),
   ).toBeVisible();
 });
 it('offers recipient settings, automatic whole-unit quantities and mirrored direct routes without a donor slider', () => {
@@ -49,33 +52,30 @@ it('offers recipient settings, automatic whole-unit quantities and mirrored dire
   );
 });
 
-it('shows saved economic diagnostics immediately after a partial revocation', async () => {
-  const { createProposal, prepareAcceptedChange } = await import(
-    '../../src/app/rebalanceActions'
-  );
-  let state = rebalanceAppState();
-  state.rebalance.config.skuAmountFilter = { enabled: true, threshold: 1600 }; // Retained1500 is genuinely below the inclusive minimum.
-  state.rebalance.proposal = createProposal(state);
+it('shows saved per-SKU route diagnostics without summing a different SKU', () => {
+  const state = rebalanceAppState();
   state.rebalance.tab = 'results';
-  state = {
-    ...state,
-    ...prepareAcceptedChange(state, {
-      kind: 'accept',
-      ids: state.rebalance.proposal.transfers.map((t) => t.sourceLineId),
-      expectedRevision: 0,
-    }).patch,
-  };
-  state = {
-    ...state,
-    ...prepareAcceptedChange(state, {
-      kind: 'revoke',
-      ids: [state.rebalance.accepted[1]!.transferId],
-      expectedRevision: 1,
-    }).patch,
-  };
+  state.rebalance.accepted = [
+    {
+      transferId: 'retained',
+      sourceRunId: 'run',
+      sourceLineId: 'line',
+      skuCode: 'SKU1',
+      fromBranchId: 'b0',
+      toBranchId: 'b2',
+      qty: 10,
+      snapshotId: state.snapshotId,
+      acceptedAt: '2026-11-03T09:00:00Z',
+      acceptedConfig: {
+        ...state.rebalance.config,
+        transferAmountFilter: { enabled: true, threshold: 5000 },
+      },
+    },
+  ];
+  state.rebalance.acceptedRevision = 1;
   renderWithStore(<RebalancingPage />, state);
   expect(
-    screen.getByText(/Оставшаяся сумма принятых перемещений/),
+    screen.getByText(/Оставшаяся сумма SKU в принятом перемещении/),
   ).toBeInTheDocument();
 });
 

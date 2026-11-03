@@ -56,7 +56,7 @@ const messages: Record<string, string> = {
     'Условия или снимок изменились. Рассчитайте предложения заново. Принятые перемещения сохранены.',
   REVISION_CONFLICT: 'Решения изменились. Откройте подтверждение заново.',
   INVALID_TRANSFER_BATCH:
-    'Количество не сохранено: проверьте целое количество, потребность получателя и общий выход. Остаток донора должен оставаться не ниже MAX. При принятии также действует порог суммы SKU отдельно по каждому получателю.',
+    'Перемещения не приняты: проверьте количество и потребность получателя. Остаток донора должен оставаться не ниже MAX. Сумма каждого SKU от одного донора одному получателю должна быть не ниже порога; другие SKU и направления не складываются.',
 };
 export const rebalanceMessage = (e: unknown) =>
   e instanceof Error
@@ -663,18 +663,34 @@ export function RebalancingPage() {
                       })),
                       {
                         key: 'branch',
-                        header: 'Подразделение',
-                        width: '170px',
+                        header: 'Подразделение / направление',
+                        width: '230px',
                         render: (i) =>
-                          i.branchId
-                            ? (branchNames.get(i.branchId) ?? i.branchId)
-                            : '—',
+                          i.fromBranchId && i.toBranchId
+                            ? `${branchNames.get(i.fromBranchId) ?? i.fromBranchId} → ${branchNames.get(i.toBranchId) ?? i.toBranchId}`
+                            : i.branchId
+                              ? (branchNames.get(i.branchId) ?? i.branchId)
+                              : '—',
                       },
                       {
                         key: 'reason',
                         header: 'Проверка',
                         width: 'minmax(300px,2fr)',
-                        render: (i) => i.message,
+                        render: (i) => (
+                          <div>
+                            <span>{i.message}</span>
+                            {i.threshold !== undefined && (
+                              <small className="muted">
+                                {' · '}
+                                {i.amount == null
+                                  ? 'Сумма неизвестна'
+                                  : money(i.amount)}
+                                {' · Порог: '}
+                                {money(i.threshold)}
+                              </small>
+                            )}
+                          </div>
+                        ),
                       },
                     ]}
                   />
