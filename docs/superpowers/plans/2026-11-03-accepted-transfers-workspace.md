@@ -46,3 +46,6 @@ Interfaces: view consumes complete accepted docs/filter state, emits filter chan
 - [x] Add E2E19 with stable geometry, bounded scrolling, CSV individual/bulk and reload.
 - [x] Local typecheck/full tests401/build/strict audit; fresh review has no Critical/Important. Legacy restoration test added.
 - [ ] Publish PR and verify full Chrome CI.
+
+
+CI regression fix: E2E19 passed; E2E09 exposed drawer vw width exceeding the containing block with stable scrollbar gutter. Use containing-block percentage width in both drawer breakpoints. E2E11 exposed hidden dashboard navigation; move the skipped-list link into the compact value row. Existing assertions retained; rerun full Chrome suite.

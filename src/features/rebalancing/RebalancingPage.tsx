@@ -496,18 +496,14 @@ export function RebalancingPage() {
         <MetricCard
           label="Не распределено"
           value={
-            r.proposal?.algorithmVersion === ALGORITHM_VERSION ? (
-              <CoverageValue summary={coverage.skipped} />
-            ) : r.proposal ? (
-              'Нужен пересчёт'
-            ) : (
-              'Нет расчёта'
-            )
-          }
-          note={
             <>
-              {coverage.skipped.skuCount} SKU · вся пропущенная потребность
-              <br />
+              {r.proposal?.algorithmVersion === ALGORITHM_VERSION ? (
+                <CoverageValue summary={coverage.skipped} />
+              ) : r.proposal ? (
+                'Нужен пересчёт'
+              ) : (
+                'Нет расчёта'
+              )}
               <button
                 className="link"
                 disabled={busy}
@@ -520,6 +516,7 @@ export function RebalancingPage() {
               </button>
             </>
           }
+          note={`${coverage.skipped.skuCount} SKU · вся пропущенная потребность`}
         />
         <MetricCard
           label="Принято на сумму"
