@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { BrandIcon, type BrandIconName } from './BrandIcon';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -28,13 +29,22 @@ export function MetricCard({
   label,
   value,
   note,
+  icon,
+  tone = 'neutral',
 }: {
   label: string;
   value: ReactNode;
   note?: ReactNode | undefined;
+  icon?: BrandIconName;
+  tone?: 'neutral' | 'accent' | 'warning' | 'success';
 }) {
   return (
-    <div className="metric">
+    <div
+      className="metric"
+      data-tone={tone}
+      data-icon={icon ? true : undefined}
+    >
+      {icon && <BrandIcon name={icon} />}
       <span>{label}</span>
       <strong>{value}</strong>
       {note != null && <small>{note}</small>}
@@ -74,6 +84,7 @@ export function SearchInput({
   const ref = useRef<HTMLInputElement>(null);
   return (
     <span className="search-control">
+      <BrandIcon name="search" />
       <input
         ref={ref}
         className="input"

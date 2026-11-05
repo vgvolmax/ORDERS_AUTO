@@ -15,6 +15,7 @@ import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
 import { loadActiveWorkspace, saveWorkspace } from '../persistence/workspaces';
 import { usePageScroll } from './usePageScroll';
 import { AppToast } from '../components/AppToast';
+import { WorkspaceMasthead, WorkspaceSidebar } from './WorkspaceChrome';
 
 export function App() {
   const [state, setState] = useState<AppState>(() => createInitialState());
@@ -184,93 +185,42 @@ export function App() {
     }));
   };
 
+  const navigation = {
+    page: state.page,
+    branches: imported ? state.minMax!.branches : undefined,
+    onNavigate: (page: AppState['page']) => set({ page }),
+    onImport: () => {
+      if (imported) setNewImportOpen(true);
+      else if (state.page !== 'import') set({ page: 'import' });
+    },
+  };
+  const statusTone = pending
+    ? 'busy'
+    : state.storageError
+      ? 'error'
+      : state.workspaceRevision < 0
+        ? 'idle'
+        : 'saved';
+  const status = {
+    busy: 'Сохранение сеанса…',
+    error: 'Изменения не сохранены',
+    idle: 'Начните с загрузки отчётов',
+    saved: 'Сеанс сохранён на этом компьютере',
+  }[statusTone];
+
   return (
     <StoreContext.Provider
       value={{ state, set, commit, restore, saving: pending > 0 }}
     >
       <div className="shell">
-        <aside className="sidebar">
-          <div className="brand">
-            <span aria-hidden="true">OA</span>
-            <div>
-              <strong>ORDERS_AUTO</strong>
-              <small>Формирование заказов</small>
-            </div>
-          </div>
-
-          {imported && (
-            <nav aria-label="Основная навигация">
-              <button
-                className={state.page === 'all' ? 'active' : ''}
-                onClick={() => set({ page: 'all' })}
-              >
-                Все товары
-              </button>
-
-              <div className="nav-label">Подразделения</div>
-              <div className="branch-nav">
-                {state.minMax!.branches.map((branch) => (
-                  <button
-                    key={branch}
-                    className={
-                      state.page === `branch:${branch}` ? 'active' : ''
-                    }
-                    onClick={() => set({ page: `branch:${branch}` })}
-                  >
-                    {branch}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                className={state.page === 'rebalancing' ? 'active' : ''}
-                onClick={() => set({ page: 'rebalancing' })}
-              >
-                Ребалансировка
-              </button>
-              <button
-                className={state.page === 'suppliers' ? 'active' : ''}
-                onClick={() => set({ page: 'suppliers' })}
-              >
-                Поставщики
-              </button>
-              <button
-                className={state.page === 'orders' ? 'active' : ''}
-                onClick={() => set({ page: 'orders' })}
-              >
-                Заказы
-              </button>
-              <button
-                className="new-import"
-                onClick={() => setNewImportOpen(true)}
-              >
-                Загрузить новые отчёты
-              </button>
-            </nav>
-          )}
-          <button
-            className={state.page === 'history' ? 'active' : ''}
-            onClick={() => set({ page: 'history' })}
-          >
-            История сеансов
-          </button>
-          {state.page === 'history' && (
-            <button onClick={() => set({ page: imported ? 'all' : 'import' })}>
-              Вернуться к работе
-            </button>
-          )}
-        </aside>
-
+        <WorkspaceSidebar {...navigation} />
         <div className="content">
-          <div className="workspace-save-state" role="status">
-            {pending
-              ? 'Сохранение сеанса…'
-              : state.storageError
-                ? 'Изменения не сохранены'
-                : state.workspaceRevision < 0
-                  ? 'Начните с загрузки отчётов'
-                  : 'Сеанс сохранён на этом компьютере'}
-          </div>
+          <WorkspaceMasthead
+            {...navigation}
+            fileName={state.minMaxFileName}
+            status={status}
+            statusTone={statusTone}
+          />
           {state.storageError && (
             <div className="alert danger" role="alert">
               Изменения не применены: {state.storageError}. Повторите действие.

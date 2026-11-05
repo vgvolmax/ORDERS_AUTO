@@ -370,6 +370,7 @@ function TableRow<T>({
     <div
       ref={measureRef}
       data-index={dataIndex}
+      data-striped={dataIndex % 2 === 1 ? true : undefined}
       className="virtual-row-shell"
       role="row"
       aria-rowindex={dataIndex + 2}
