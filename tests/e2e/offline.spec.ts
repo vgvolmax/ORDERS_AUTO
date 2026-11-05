@@ -35,6 +35,8 @@ test('E2E-21 all import messages are reachable and a manual pool supplier withou
   const issues = page.getByRole('region', { name: 'Сообщения проверки: Отчёт MIN/MAX', exact: true });
   await expect(issues.getByText('Показано: 130 из 130', { exact: true })).toBeVisible();
   const scroller = issues.getByLabel('Прокрутка таблицы');
+  // Bring the card's scroll surface into view before moving its own scrollbar.
+  await scroller.scrollIntoViewIfNeeded();
   const geometry = await scroller.evaluate((node) => ({ height: node.clientHeight, scroll: node.scrollHeight }));
   expect(geometry.height).toBeLessThanOrEqual(320);
   expect(geometry.scroll).toBeGreaterThan(geometry.height);
