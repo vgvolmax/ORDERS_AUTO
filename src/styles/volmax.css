@@ -254,6 +254,19 @@ thead th, .virtual-header, .virtual-header > .is-frozen { background: var(--tabl
   .sidebar .brand img { width: min(152px, 100%); }
   .sidebar nav button { min-height: 33px; }
 }
+@media (max-height: 650px) {
+  .workspace-masthead-row { min-height: var(--feedback-height); }
+  .workspace-masthead-row > img { width: min(226px, 37%); }
+  .workspace-masthead-row :is(.workspace-source, .workspace-save-state) {
+    min-height: 30px;
+    padding-block: 4px;
+    font-size: 11px;
+  }
+  .rebalancing-page { --font-title: 24px; }
+  .rebalancing-page .workspace-tabs { margin-bottom: 5px; }
+  .rebalancing-page .workspace-tabs button { min-height: 30px; }
+  .routes-editor { --routes-row-height: 28px; }
+}
 @media (max-width: 1100px) {
   .workspace-source { display: none; }
   .workspace-shortcuts button { font-size: 12px; }
