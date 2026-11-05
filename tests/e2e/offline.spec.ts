@@ -5,6 +5,98 @@ import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 
+test('E2E-21 all import messages are reachable and a manual pool supplier without history survives reload and CSV', async ({
+  page,
+}, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const { readFile } = await import('node:fs/promises');
+  const evidence = observeRuntime(page);
+  const chosenSupplier = 'ООО ТД "БИОСЕПТИК"';
+  await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  const min = buildWorkbook([
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+    ...Array.from({ length: 130 }, (_, index) => {
+      const code = `BAD-${String(index + 1).padStart(3, '0')}`;
+      return [
+        [code, code, `Товар ${code}`, null, null, null, 100],
+        [null, null, 'Ленина', 'ошибка', 2, 10, null],
+      ];
+    }).flat(),
+    ['NEW', 'NEW-ARTICLE', 'Товар без истории закупок', null, null, null, 42.5],
+    [null, null, 'Ленина', 0, 2, 10, null],
+  ]);
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles({
+    name: 'all-issues.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.from(min),
+  });
+  const issues = page.getByRole('region', { name: 'Сообщения проверки: Отчёт MIN/MAX', exact: true });
+  await expect(issues.getByText('Показано: 130 из 130', { exact: true })).toBeVisible();
+  const scroller = issues.getByLabel('Прокрутка таблицы');
+  // Bring the card's scroll surface into view before moving its own scrollbar.
+  await scroller.scrollIntoViewIfNeeded();
+  const geometry = await scroller.evaluate((node) => ({ height: node.clientHeight, scroll: node.scrollHeight }));
+  expect(geometry.height).toBeLessThanOrEqual(320);
+  expect(geometry.scroll).toBeGreaterThan(geometry.height);
+  await scroller.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+  await expect(issues.getByText('BAD-130', { exact: true })).toBeInViewport();
+  await issues.getByRole('textbox', { name: 'Поиск сообщений: Отчёт MIN/MAX' }).fill('BAD-130');
+  await expect(issues.getByText('Показано: 1 из 130', { exact: true })).toBeVisible();
+  const severity = issues.getByRole('combobox', { name: 'Важность сообщений: Отчёт MIN/MAX' });
+  await severity.selectOption('WARNING');
+  await expect(issues.getByText('Нет сообщений по выбранным фильтрам.', { exact: true })).toBeVisible();
+  await severity.selectOption('ALL');
+  await issues.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
+  await expect(issues.getByRole('textbox')).toBeFocused();
+  await page.setViewportSize({ width: 1024, height: 768 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('21-all-import-issues.png'), fullPage: true });
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles({
+    name: 'other-products.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.from(buildWorkbook([
+      ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+      ['ИП Баранов Роман Борисович', 'OTHER', 'Другой товар', 10, 1000, 'шт'],
+    ])),
+  });
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  const select = page.getByRole('combobox', { name: 'Поставщик NEW', exact: true });
+  await expect(select.locator('option')).toHaveCount(33);
+  await expect(page.getByRole('button', { name: 'Применить автовыбор', exact: true })).toBeDisabled();
+  await select.focus();
+  await page.keyboard.press('Space');
+  await page.screenshot({ path: testInfo.outputPath('21-pool-supplier-select.png'), fullPage: true });
+  await page.keyboard.press('Escape');
+  await select.selectOption('ООО "Терем"');
+  await expect(select.locator('option:checked')).toHaveText('Назначен: ООО "Терем"');
+  await select.selectOption(chosenSupplier);
+  await expect(select.locator('option:checked')).toHaveText(`Назначен: ${chosenSupplier}`);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Поставщики', exact: true })).toBeVisible();
+  await expect(select.locator('option:checked')).toHaveText(`Назначен: ${chosenSupplier}`);
+  await page.getByRole('button', { name: 'Все товары', exact: true }).click();
+  const filter = page.getByRole('combobox', { name: 'Поставщик', exact: true });
+  await filter.selectOption(chosenSupplier);
+  await expect(page.getByText('Товар без истории закупок', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await page.locator('.order-cell').filter({ hasText: '425,00' }).click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer.getByText('Цена MIN/MAX', { exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await drawer.getByRole('button', { name: 'Скачать CSV заказа', exact: true }).click();
+  const csv = await readFile((await (await downloadPromise).path())!, 'utf8');
+  expect(csv).toContain('NEW;NEW-ARTICLE;Товар без истории закупок;Ленина;');
+  expect(csv).toContain('БИОСЕПТИК');
+  expect(csv).toContain(';10;;42.5;425');
+  expect(csv).not.toContain('OTHER');
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
 test('E2E-20 bulk revoke respects SKU search and direction filters, survives reload and restores purchasing', async ({
   page,
 }, testInfo) => {
@@ -1015,7 +1107,8 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   await expect(
     page.locator('.decision .product-code').getByText('SKU2', { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText(/В рабочем пуле нет истории/)).toBeVisible();
+  await expect(page.getByText(/Нет истории закупок в рабочем пуле/)).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Поставщик SKU2', exact: true }).locator('option')).toHaveCount(33);
   const choice = page.getByRole('combobox', { name: 'Поставщик SKU3' });
   await expect(choice.locator('option')).toHaveCount(3);
   await expect(

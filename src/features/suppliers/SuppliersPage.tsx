@@ -10,7 +10,7 @@ import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
 import { derive } from '../../app/selectors';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
-import { SUPPLIER_POOL } from '../../domain/supplierPool';
+import { isSupplierInPool, SUPPLIER_POOL } from '../../domain/supplierPool';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import {
   Alert,
@@ -93,6 +93,16 @@ export function SuppliersPage() {
   const problems = operationPool.filter(
     (resolution) => resolution.status !== 'MANUAL_SELECTED',
   );
+  const poolAssignmentCodes = new Set(
+    state.overrides
+      .filter((item) => item.allowWithoutHistory && item.source !== 'AUTO')
+      .map((item) => item.skuCode),
+  );
+  const poolAssignments = operationPool.filter(
+    (resolution) =>
+      resolution.status === 'MANUAL_SELECTED' &&
+      poolAssignmentCodes.has(resolution.skuCode),
+  );
   const problemSkuCodes = new Set(problems.map((problem) => problem.skuCode));
   const problemDemand = derived.purchaseDemand.filter(
     (line) => problemSkuCodes.has(line.skuCode) && line.purchaseQty > 0,
@@ -162,17 +172,34 @@ export function SuppliersPage() {
     if (supplierOperation.current) return;
     supplierOperation.current = true;
     setManualBusyCode(resolution.skuCode);
-    const override: SupplierOverride = {
-      skuCode: resolution.skuCode,
-      supplier,
-      source: 'MANUAL',
-      updatedAt: new Date().toISOString(),
-    };
+    const choosingWithoutHistory = resolution.candidates.length === 0;
     try {
-      const patch = (s: typeof state) => ({
-        overrides: mergeOverrides(s.overrides, [override]),
-        toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.`,
-      });
+      const patch = (s: typeof state) => {
+        const current = derive(s).resolutions.find(
+          (item) => item.skuCode === resolution.skuCode,
+        );
+        if (
+          !current ||
+          !isSupplierInPool(supplier) ||
+          (!current.candidates.some((item) => item.supplier === supplier) &&
+            !(choosingWithoutHistory && current.candidates.length === 0))
+        ) {
+          throw new Error('Supplier is no longer available');
+        }
+        const override: SupplierOverride = {
+          skuCode: resolution.skuCode,
+          supplier,
+          source: 'MANUAL',
+          ...(current.candidates.length === 0
+            ? { allowWithoutHistory: true }
+            : {}),
+          updatedAt: new Date().toISOString(),
+        };
+        return {
+          overrides: mergeOverrides(s.overrides, [override]),
+          toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.`,
+        };
+      };
       if (commit) await commit(patch);
       else set(patch(state));
     } catch {
@@ -265,10 +292,11 @@ export function SuppliersPage() {
         />
       </div>
 
-      {problems.length > 0 && (
+      {(problems.length > 0 || poolAssignments.length > 0) && (
         <SupplierDecisions
           skus={state.minMax?.skus ?? []}
           problems={problems}
+          poolAssignments={poolAssignments}
           operationPool={operationPool}
           problemAmount={problemAmount}
           open={decisionsOpen}
@@ -369,6 +397,7 @@ export function SuppliersPage() {
 function SupplierDecisions({
   skus,
   problems,
+  poolAssignments,
   operationPool,
   problemAmount,
   open,
@@ -387,6 +416,7 @@ function SupplierDecisions({
 }: {
   skus: Sku[];
   problems: SupplierResolution[];
+  poolAssignments: SupplierResolution[];
   operationPool: SupplierResolution[];
   problemAmount: number | null;
   open: boolean;
@@ -406,7 +436,10 @@ function SupplierDecisions({
   const supplierBusy = bulkBusy || manualBusyCode !== null;
   const [productQuery, setProductQuery] = useState('');
   const skuMap = new Map(skus.map((s) => [s.code, s]));
-  const displayedProblems = (overwriteManual ? operationPool : problems).filter(
+  const displayedProblems = (overwriteManual
+    ? operationPool
+    : [...problems, ...poolAssignments]
+  ).filter(
     (r) =>
       [
         r.skuCode,
@@ -446,21 +479,28 @@ function SupplierDecisions({
     >
       <div className="decision-panel-head">
         <div>
-          <h2>
-            Требуют решения · {problems.length} позиций ·{' '}
-            {problemAmount == null ? 'сумма неизвестна' : money(problemAmount)}
-          </h2>
-          <p>
-            Эти позиции не попадут ни в один заказ, пока поставщик не будет
-            разрешён.
-          </p>
+          {problems.length > 0 ? (
+            <>
+              <h2>
+                Требуют решения · {problems.length} позиций ·{' '}
+                {problemAmount == null ? 'сумма неизвестна' : money(problemAmount)}
+              </h2>
+              <p>Для нераспределённых позиций нужно выбрать поставщика.</p>
+            </>
+          ) : (
+            <>
+              <h2>Ручные назначения · {poolAssignments.length}</h2>
+              <p>Здесь можно изменить поставщика, выбранного без истории.</p>
+            </>
+          )}
         </div>
         <button
           className="link decision-collapse"
           aria-expanded={open}
           onClick={() => onOpenChange(!open)}
         >
-          {open ? 'Свернуть «Требуют решения»' : 'Развернуть «Требуют решения»'}
+          {open ? 'Свернуть' : 'Развернуть'}{' '}
+          {problems.length > 0 ? '«Требуют решения»' : 'ручные назначения'}
         </button>
       </div>
 
@@ -578,10 +618,12 @@ function SupplierDecisions({
                               resolution.skuCode}
                           </strong>
                           <p>
-                            {resolution.status === 'STALE_OVERRIDE'
+                            {resolution.status === 'MANUAL_SELECTED'
+                              ? 'Поставщик назначен вручную. Можно изменить выбор.'
+                              : resolution.status === 'STALE_OVERRIDE'
                               ? 'Сохранённый поставщик отсутствует в свежем отчёте или не входит в рабочий пул.'
                               : resolution.candidates.length === 0
-                                ? 'В рабочем пуле нет истории поставщиков для этой позиции.'
+                                ? 'Нет истории закупок в рабочем пуле. Выберите поставщика из списка. Цена берётся из MIN/MAX.'
                                 : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
                           </p>
                         </>
@@ -593,46 +635,51 @@ function SupplierDecisions({
                   key: 'supplier',
                   header: 'Поставщик',
                   width: 'minmax(280px,1.3fr)',
-                  render: (resolution) =>
-                    resolution.candidates.length > 0 ? (
-                      <div className="decision-supplier">
-                        <Select
-                          aria-label={`Поставщик ${resolution.skuCode}`}
-                          value=""
-                          disabled={supplierBusy}
-                          onChange={(event) =>
-                            onChoose(resolution, event.target.value)
-                          }
-                        >
-                          <option value="">Выберите поставщика…</option>
-                          {resolution.candidates.map((candidate) => (
-                            <option
-                              key={candidate.supplier}
-                              value={candidate.supplier}
-                            >
-                              {candidate.supplier}
-                              {candidate.supplier ===
-                              resolution.recommendedSupplier
-                                ? ' — рекомендуемый'
-                                : ''}
-                              {' · '}
-                              {fmtQty(candidate.purchaseQty)} ед. ·{' '}
-                              {money(candidate.purchaseAmount)} ·{' '}
-                              {candidate.weightedUnitCost == null
-                                ? 'нет цены'
-                                : money(candidate.weightedUnitCost)}
+                  render: (resolution) => (
+                    <div className="decision-supplier">
+                      <Select
+                        aria-label={`Поставщик ${resolution.skuCode}`}
+                        value=""
+                        disabled={supplierBusy}
+                        onChange={(event) =>
+                          onChoose(resolution, event.target.value)
+                        }
+                      >
+                        <option value="" disabled>
+                          {resolution.selectedSupplier
+                            ? `Назначен: ${resolution.selectedSupplier}`
+                            : 'Выберите поставщика…'}
+                        </option>
+                        {resolution.candidates.length === 0 &&
+                          SUPPLIER_POOL.map((supplier) => (
+                            <option key={supplier} value={supplier}>
+                              {supplier}
                             </option>
                           ))}
-                        </Select>
-                        {manualBusyCode === resolution.skuCode && (
-                          <small role="status">Сохраняем выбор…</small>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="danger-text">
-                        Только ручное уточнение
-                      </span>
-                    ),
+                        {resolution.candidates.map((candidate) => (
+                          <option
+                            key={candidate.supplier}
+                            value={candidate.supplier}
+                          >
+                            {candidate.supplier}
+                            {candidate.supplier ===
+                            resolution.recommendedSupplier
+                              ? ' — рекомендуемый'
+                              : ''}
+                            {' · '}
+                            {fmtQty(candidate.purchaseQty)} ед. ·{' '}
+                            {money(candidate.purchaseAmount)} ·{' '}
+                            {candidate.weightedUnitCost == null
+                              ? 'нет цены'
+                              : money(candidate.weightedUnitCost)}
+                          </option>
+                        ))}
+                      </Select>
+                      {manualBusyCode === resolution.skuCode && (
+                        <small role="status">Сохраняем выбор…</small>
+                      )}
+                    </div>
+                  ),
                 },
               ]}
             />

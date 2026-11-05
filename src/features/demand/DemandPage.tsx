@@ -9,7 +9,7 @@ import { money, fmtQty } from '../../format/numbers';
 export { money, fmtQty } from '../../format/numbers';
 import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
-import { isSupplierInPool } from '../../domain/supplierPool';
+import { isSupplierInPool, supplierKey } from '../../domain/supplierPool';
 import { useStore } from '../../app/appStore';
 import {
   emptyDemandFilters,
@@ -60,12 +60,6 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     `demand:${branch ?? 'all'}:filters`,
     emptyDemandFilters,
   );
-  const filters =
-    savedFilters.supplier &&
-    savedFilters.supplier !== '__UNASSIGNED__' &&
-    !isSupplierInPool(savedFilters.supplier)
-      ? { ...savedFilters, supplier: '' }
-      : savedFilters;
   const [showCovered, setShowCovered] = usePreference(
     `demand:${branch ?? 'all'}:covered`,
     false,
@@ -76,9 +70,23 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
   );
 
   const supplierOptions = useMemo(
-    () => state.suppliers?.suppliers.filter(isSupplierInPool) ?? [],
-    [state.suppliers],
+    () =>
+      [...new Set([
+        ...(state.suppliers?.suppliers ?? []),
+        ...derived.resolutions.flatMap((resolution) =>
+          resolution.selectedSupplier ? [resolution.selectedSupplier] : [],
+        ),
+      ])].filter(isSupplierInPool),
+    [state.suppliers, derived.resolutions],
   );
+  let supplier = savedFilters.supplier;
+  if (supplier && supplier !== '__UNASSIGNED__' && !supplierOptions.includes(supplier)) {
+    const savedKey = supplierKey(supplier);
+    supplier = supplierOptions.find((name) => supplierKey(name) === savedKey) ?? '';
+  }
+  const filters = supplier === savedFilters.supplier
+    ? savedFilters
+    : { ...savedFilters, supplier };
   const orderLineKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const order of derived.projection.orders) {

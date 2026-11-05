@@ -47,6 +47,8 @@ export interface SupplierOverride {
   updatedAt: string;
   /** Legacy persisted overrides without a source are treated as MANUAL. */
   source?: SupplierOverrideSource;
+  /** Explicit manual pool choice; does not create historical purchases. */
+  allowWithoutHistory?: boolean;
 }
 
 export type SupplierResolutionStatus =
