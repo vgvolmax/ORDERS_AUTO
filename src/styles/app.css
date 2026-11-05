@@ -86,7 +86,7 @@ small { color: var(--muted); }
 .link { border: 0; background: none; color: var(--blue); cursor: pointer; padding: 8px 0; }
 
 .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 20px 0; }
-.upload { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; min-height: 280px; display: flex; align-items: flex-start; flex-direction: column; }
+.upload { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; min-width: 0; min-height: 280px; display: flex; align-items: flex-start; flex-direction: column; }
 .upload.has-error { border-color: #d99ca4; }
 .upload-icon { font-size: 24px; background: var(--blue-soft); color: var(--blue); width: 48px; height: 48px; display: grid; place-items: center; border-radius: 10px; }
 .upload .button { margin: 16px 0 12px; }
@@ -98,10 +98,10 @@ small { color: var(--muted); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 .issue-list { width: 100%; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .issue-list > strong { font-size: 12px; }
-.issue-list ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
-.issue-list li { display: flex; gap: 7px; font-size: 12px; color: #4d5968; line-height: 1.35; }
-.issue-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; flex: 0 0 auto; background: #d59500; }
-.issue-dot.error { background: #b42335; }
+.import-issue-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.import-issue-filters label { flex: 1 1 170px; min-width: 0; display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
+.import-issue-count { font-size: 12px; color: var(--muted); margin: 8px 0; }
+.issue-list .warning-text { margin-top: 0; }
 .import-resolution { margin: 18px 0; }
 .resolution-grid { display: flex; flex-wrap: wrap; gap: 12px 24px; }
 

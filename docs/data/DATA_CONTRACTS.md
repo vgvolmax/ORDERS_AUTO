@@ -279,3 +279,8 @@ RebalanceWorkspace.tab дополнен accepted. Optional acceptedFilters:{quer
 ### Массовая отмена принятия ·03.11.2026
 
 Выбор принятых строк к отмене — временные transferId, отдельно от persisted proposal selectedLineIds/sourceLineId и от выбора направлений реестра. Новых полей workspace/IndexedDB не вводится. Команда массовой отмены передаёт deduplicated transferIds в существующий prepareAcceptedChange(kind=revoke), ревизия/снимок/сеанс проверяются существующим механизмом. Ошибка записи не меняет ledger/потребность, подтверждение и выбор сохраняются для повтора.
+
+
+### Ручное назначение без истории ·03.11.2026
+
+SupplierOverride содержит optional allowWithoutHistory:boolean. Значение true фиксируется только при явном ручном выборе компании из рабочего пула для SKU без доступных исторических кандидатов. resolveSuppliers разрешает такой выбор при source!=AUTO и isSupplierInPool; candidates остаются реальной историей. Для явного назначения из пула выбирается эквивалентное имя кандидата текущего SKU, затем известное имя компании в отчёте, иначе имя из пула. Старые overrides без признака сохраняют прежнюю проверку исчезнувшего кандидата. Workspace schemaVersion1 и IndexedDBv2 не меняются: optional поле сохраняется существующим whole-state DTO и legacy supplierOverrides store. Источник цены определяется существующим priceDemand, без синтетических SupplierHistory.

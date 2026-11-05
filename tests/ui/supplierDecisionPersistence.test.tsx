@@ -12,7 +12,7 @@ import {
   type AppState,
   type StatePatch,
 } from '../../src/app/appStore';
-import { createWorkspaceSession } from '../../src/app/workspaceSession';
+import { createWorkspaceSession, stateFromWorkspace } from '../../src/app/workspaceSession';
 import { derive } from '../../src/app/selectors';
 import type { StoredWorkspace } from '../../src/domain/workspace';
 import { SuppliersPage } from '../../src/features/suppliers/SuppliersPage';
@@ -87,6 +87,51 @@ function renderDurable(initial = ambiguousState()) {
     reject,
   };
 }
+
+it('saves a pool supplier without history, restores the fallback price, and recovers from a failed save', async () => {
+  const initial = baseState({ suppliers: { suppliers: [], history: [] } });
+  const harness = renderDurable(initial);
+  const choose = () => fireEvent.change(screen.getByRole('combobox', { name: 'Поставщик SKU1' }), {
+    target: { value: manualSupplier },
+  });
+  choose();
+  await waitFor(() => expect(harness.attempts).toBe(1));
+  expect(screen.getByRole('combobox', { name: 'Поставщик SKU1' })).toBeDisabled();
+  expect(derive(harness.session.getState()).projection.orders).toEqual([]);
+  await act(async () => harness.reject(new Error('quota')));
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Поставщик SKU1' })).toBeEnabled());
+  expect(harness.session.getState().overrides).toEqual([]);
+  expect(harness.session.getState().toast).toMatch(/Не удалось сохранить/);
+  choose();
+  await waitFor(() => expect(harness.saved).toHaveLength(1));
+  const restored = stateFromWorkspace(harness.saved[0]!);
+  expect(restored.overrides[0]).toMatchObject({ source: 'MANUAL', allowWithoutHistory: true, supplier: manualSupplier });
+  const result = derive(restored);
+  expect(result.projection.unassigned).toEqual([]);
+  expect(result.projection.orders.map((order) => order.totalAmount)).toEqual([700, 400]);
+  expect(restored.suppliers!.history).toEqual([]);
+
+  // Choosing the last unresolved SKU must leave its assignment editable.
+  const savedChoice = screen.getByRole('combobox', { name: 'Поставщик SKU1' });
+  expect(savedChoice).toHaveDisplayValue(`Назначен: ${manualSupplier}`);
+  fireEvent.change(savedChoice, { target: { value: cheapSupplier } });
+  await waitFor(() => expect(harness.saved).toHaveLength(2));
+  expect(derive(harness.session.getState()).projection.orders.map((order) => order.supplier))
+    .toEqual([cheapSupplier, cheapSupplier]);
+});
+
+it('does not silently convert a disappeared historical choice into permission to select without history', async () => {
+  const harness = renderDurable();
+  act(() => { void harness.session.commit({ suppliers: { suppliers: [], history: [] } }); });
+  await waitFor(() => expect(harness.attempts).toBe(1));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Поставщик SKU1' }), {
+    target: { value: manualSupplier },
+  });
+  await act(async () => harness.release());
+  await waitFor(() => expect(harness.session.getState().toast).toMatch(/Не удалось сохранить/));
+  expect(harness.session.getState().overrides).toEqual([]);
+  expect(derive(harness.session.getState()).projection.orders).toEqual([]);
+});
 
 it('locks conflicting supplier controls while a manual choice is saving and preserves that choice', async () => {
   const harness = renderDurable();

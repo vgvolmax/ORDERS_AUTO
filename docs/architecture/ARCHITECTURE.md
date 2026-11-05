@@ -218,3 +218,8 @@ AcceptedTransfersView — read-only UI, acceptedTransfersViewModel переис�
 ### Массовая отмена принятия ·03.11.2026
 
 TransferDrawer является общим владельцем состава из результатов и реестра принятых. Optional bulk revoke callbacks маршрутизируют temporary accepted selection в существующий RebalancingPage confirmation/commit. Дублирующий composition Dialog реестра заменён этим владельцем. Исчезновение последнего принятого направления сохраняет пустую оболочку drawer до закрытия подтверждения; вложенные useModalLayer продолжают соблюдать inert/focus. Нового undo-движка и копии доменной логики нет.
+
+
+### Явный поставщик без истории ·03.11.2026
+
+SupplierOverride.allowWithoutHistory — opt-in разрешение ручного назначения из существующего supplierPool. Разрешение принадлежит pure resolveSuppliers, цена по-прежнему принадлежит priceDemand. SuppliersPage проверяет текущие кандидаты внутри queued commit; выбор из устаревшего исторического списка не создаёт разрешение без истории. Persistence сохраняет optional поле без миграции. ImportIssues принадлежит feature import и представляет исходные ValidationIssue через канонические SearchInput/Select/VirtualTable; не влияет на нормализацию и расчёты.

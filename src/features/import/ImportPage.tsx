@@ -7,6 +7,7 @@ import type { ValidationIssue } from '../../domain/types';
 import { parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
 import { Alert, Button } from '../../components/ui';
+import { ImportIssues } from './ImportIssues';
 
 export function ImportPage() {
   const { state, set, commit } = useStore();
@@ -289,35 +290,8 @@ function FileCard({
       </strong>
       {summary && <small>{summary}</small>}
       {(warnings.length > 0 || errors.length > 0) && (
-        <IssueList issues={issues} />
+        <ImportIssues title={title} issues={issues} />
       )}
     </section>
-  );
-}
-
-function IssueList({ issues }: { issues: ValidationIssue[] }) {
-  const visible = issues.slice(0, 6);
-  return (
-    <div className="issue-list">
-      <strong>
-        Проверка данных: {issues.length}{' '}
-        {issues.length === 1 ? 'сообщение' : 'сообщений'}
-      </strong>
-      <ul>
-        {visible.map((issue, index) => (
-          <li
-            key={`${issue.code}:${issue.skuCode ?? ''}:${
-              issue.branch ?? ''
-            }:${index}`}
-          >
-            <span className={`issue-dot ${issue.severity.toLowerCase()}`} />
-            {issue.message}
-          </li>
-        ))}
-      </ul>
-      {issues.length > visible.length && (
-        <small>Ещё сообщений: {issues.length - visible.length}</small>
-      )}
-    </div>
   );
 }

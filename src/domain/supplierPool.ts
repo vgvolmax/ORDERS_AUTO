@@ -34,7 +34,7 @@ export const SUPPLIER_POOL: readonly string[] = [
   'ООО ТД "БИОСЕПТИК"',
 ];
 
-function supplierKey(supplier: string): string {
+export function supplierKey(supplier: string): string {
   // Ignore presentation, but retain the legal form and complete name: no fuzzy/prefix matches.
   return supplier.toLocaleLowerCase('ru-RU').replace(/[\s"'«»„“”‘’]/gu, '');
 }
