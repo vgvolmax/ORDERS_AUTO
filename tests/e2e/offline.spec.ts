@@ -1690,7 +1690,10 @@ for (const { count, width, height } of [
       expect(box!.y).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width).toBeLessThanOrEqual(width);
       expect(box!.y + box!.height).toBeLessThanOrEqual(height);
-      const toastBox = await toast.boundingBox();
+      // The notification may expire between drawer actions.
+      const toastBox = await page.evaluate(() =>
+        document.querySelector('.toast')?.getBoundingClientRect().toJSON(),
+      );
       if (toastBox) {
         const close = await drawer
           .getByRole('button', { name: 'Закрыть', exact: true })
@@ -2885,7 +2888,7 @@ test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work 
       }),
     )
     .toBe(true);
-  await expect(identity).toHaveCSS('background-color', 'rgb(247, 248, 250)');
+  await expect(identity).toHaveCSS('background-color', 'rgb(237, 244, 250)');
   await page.screenshot({
     path: testInfo.outputPath('operator-sticky-column-1280.png'),
   });
@@ -3076,4 +3079,108 @@ test('E2E-16 sorting a long list keeps expanded product rows adjacent without ov
       exact: true,
     }),
   ).toBeVisible();
+});
+
+test('E2E-22 Volmax workspace ships local artwork and distinct native control states', async ({
+  page,
+}, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const evidence = observeRuntime(page);
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+
+  const brand = page.getByRole('img', { name: 'Волмакс Буст' });
+  await expect(brand).toBeVisible();
+  expect(await brand.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBeGreaterThan(0);
+  const continueButton = page.getByRole('button', { name: 'Перейти к потребности', exact: true });
+  await expect(continueButton).toBeDisabled();
+  await expect(continueButton).toHaveCSS('cursor', 'not-allowed');
+
+  const products = [
+    ['310701', 'Смеситель кухонный, чёрный', 1140],
+    ['39459', 'Коллектор PPR RTP, 5 контуров', 450],
+    ['40075', 'Кран шаровой 1/2″ ГОСТ', 400],
+    ['40714', 'Набор для подключения радиатора', 600],
+    ['39462', 'Коллектор PPR RTP, 8 контуров', 580],
+    ['40727', 'Герметик резьбовой Sanfix', 270],
+    ['39511', 'Смеситель кухонный, серый', 1180],
+    ['40750', 'Лента ФУМ 19 × 15 × 0,2 мм', 62],
+    ['51916', 'Фиксатор резьбы Sanfix', 285],
+    ['310801', 'Смеситель с гибким изливом', 1260],
+  ] as const;
+  const branches = ['Ленина', 'Егорьевск', 'Коломна', 'Раменское', 'Ступино', 'Воскресенск', 'Зарайск', 'Наро-Фоминск', 'Кашира'];
+  const min = buildWorkbook([
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+    ...products.flatMap(([sku, name, price], index) => [
+      [sku.padStart(10, '0'), sku, name, null, null, null, price],
+      ...branches.map((branch, i) => {
+        const stock = i === (index % 4) * 2 + 1 ? 112 : i % 2 === 0 ? 4 + index % 4 : 24;
+        return [null, null, branch, stock, 10, 24, null];
+      }),
+    ]),
+  ]);
+  const suppliers = buildWorkbook([
+    ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+    ...products.map(([sku, name, price]) => ['ИП Баранов Роман Борисович', sku.padStart(10, '0'), name, 1, price, 'шт']),
+  ]);
+  for (const [label, name, data] of [
+    ['Выбрать файл Отчёт MIN/MAX', 'MIN-MAX_05-11-2026.xlsx', min],
+    ['Выбрать файл Отчёт поставщиков', 'Поставщики_05-11-2026.xlsx', suppliers],
+  ] as const) {
+    await page.getByLabel(label).setInputFiles({
+      name,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: Buffer.from(data),
+    });
+  }
+
+  const css = () => continueButton.evaluate((element) => getComputedStyle(element).backgroundImage);
+  await expect(continueButton).toBeEnabled();
+  await expect(continueButton).toHaveCSS('cursor', 'pointer');
+  const normal = await css();
+  await continueButton.hover();
+  const hover = await css();
+  expect(hover).not.toBe(normal);
+  await page.mouse.down();
+  expect(await css()).not.toBe(hover);
+  await page.mouse.move(4, 4);
+  await page.mouse.up();
+  await continueButton.click();
+  await expect(page.getByRole('heading', { name: 'Потребность всей сети' })).toBeVisible();
+  const search = page.locator('main .search-control input').first();
+  await expect(search).toHaveCSS('cursor', 'text');
+  await page.keyboard.press('Tab');
+  await search.focus();
+  await expect(search).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(search).toHaveCSS('border-top-color', 'rgb(8, 124, 170)');
+  await search.blur();
+  await page.mouse.move(1580, 16);
+  await expect(page.getByText('Потребность рассчитана.', { exact: true })).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath('01-demand.png') });
+
+  await page.getByRole('button', { name: 'Раздел: Ребалансировка', exact: true }).click();
+  await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  const threshold = page.getByRole('spinbutton', { name: 'Порог суммы SKU' });
+  await threshold.fill('-1');
+  await threshold.blur();
+  await expect(threshold).toHaveAttribute('aria-invalid', 'true');
+  await expect(threshold).toHaveCSS('border-top-color', 'rgb(163, 38, 54)');
+  await threshold.fill('0');
+  await threshold.blur();
+  await expect(threshold).toHaveAttribute('aria-invalid', 'false');
+  await page.getByRole('button', { name: 'Рассчитать перемещения', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Результаты', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: /^Открыть перемещение / }).first().click();
+  const composition = page.getByRole('dialog');
+  await composition.getByRole('checkbox', { name: 'Выбрать все предложения по поиску' }).check();
+  await composition.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(page.locator('.order-cell.has-selection').first()).toBeVisible();
+  await page.mouse.move(1580, 16);
+  await page.screenshot({ path: testInfo.outputPath('02-rebalancing-results.png') });
+  expect(evidence.fileRequests.some((url) => url.endsWith('/masthead-wave.webp'))).toBe(true);
+  expect(evidence.fileRequests.some((url) => url.endsWith('/rail-wave.webp'))).toBe(true);
+  expect(evidence.remoteRequests).toEqual([]);
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.consoleErrors).toEqual([]);
 });

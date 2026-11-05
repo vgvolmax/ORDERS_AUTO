@@ -4,6 +4,7 @@ import { App } from './app/App';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import './styles/app.css';
 import './features/orders/SupplierOrdersDrawer.css';
+import './styles/volmax.css';
 
 function mountApp(): void {
   const root = document.getElementById('root');

@@ -197,7 +197,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         sortValue: (group) => group.totalDeficitQty,
         header: 'Потребность',
         width: '115px',
-        className: 'num',
+        className: 'num demand-quantity',
         render: (group) => (
           <>
             {fmtQty(group.totalDeficitQty)}
@@ -369,7 +369,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       sortValue: (line) => line.purchaseQty,
       header: 'Нужно сюда',
       width: '105px',
-      className: 'num',
+      className: 'num demand-quantity',
       render: (line) => (
         <>
           {fmtQty(line.purchaseQty)}
@@ -697,11 +697,23 @@ function Metrics({
 }) {
   return (
     <div className="metrics">
-      <MetricCard label="SKU ниже MAX" value={count} />
-      <MetricCard label="SKU ниже MIN" value={below} />
-      <MetricCard label="Нужно заказать" value={qty} />
+      <MetricCard label="SKU ниже MAX" icon="box" tone="accent" value={count} />
+      <MetricCard
+        label="SKU ниже MIN"
+        icon="warning"
+        tone="warning"
+        value={below}
+      />
+      <MetricCard
+        label="Нужно заказать"
+        icon="cart"
+        tone="neutral"
+        value={qty}
+      />
       <MetricCard
         label="Известная сумма"
+        icon="list"
+        tone="success"
         value={money(sum)}
         note={`По текущим фильтрам${missing > 0 ? ` · Без цены: ${missing}` : ''}`}
       />

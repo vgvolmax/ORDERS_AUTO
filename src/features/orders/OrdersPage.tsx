@@ -354,18 +354,26 @@ export function OrdersPage() {
       <div className="metrics">
         <MetricCard
           label="Готовы"
+          icon="cart"
+          tone="accent"
           value={orders.filter((order) => order.status === 'READY').length}
         />
         <MetricCard
           label="Проверены"
+          icon="check"
+          tone="success"
           value={orders.filter((order) => order.reviewed).length}
         />
         <MetricCard
           label="Выгружены"
+          icon="download"
+          tone="neutral"
           value={orders.filter((order) => order.status === 'EXPORTED').length}
         />
         <MetricCard
           label="Заблокированы"
+          icon="warning"
+          tone="warning"
           value={orders.filter((order) => order.status === 'BLOCKED').length}
         />
       </div>

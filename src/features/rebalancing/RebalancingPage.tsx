@@ -17,6 +17,7 @@ import {
   rebalanceConfigFingerprint,
 } from '../../domain/rebalancing';
 import { Alert, Button, MetricCard } from '../../components/ui';
+import { BrandIcon } from '../../components/BrandIcon';
 import { ConditionsPanel } from './ConditionsPanel';
 import { RoutesMatrix } from './RoutesMatrix';
 import { ResultsTable } from './ResultsTable';
@@ -72,6 +73,12 @@ export const rebalanceMessage = (e: unknown) =>
     ? (messages[e.message] ?? e.message)
     : 'Не удалось выполнить действие';
 const REBALANCE_TABS = ['routes', 'conditions', 'results', 'accepted'] as const;
+const REBALANCE_TAB_ICONS = {
+  routes: 'pin',
+  conditions: 'sliders',
+  results: 'swap',
+  accepted: 'check',
+} as const;
 export function RebalancingPage() {
   const store = useStore(),
     { state, set, saving } = store,
@@ -456,78 +463,6 @@ export function RebalancingPage() {
           : 'rebalancing-page'
       }
     >
-      <header className="header-actions">
-        <div>
-          <p className="eyebrow">Внутренние перемещения</p>
-          <h1>Ребалансировка</h1>
-          <p>
-            Примите конкретные перемещения, чтобы учесть их при формировании
-            заказов.
-          </p>
-        </div>
-        <div className="rebalance-header-actions">
-          <Button
-            className="secondary"
-            disabled={busy || saving || !d.snapshot}
-            onClick={excel}
-          >
-            Excel ребалансировки
-          </Button>
-          <Button
-            onClick={() => void calculate()}
-            disabled={busy || saving || !state.minMax || !state.suppliers}
-          >
-            {busy ? 'Сохранение…' : 'Рассчитать перемещения'}
-          </Button>
-        </div>
-      </header>
-      <div className="metrics coverage-metrics">
-        <MetricCard
-          label="К перемещению"
-          value={
-            r.proposal ? (
-              <CoverageValue summary={coverage.pending} />
-            ) : (
-              'Нет расчёта'
-            )
-          }
-          note="Весь план · непринятые предложения · цены MIN/MAX"
-        />
-        <MetricCard
-          label="Не распределено"
-          value={
-            <>
-              {r.proposal?.algorithmVersion === ALGORITHM_VERSION ? (
-                <CoverageValue summary={coverage.skipped} />
-              ) : r.proposal ? (
-                'Нужен пересчёт'
-              ) : (
-                'Нет расчёта'
-              )}
-              <button
-                className="link"
-                disabled={busy}
-                onClick={() => {
-                  setShowSkipped(true);
-                  edit({ tab: 'results' });
-                }}
-              >
-                Показать список
-              </button>
-            </>
-          }
-          note={`${coverage.skipped.skuCount} SKU · вся пропущенная потребность`}
-        />
-        <MetricCard
-          label="Принято на сумму"
-          value={
-            totals.acceptedAmount === null
-              ? 'Сумма неизвестна'
-              : money(totals.acceptedAmount)
-          }
-          note={`Весь план · ${totals.acceptedCount} из ${totals.activeCount} активных строк · выбрано ${decisions.selectedLineIds.length}`}
-        />
-      </div>
       <div
         role="tablist"
         aria-label="Ребалансировка"
@@ -561,6 +496,7 @@ export function RebalancingPage() {
             }}
             onClick={() => edit({ tab })}
           >
+            <BrandIcon name={REBALANCE_TAB_ICONS[tab]} />
             {
               {
                 routes: 'Маршруты',
@@ -571,6 +507,86 @@ export function RebalancingPage() {
             }
           </button>
         ))}
+      </div>
+      <header className="header-actions">
+        <div>
+          <p className="eyebrow">Внутренние перемещения</p>
+          <h1>Ребалансировка</h1>
+          <p>
+            Примите конкретные перемещения, чтобы учесть их при формировании
+            заказов.
+          </p>
+        </div>
+        <div className="rebalance-header-actions">
+          <Button
+            className="secondary"
+            disabled={busy || saving || !d.snapshot}
+            onClick={excel}
+          >
+            <BrandIcon name="download" /> Excel ребалансировки
+          </Button>
+          <Button
+            onClick={() => void calculate()}
+            aria-busy={busy}
+            disabled={busy || saving || !state.minMax || !state.suppliers}
+          >
+            <BrandIcon name="play" />{' '}
+            {busy ? 'Сохранение…' : 'Рассчитать перемещения'}
+          </Button>
+        </div>
+      </header>
+      <div className="metrics coverage-metrics">
+        <MetricCard
+          label="К перемещению"
+          icon="swap"
+          tone="accent"
+          value={
+            r.proposal ? (
+              <CoverageValue summary={coverage.pending} />
+            ) : (
+              'Нет расчёта'
+            )
+          }
+          note="Весь план · непринятые предложения · цены MIN/MAX"
+        />
+        <MetricCard
+          label="Не распределено"
+          icon="warning"
+          tone="warning"
+          value={
+            <>
+              {r.proposal?.algorithmVersion === ALGORITHM_VERSION ? (
+                <CoverageValue summary={coverage.skipped} />
+              ) : r.proposal ? (
+                'Нужен пересчёт'
+              ) : (
+                'Нет расчёта'
+              )}
+              <button
+                className="link"
+                disabled={busy}
+                onClick={() => {
+                  setShowSkipped(true);
+                  edit({ tab: 'results' });
+                }}
+              >
+                Показать список
+              </button>
+            </>
+          }
+          note={`${coverage.skipped.skuCount} SKU · вся пропущенная потребность`}
+        />
+        <MetricCard
+          label="Принято на сумму"
+          icon="check"
+          tone="success"
+          value={
+            totals.acceptedAmount === null
+              ? 'Сумма неизвестна'
+              : money(totals.acceptedAmount)
+          }
+          note={`Весь план · ${totals.acceptedCount} из ${totals.activeCount} активных строк · выбрано ${decisions.selectedLineIds.length}`}
+        />
       </div>
       {error && !confirmation && <Alert tone="danger">{error}</Alert>}
       {stale && (

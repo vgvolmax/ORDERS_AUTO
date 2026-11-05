@@ -283,11 +283,20 @@ export function SuppliersPage() {
       <div className="metrics metrics-three">
         <MetricCard
           label="Поставщиков с потребностью"
+          icon="people"
+          tone="accent"
           value={summaries.length}
         />
-        <MetricCard label="Требуют выбора" value={problems.length} />
+        <MetricCard
+          label="Требуют выбора"
+          icon="warning"
+          tone="warning"
+          value={problems.length}
+        />
         <MetricCard
           label="Нераспределённых строк"
+          icon="list"
+          tone="neutral"
           value={derived.projection.unassigned.length}
         />
       </div>
