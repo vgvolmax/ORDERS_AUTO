@@ -25,7 +25,8 @@ it('reads legacy enabled/value and writes the explicit SKU-route filter without 
     screen.getByLabelText('Минимальная сумма SKU в перемещении'),
   ).toBeChecked();
   expect(screen.queryByLabelText('Порог цены')).not.toBeInTheDocument();
-  expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+  expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+  expect(screen.getByRole('checkbox', { name: 'Остаток' })).not.toBeChecked();
   expect(screen.getByLabelText('Порог суммы SKU')).toHaveValue(5000);
   fireEvent.click(screen.getByLabelText('Минимальная сумма SKU в перемещении'));
   expect(changed.transferAmountFilter).toEqual({

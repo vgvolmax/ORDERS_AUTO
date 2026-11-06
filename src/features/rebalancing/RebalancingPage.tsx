@@ -422,7 +422,7 @@ export function RebalancingPage() {
         new Blob([buffer], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         }),
-        `Ребалансировка_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        `Перемещения_${new Date().toISOString().slice(0, 10)}.xlsx`,
       );
     } catch (e) {
       setError(`Не удалось выгрузить Excel: ${rebalanceMessage(e)}`);
@@ -465,7 +465,7 @@ export function RebalancingPage() {
     >
       <div
         role="tablist"
-        aria-label="Ребалансировка"
+        aria-label="Перемещения"
         className="workspace-tabs"
       >
         {REBALANCE_TABS.map((tab) => (
@@ -511,7 +511,7 @@ export function RebalancingPage() {
       <header className="header-actions">
         <div>
           <p className="eyebrow">Внутренние перемещения</p>
-          <h1>Ребалансировка</h1>
+          <h1>Перемещения</h1>
           <p>
             Примите конкретные перемещения, чтобы учесть их при формировании
             заказов.
@@ -523,7 +523,7 @@ export function RebalancingPage() {
             disabled={busy || saving || !d.snapshot}
             onClick={excel}
           >
-            <BrandIcon name="download" /> Excel ребалансировки
+            <BrandIcon name="download" /> Excel перемещений
           </Button>
           <Button
             onClick={() => void calculate()}

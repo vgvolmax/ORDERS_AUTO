@@ -26,7 +26,7 @@ it('only displays supplied summary and returns to the rebalancing workspace on e
   expect(screen.getByText('Без перемещений')).toBeVisible();
   expect(state).toEqual(before);
   fireEvent.click(
-    screen.getByRole('button', { name: 'Открыть ребалансировку' }),
+    screen.getByRole('button', { name: 'Открыть перемещения' }),
   );
   expect(navigate).toHaveBeenCalledOnce();
   fireEvent.keyDown(document, { key: 'Escape' });

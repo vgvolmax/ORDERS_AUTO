@@ -1,5 +1,6 @@
 import { moneyProductsLessThan } from '../money';
 import {
+  getAmountExemptDonors,
   getTransferAmountFilter,
   groupTransferSkuAmounts,
 } from './transferAmounts';
@@ -67,6 +68,7 @@ function fingerprint(
         v.toBranchId,
         v.qty,
         rebalanceConfigFingerprint(v.acceptedConfig),
+        ...(v.amountExemptByStock ? [true] : []),
       ])
       .sort((a, b) => compare(JSON.stringify(a), JSON.stringify(b))),
   ]);
@@ -258,8 +260,10 @@ export function calculateRebalance(
   // Filter each SKU×donor×recipient after allocation. Other lines survive,
   // even when removing a small line leaves its recipient below the target.
   if (amountFilter.enabled) {
+    const exemptDonors = getAmountExemptDonors(s, config, totals.outgoing);
     const excluded = new Set<RebalanceTransfer>();
     for (const group of groupTransferSkuAmounts(s, transfers).values()) {
+      if (exemptDonors.has(stockKey(group.skuCode, group.fromBranchId))) continue;
       if (
         group.amount !== null &&
         !moneyProductsLessThan(group.products, amountFilter.threshold)

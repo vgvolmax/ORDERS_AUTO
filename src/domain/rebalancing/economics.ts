@@ -90,7 +90,8 @@ export function acceptedEconomicDiagnostics(
   }
   const documents = new Map<string, AcceptedTransfer[]>();
   for (const t of accepted) {
-    if (!t.acceptedConfig.transferAmountFilter?.enabled) continue;
+    if (!t.acceptedConfig.transferAmountFilter?.enabled || t.amountExemptByStock)
+      continue;
     const key = JSON.stringify([
       t.sourceRunId,
       rebalanceConfigFingerprint(t.acceptedConfig),

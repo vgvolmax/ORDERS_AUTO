@@ -373,3 +373,93 @@ describe('minimum amount belongs to one SKU from one donor to one recipient', ()
     expect(() => accept(s, p)).toThrow('INVALID_TRANSFER_BATCH');
   });
 });
+
+function stockException(multiplier: 2 | 3, enabled = true): RebalanceConfig {
+  return { ...settings(), stockAmountException: { enabled, multiplier } };
+}
+
+describe('donor stock exception to the directed SKU minimum', () => {
+  it.each([
+    [2, 201, false, false],
+    [2, 200, true, false],
+    [2, 201, true, true],
+    [3, 201, true, false],
+    [3, 300, true, false],
+    [3, 301, true, true],
+  ] as const)('with ×%s at stock %s and enabled %s yields exception %s', (multiplier, stock, enabled, exempt) => {
+    const s = network([['A', 10, stock - 100, 2]]);
+    const p = plan(s, stockException(multiplier, enabled));
+    expect(p.transfers.map((t) => [t.fromBranchId, t.qty])).toEqual(
+      exempt ? [['D', stock - 100]] : [],
+    );
+    expect(p.exclusions.filter((i) => i.code === 'TRANSFER_AMOUNT_FILTER').map((i) => i.fromBranchId))
+      .toEqual(exempt ? ['D2'] : ['D', 'D2']);
+  });
+
+  it('compares fractional stock exactly and handles a zero maximum', () => {
+    const s = network([['A', 1, 1, 0]]);
+    s.skus[0]!.quantityStep = 0.01;
+    const donor = s.stocks[0]!;
+    donor.max = 0.07;
+    donor.stock = 0.21;
+    s.stocks[2]!.min = s.stocks[2]!.max = 0.01;
+    expect(plan(s, stockException(3)).transfers).toHaveLength(0);
+    donor.stock = 0.22;
+    expect(plan(s, stockException(3)).transfers[0]!.qty).toBe(0.01);
+    donor.max = 0;
+    expect(plan(s, stockException(3)).transfers[0]!.qty).toBe(0.01);
+  });
+
+  it('keeps the exemption for partial acceptance of one plan and reserves outgoing stock in a new plan', () => {
+    const s = network([['A', 10, 101, 0]]);
+    s.branches.push({ id: 'R2', name: 'R2', active: true, aliases: [] });
+    const recipient = s.stocks[2]!;
+    recipient.min = recipient.max = 30;
+    s.stocks.push({ ...recipient, branchId: 'R2', sourceRow: 4 });
+    const c = stockException(2);
+    const p = plan(s, c);
+    expect(p.transfers.map((t) => t.qty)).toEqual([30, 30]);
+    const first = accept(s, p, [p.transfers[0]!.sourceLineId]);
+    expect(first.diagnostics).toEqual([]);
+    expect(plan(s, c, first.nextAccepted).transfers).toEqual([]);
+    const all = accept(s, p, [p.transfers[1]!.sourceLineId], first.nextAccepted);
+    expect(all.nextAccepted.map((t) => t.qty)).toEqual([30, 30]);
+    expect(all.diagnostics).toEqual([]);
+    expect(revokeTransfers({
+      snapshot: s,
+      currentAccepted: all.nextAccepted,
+      transferIds: [all.nextAccepted[0]!.transferId],
+      currentRevision: 2,
+      expectedRevision: 2,
+    }).diagnostics).toEqual([]);
+  });
+
+  it('permits an unknown price only for a qualifying donor when the amount filter is enabled', () => {
+    const s = network([['A', null, 101, 2]]);
+    const p = plan(s, stockException(2));
+    expect(p.transfers.map((t) => t.fromBranchId)).toEqual(['D']);
+    expect(p.exclusions.filter((i) => i.code === 'TRANSFER_AMOUNT_UNKNOWN').map((i) => i.fromBranchId))
+      .toEqual(['D2']);
+    const accepted = accept(s, p);
+    expect(accepted.nextAccepted).toHaveLength(1);
+    expect(accepted.diagnostics).toEqual([]);
+  });
+
+  it('does not override routes or the full-coverage check', () => {
+    const s = network([['A', 10, 101, 2]]);
+    const c = stockException(2);
+    c.routeConfig.pairs.push({ branchAId: 'D', branchBId: 'R', direction: 'BLOCKED' });
+    const p = plan(s, c);
+    expect(p.transfers).toEqual([]);
+    expect(p.skippedSkus?.[0]?.reason).toBe('ROUTE_LIMIT');
+  });
+
+  it('keeps disabled and legacy fingerprints compatible and invalidates changed enabled conditions', () => {
+    expect(rebalanceConfigFingerprint(stockException(3, false)))
+      .toBe(rebalanceConfigFingerprint(settings()));
+    expect(rebalanceConfigFingerprint(stockException(2)))
+      .not.toBe(rebalanceConfigFingerprint(stockException(3)));
+    expect(rebalanceConfigFingerprint(stockException(2)))
+      .not.toBe(rebalanceConfigFingerprint(settings()));
+  });
+});

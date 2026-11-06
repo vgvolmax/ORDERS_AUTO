@@ -420,7 +420,7 @@ it('keeps an empty route inspector open after its last accepted row is revoked f
   state.rebalance.tab = 'results';
   const current = harness(state);
   const root = screen
-    .getByRole('heading', { name: 'Ребалансировка' })
+    .getByRole('heading', { name: 'Перемещения' })
     .closest('main')!.parentElement!;
   const { drawer } = openRoute();
   fireEvent.click(

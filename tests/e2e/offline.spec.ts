@@ -171,7 +171,7 @@ test('E2E-20 bulk revoke respects SKU search and direction filters, survives rel
     .getByRole('button', { name: 'Перейти к потребности', exact: true })
     .click();
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page
     .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
@@ -309,7 +309,7 @@ test('E2E-20 bulk revoke respects SKU search and direction filters, survives rel
   });
   await page.keyboard.press('Escape');
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page.getByRole('tab', { name: 'Принятые', exact: true }).click();
   await page
@@ -436,7 +436,7 @@ test('E2E-19 stable rebalancing chrome and accepted route register export full c
     .getByRole('button', { name: 'Перейти к потребности', exact: true })
     .click();
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page
     .getByRole('button', { name: 'Рассчитать перемещения', exact: true })
@@ -610,8 +610,8 @@ test('E2E-18 one SKU per donor-recipient must meet the minimum; other SKUs and d
       'Максимальный остаток',
       'Цена',
     ],
-    ['AMOUNT-A', 'A-1', 'Первый товар документа', 203, null, null, 1000],
-    [null, null, 'Егорьевск', 103, 0, 100, null],
+    ['AMOUNT-A', 'A-1', 'Первый товар документа', 303, null, null, 1000],
+    [null, null, 'Егорьевск', 203, 0, 100, null],
     [null, null, 'Ленина', 100, 0, 100, null],
     [null, null, 'ОреховоЗуево', 0, 3, 3, null],
     ['AMOUNT-B', 'B-1', 'Второй товар документа', 219, null, null, 339.3],
@@ -676,8 +676,16 @@ test('E2E-18 one SKU per donor-recipient must meet the minimum; other SKUs and d
     .getByRole('button', { name: 'Перейти к потребности', exact: true })
     .click();
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
+  const stock = page.getByRole('checkbox', { name: 'Остаток', exact: true });
+  const timesTwo = page.getByRole('radio', { name: '×2', exact: true });
+  const timesThree = page.getByRole('radio', { name: '×3', exact: true });
+  await expect(stock).not.toBeChecked();
+  await expect(timesTwo).toBeChecked();
+  await expect(timesTwo).toBeDisabled();
+  await expect(timesThree).toBeDisabled();
+  await expect(timesTwo.locator('..')).toHaveCSS('cursor', 'not-allowed');
   await page
     .getByRole('checkbox', {
       name: 'Минимальная сумма SKU в перемещении',
@@ -714,11 +722,36 @@ test('E2E-18 one SKU per donor-recipient must meet the minimum; other SKUs and d
   await expect(
     page.getByText('Ленина → ОреховоЗуево', { exact: true }),
   ).toBeVisible();
+  await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  await stock.check();
+  await expect(timesTwo.locator('..')).toHaveCSS('cursor', 'pointer');
+  await stock.focus();
+  await page.keyboard.press('Tab');
+  await expect(timesTwo).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(timesThree).toBeFocused();
+  await expect(timesThree).toBeChecked();
+  await expect(timesThree.locator('..')).toHaveCSS('outline-style', 'solid');
+  await expect(timesTwo.locator('..')).not.toHaveCSS(
+    'background-image', await timesThree.locator('..').evaluate((e) => getComputedStyle(e).backgroundImage),
+  );
+  await page.screenshot({ path: testInfo.outputPath('23-stock-multiplier-3.png') });
+  const calculate = page.getByRole('button', { name: 'Рассчитать перемещения', exact: true });
+  await calculate.click();
+  await expect(route).toContainText('2 SKU');
+
+  await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  await timesTwo.locator('..').click();
+  await expect(timesTwo).toBeChecked();
+  await page.screenshot({ path: testInfo.outputPath('23-stock-multiplier-2.png') });
+  await calculate.click();
+  await expect(route).toContainText('13 089,50');
+  await expect(route).toContainText('3 SKU');
   await page
     .getByRole('checkbox', { name: 'Выбрать видимые предложения', exact: true })
     .check();
   await page
-    .getByRole('button', { name: 'Принять выбранные (2)', exact: true })
+    .getByRole('button', { name: 'Принять выбранные (3)', exact: true })
     .click();
   const confirmation = page.getByRole('dialog', {
     name: 'Принять выбранные перемещения',
@@ -745,19 +778,22 @@ test('E2E-18 one SKU per donor-recipient must meet the minimum; other SKUs and d
       exact: true,
     }),
   ).toBeChecked();
+  await expect(stock).toBeChecked();
+  await expect(timesTwo).toBeChecked();
   await page.getByRole('tab', { name: 'Результаты', exact: true }).click();
   await route.click();
   const downloaded = page.waitForEvent('download');
   await page
     .getByRole('dialog')
     .getByRole('button', {
-      name: 'Скачать CSV принятых позиций (2)',
+      name: 'Скачать CSV принятых позиций (3)',
       exact: true,
     })
     .click();
   const download = await downloaded;
   const csv = await readFile((await download.path())!, 'utf8');
-  expect(csv).not.toContain('AMOUNT-A');
+  expect(csv).toContain('AMOUNT-A');
+  expect(csv).toContain(';ОреховоЗуево;3;шт;1000;3000');
   expect(csv).toContain(';ОреховоЗуево;10;шт;500;5000');
   expect(csv).toContain(';ОреховоЗуево;15;шт;339.3;5089.5');
   expect(csv).not.toContain('Ленина');
@@ -1282,7 +1318,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   });
   await page.getByRole('button', { name: 'Перейти к потребности' }).click();
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page.getByRole('tab', { name: 'Маршруты' }).click();
   await page.getByLabel('Режим маршрутов').selectOption('SELECTIVE');
@@ -1427,9 +1463,9 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await page.screenshot({
     path: testInfo.outputPath('02-movement-popup-1280.png'),
   });
-  await page.getByRole('button', { name: 'Открыть ребалансировку' }).click();
+  await page.getByRole('button', { name: 'Открыть перемещения' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Ребалансировка', exact: true }),
+    page.getByRole('heading', { name: 'Перемещения', exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText('Подразделение: Получатель', { exact: true }),
@@ -1494,7 +1530,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   ).toBeChecked();
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page
     .getByRole('button', { name: 'Открыть перемещение Донор Б → Получатель' })
@@ -1514,7 +1550,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await page.keyboard.press('Escape');
 
   const rebalanceDownload = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Excel ребалансировки' }).click();
+  await page.getByRole('button', { name: 'Excel перемещений' }).click();
   const exported = await rebalanceDownload,
     report = new ExcelJS.Workbook();
   await report.xlsx.load(await readWorkbook((await exported.path())!));
@@ -1642,7 +1678,7 @@ for (const { count, width, height } of [
       });
     await page.getByRole('button', { name: 'Перейти к потребности' }).click();
     await page
-      .getByRole('button', { name: 'Ребалансировка', exact: true })
+      .getByRole('button', { name: 'Перемещения', exact: true })
       .click();
     await page.getByRole('tab', { name: 'Условия' }).click();
     await expect(page.getByLabel('Шаг для ненастроенных SKU')).toHaveCount(0);
@@ -1980,7 +2016,7 @@ async function importFullCoverageFixture(
   }
   await page.getByRole('button', { name: 'Перейти к потребности' }).click();
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page.getByRole('tab', { name: 'Маршруты', exact: true }).click();
 }
@@ -2561,7 +2597,7 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   await page.keyboard.press('Escape');
 
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await expect(
     page.getByText('Сеанс сохранён на этом компьютере', { exact: true }),
@@ -2609,7 +2645,7 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   ).toHaveText('0');
   await page.keyboard.press('Escape');
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page.getByRole('tab', { name: 'Результаты', exact: true }).click();
   await route.click();
@@ -2751,7 +2787,7 @@ test('E2E-13 monetary threshold rolls back after an offline storage failure and 
     });
   }
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page.getByRole('tab', { name: 'Условия', exact: true }).click();
   const threshold = page.getByLabel('Порог суммы SKU', { exact: true });
@@ -2865,7 +2901,7 @@ test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work 
   await supplierChoice.selectOption(allowed);
   await expect(supplierChoice.locator('option:checked')).toHaveText(`Назначен: ${allowed}`);
   await page
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await expect(page.getByLabel('Шаг для ненастроенных SKU')).toHaveCount(0);
   await page
@@ -3014,7 +3050,7 @@ test('E2E-15 page context, frozen product identity and accessible saved table co
     path: testInfo.outputPath('30-demand-saved-columns.png'),
   });
   await nav
-    .getByRole('button', { name: 'Ребалансировка', exact: true })
+    .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
   await page.getByRole('tab', { name: 'Маршруты', exact: true }).click();
   expect(await a11y()).toEqual([]);
@@ -3190,7 +3226,7 @@ test('E2E-22 Volmax workspace ships local artwork and distinct native control st
   await expect(page.getByText('Потребность рассчитана.', { exact: true })).toBeHidden();
   await page.screenshot({ path: testInfo.outputPath('01-demand.png') });
 
-  await page.getByRole('button', { name: 'Раздел: Ребалансировка', exact: true }).click();
+  await page.getByRole('button', { name: 'Раздел: Перемещения', exact: true }).click();
   await page.getByRole('tab', { name: 'Условия', exact: true }).click();
   await expectPointerStates(
     page.getByRole('tab', { name: 'Условия', selected: true }),

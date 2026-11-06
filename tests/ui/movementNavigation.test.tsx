@@ -82,9 +82,9 @@ it.each([
       }),
     );
     fireEvent.click(
-      screen.getByRole('button', { name: 'Открыть ребалансировку' }),
+      screen.getByRole('button', { name: 'Открыть перемещения' }),
     );
-    await screen.findByRole('heading', { name: 'Ребалансировка' });
+    await screen.findByRole('heading', { name: 'Перемещения' });
     const movementCount = () => {
       let count = 0;
       const triggers = screen.getAllByRole('button', {
@@ -113,7 +113,7 @@ it.each([
     });
     view.unmount();
     render(<App />);
-    await screen.findByRole('heading', { name: 'Ребалансировка' });
+    await screen.findByRole('heading', { name: 'Перемещения' });
     expect(movementCount()).toBe(count);
     fireEvent.click(screen.getByRole('button', { name: 'Очистить поиск' }));
     expect(movementCount()).toBe(count * 2);

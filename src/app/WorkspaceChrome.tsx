@@ -9,8 +9,8 @@ const sections = [
   { page: 'all', label: 'Все товары', toolbar: 'Потребность', icon: 'box' },
   {
     page: 'rebalancing',
-    label: 'Ребалансировка',
-    toolbar: 'Ребалансировка',
+    label: 'Перемещения',
+    toolbar: 'Перемещения',
     icon: 'swap',
   },
   {
