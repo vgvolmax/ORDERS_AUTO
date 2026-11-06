@@ -74,9 +74,9 @@ const orders: Order[] = [
 ];
 
 describe('buildSupplierWorkbook', () => {
-  it('creates dashboard KPIs, aggregated SKU row and branch sheets', async () => {
+  it('brands a reviewed supplier export and preserves its exact aggregated quantities and costs', async () => {
     const reviewedSubset = orders.slice(0, 2);
-    const buffer = await buildSupplierWorkbook('Поставщик', reviewedSubset);
+    const buffer = await buildSupplierWorkbook('Поставщик', reviewedSubset, 'REVIEWED');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
 
@@ -86,18 +86,81 @@ describe('buildSupplierWorkbook', () => {
       'Ступино',
     ]);
     expect(workbook.getWorksheet('Щурово')).toBeUndefined();
+    expect(workbook.creator).toContain('Волмакс');
 
     const dashboard = workbook.getWorksheet('Общий заказ')!;
-    expect(dashboard.getCell('A1').value).toBe('Поставщик');
-    expect(dashboard.getCell('B1').value).toBe('Поставщик');
-    expect(dashboard.getCell('B2').value).toBe(300);
-    expect(dashboard.getCell('B3').value).toBe(1);
-    expect(dashboard.getCell('B4').value).toBe(2);
-    expect(dashboard.getCell('B5').value).toBe(3);
+    expect(dashboard.getCell('B1').value).toBe('ВОЛМАКС');
+    expect(dashboard.getCell('B2').value).toContain('УК ВОЛМАКС');
+    expect(dashboard.getCell('E1').value).toBe('ЗАКАЗ ПОСТАВЩИКУ');
+    expect(String(dashboard.getCell('E2').value)).toContain('ПРОВЕРЕННЫЕ ЗАКАЗЫ');
+    expect(dashboard.getCell('A3').value).toBe('ПОСТАВЩИК');
+    expect(dashboard.getCell('B3').value).toBe('Поставщик');
+    expect(dashboard.getCell('A6').value).toBe(300);
+    expect(dashboard.getCell('C6').value).toBe(1);
+    expect(dashboard.getCell('E6').value).toBe(2);
+    expect(dashboard.getCell('A8').value).toBe('Код');
+    expect(dashboard.getCell('G8').value).toBe('Сумма, ₽');
 
-    const skuRows = dashboard.getRows(8, 10) ?? [];
-    const skuRow = skuRows.find((row) => row.getCell(1).value === 'SKU1');
-    expect(skuRow?.getCell(4).value).toBe(3);
-    expect(skuRow?.getCell(7).value).toBe(300);
+    expect(dashboard.getCell('A9').value).toBe('SKU1');
+    expect(dashboard.getCell('D9').value).toBe(3);
+    expect(dashboard.getCell('G9').value).toBe(300);
+    expect(dashboard.getCell('A10').value).toBe('ИТОГО');
+    expect(dashboard.getCell('D10').value).toBe(3);
+    expect(dashboard.getCell('G10').value).toBe(300);
+    expect(dashboard.getCell('G9').numFmt).toContain('₽');
+
+    expect(dashboard.getImages()).toHaveLength(1);
+    expect(dashboard.views[0]).toMatchObject({ state: 'frozen', ySplit: 8, showGridLines: false });
+    expect(dashboard.autoFilter).toEqual({
+      from: { row: 8, column: 1 }, to: { row: 9, column: 7 },
+    });
+    expect(dashboard.pageSetup.orientation).toBe('landscape');
+    expect(dashboard.pageSetup.printTitlesRow).toBe('8:8');
+    expect(dashboard.pageSetup.printArea).toBe('A1:G12');
+
+    const branch = workbook.getWorksheet('Ленина')!;
+    expect(branch.getCell('E1').value).toBe('ЗАКАЗ ПОДРАЗДЕЛЕНИЯ');
+    expect(branch.getCell('B3').value).toBe('Поставщик  ·  Ленина');
+    expect(branch.getCell('A9').value).toBe('SKU1');
+    expect(branch.getCell('D9').value).toBe(2);
+    expect(branch.getCell('G9').value).toBe(200);
+    expect(branch.getCell('D10').value).toBe(2);
+    expect(branch.getCell('G10').value).toBe(200);
+    expect(branch.getImages()).toHaveLength(1);
+  });
+
+  it('labels the full export honestly and retains all selected branches', async () => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await buildSupplierWorkbook('Поставщик', orders, 'ALL'));
+    expect(wb.worksheets.map((sheet) => sheet.name)).toEqual([
+      'Общий заказ', 'Ленина', 'Ступино', 'Щурово',
+    ]);
+    const summary = wb.getWorksheet('Общий заказ')!;
+    expect(String(summary.getCell('E2').value)).toContain('ВСЕ ЗАКАЗЫ');
+    expect(summary.getCell('A6').value).toBe(800);
+    expect(summary.getCell('C6').value).toBe(1);
+    expect(summary.getCell('E6').value).toBe(3);
+    expect(summary.getCell('D9').value).toBe(8);
+    expect(summary.getCell('G9').value).toBe(800);
+    expect(summary.getCell('D10').value).toBe(8);
+    expect(summary.getCell('G10').value).toBe(800);
+    expect(wb.getWorksheet('Щурово')!.getCell('G9').value).toBe(500);
+  });
+
+  it('retains text SKU identifiers, zeroes and empty costs rather than introducing new calculations', async () => {
+    const copy: Order = structuredClone(orders[0]!);
+    copy.lines[0]!.skuCode = '000123';
+    copy.lines[0]!.article = '000045';
+    copy.lines[0]!.amount = null;
+    copy.lines[0]!.unitPrice = null;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await buildSupplierWorkbook('Поставщик', [copy]));
+    const summary = wb.getWorksheet('Общий заказ')!;
+    expect(summary.getCell('A9').value).toBe('000123');
+    expect(summary.getCell('B9').value).toBe('000045');
+    expect(summary.getCell('A9').numFmt).toBe('@');
+    expect(summary.getCell('G9').value).toBe(0);
+    expect(wb.getWorksheet('Ленина')!.getCell('F9').value).toBeNull();
+    expect(wb.getWorksheet('Ленина')!.getCell('G9').value).toBeNull();
   });
 });
