@@ -86,6 +86,108 @@ describe('persist then publish workspace commands', () => {
     expect(session.getState().exportedOrderIds).toEqual([]);
   });
 
+  it('reuses the purchasing basis and other suppliers while recalculating an edited supplier', async () => {
+    const initial = baseState({
+      settings: { minimumOrderAmount: 1000, thresholdMode: 'SUPPLIER_TOTAL' },
+    });
+    const otherSupplier = 'ИП Никишин Андрей Николаевич';
+    initial.minMax!.skus.push({ ...initial.minMax!.skus[0]!, code: 'SKU2' });
+    initial.minMax!.branchStocks.push({
+      skuCode: 'SKU2',
+      branch: 'Ленина',
+      stock: 0,
+      min: 5,
+      max: 20,
+    });
+    initial.suppliers!.history.push({
+      ...initial.suppliers!.history[0]!,
+      skuCode: 'SKU2',
+      supplier: otherSupplier,
+    });
+    const before = derive(initial);
+    const other = before.projection.orders.find(
+      (order) => order.supplier === otherSupplier,
+    )!;
+    initial.reviewedOrderIds = before.projection.orders.map((order) => order.id);
+    initial.exportedOrderIds = initial.reviewedOrderIds;
+    const published: unknown[] = [];
+    let rejectSave = true;
+    const session = createWorkspaceSession({
+      initial,
+      save: async () => {
+        if (rejectSave) throw new Error('quota');
+      },
+      publish: (state) => published.push(state),
+    });
+    const reduction = { edits: [{ skuCode: 'SKU1', branch: 'Ленина', qty: 0 }] };
+    await expect(session.commit(reduction)).rejects.toThrow('quota');
+    expect(session.getState()).toBe(initial);
+    expect(published).toHaveLength(0);
+
+    rejectSave = false;
+    await session.commit(reduction);
+    const reduced = session.getState();
+    const after = derive(reduced);
+    expect(after.purchaseDemand).toBe(before.purchaseDemand);
+    expect(
+      after.projection.orders.find((order) => order.id === other.id)?.lines,
+    ).toBe(other.lines);
+    expect(after.projection.orders.slice(0, 2).map((order) => [
+      order.totalAmount, order.belowThreshold,
+    ])).toEqual([[0, true], [400, true]]);
+    expect(reduced.reviewedOrderIds).toEqual([other.id]);
+    expect(reduced.exportedOrderIds).toEqual([other.id]);
+
+    await session.commit({
+      edits: [{ skuCode: 'SKU1', branch: 'Ленина', qty: 6.5 }],
+    });
+    const restored = derive(session.getState());
+    expect(restored.purchaseDemand).toBe(before.purchaseDemand);
+    expect(restored.projection.orders.slice(0, 2).map((order) => [
+      order.totalAmount, order.belowThreshold,
+    ])).toEqual([[650, false], [400, false]]);
+    expect(restored.projection.orders.find((order) => order.id === other.id)).toMatchObject({
+      reviewed: true, status: 'EXPORTED',
+    });
+  });
+
+  it('reconciles legacy composite edit keys shared by two suppliers', async () => {
+    const initial = baseState();
+    const first = initial.suppliers!.history[0]!;
+    const otherSupplier = 'ИП Никишин Андрей Николаевич';
+    const sku = initial.minMax!.skus[0]!;
+    initial.minMax!.skus = [
+      { ...sku, code: 'A' },
+      { ...sku, code: 'A\0B' },
+    ];
+    initial.minMax!.branches = ['B\0C', 'C'];
+    initial.minMax!.branchStocks = [
+      { skuCode: 'A', branch: 'B\0C', stock: 3, min: 5, max: 10 },
+      { skuCode: 'A\0B', branch: 'C', stock: 3, min: 5, max: 10 },
+    ];
+    initial.suppliers!.history = [
+      { ...first, skuCode: 'A' },
+      { ...first, skuCode: 'A\0B', supplier: otherSupplier },
+    ];
+    const ids = derive(initial).projection.orders.map((order) => order.id);
+    initial.reviewedOrderIds = ids;
+    initial.exportedOrderIds = ids;
+    const session = createWorkspaceSession({
+      initial,
+      save: async () => undefined,
+      publish: () => undefined,
+    });
+
+    await session.commit({ edits: [{ skuCode: 'A', branch: 'B\0C', qty: 4 }] });
+
+    const current = session.getState();
+    expect(
+      derive(current).projection.orders.map((order) => order.totalQty),
+    ).toEqual([4, 4]);
+    expect(current.reviewedOrderIds).toEqual([]);
+    expect(current.exportedOrderIds).toEqual([]);
+  });
+
   it('does not publish a failed save and can retry without losing the current accepted ledger', async () => {
     const initial = createInitialState();
     const published: unknown[] = [];

@@ -86,13 +86,14 @@ export async function saveWorkspace(
       throw new Error(
         'WORKSPACE_CONFLICT: сеанс изменён в другой вкладке; откройте актуальную сохранённую версию',
       );
+    const rawFiles = tx.objectStore('workspaceFiles');
     for (const file of files) {
-      if (await tx.objectStore('workspaceFiles').get(file.fileId))
+      if ((await rawFiles.getKey(file.fileId)) !== undefined)
         throw new Error('WORKSPACE_FILE_EXISTS');
-      await tx.objectStore('workspaceFiles').put(file);
+      await rawFiles.put(file);
     }
     for (const ref of Object.values(value.data.rawImports))
-      if (ref && !(await tx.objectStore('workspaceFiles').get(ref.fileId)))
+      if (ref && (await rawFiles.getKey(ref.fileId)) === undefined)
         throw new Error('WORKSPACE_FILE_MISSING');
     await tx.objectStore('workspaces').put(value);
     await tx

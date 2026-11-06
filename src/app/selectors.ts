@@ -14,6 +14,7 @@ import type {
 import { calculateDemand, priceDemand } from '../domain/demand';
 import { getManualEditCount } from '../domain/orderWorkflow';
 import { buildOrderProjection } from '../domain/orders';
+import { changedOrderIds } from '../domain/rebalanceWorkflow';
 import { collectPurchasingIssues } from '../domain/purchasingIssues';
 import { resolveSuppliers } from '../domain/suppliers';
 import { isSupplierInPool } from '../domain/supplierPool';
@@ -22,6 +23,7 @@ import type {
   OrderProjection,
   PricedDemandLine,
   SupplierResolution,
+  ValidationIssue,
 } from '../domain/types';
 import type { AppState } from './appStore';
 
@@ -59,30 +61,46 @@ const EMPTY_DERIVED_STATE: DerivedState = {
   projection: { orders: [], unassigned: [] },
 };
 
-// AppState is replaced immutably by React setState. A WeakMap therefore lets
-// local component state (search/filter text) re-render without rebuilding the
-// full demand/supplier/order graph, while old snapshots remain collectable.
-const derivedCache = new WeakMap<AppState, DerivedState>();
+interface PurchasingBasis {
+  data: Omit<DerivedState, 'proposal' | 'projection'>;
+  supplierBySku: Map<string, string | null>;
+  demandBySupplier: Map<string, PurchaseDemandLine[]>;
+  dataIssues: ValidationIssue[];
+}
 
-/**
- * Builds every computed purchasing projection from normalized application state.
- *
- * The selector is intentionally total: before both reports are loaded it returns
- * an empty projection rather than `null`. This keeps presentation components free
- * from non-null assertions and, more importantly, centralizes the rule that no
- * business calculation may run on a half-imported data set.
- */
-export function derive(state: AppState): DerivedState {
-  const cached = derivedCache.get(state);
-  if (cached) {
-    return cached;
-  }
+interface CachedPurchasing {
+  basis: PurchasingBasis;
+  projection: OrderProjection;
+  view?: DerivedState;
+}
 
-  if (!state.minMax || !state.suppliers) {
-    derivedCache.set(state, EMPTY_DERIVED_STATE);
-    return EMPTY_DERIVED_STATE;
-  }
+// Exact state keys keep restored or independently constructed states isolated.
+const purchasingCache = new WeakMap<AppState, CachedPurchasing>();
 
+function purchasingInputs(state: AppState) {
+  return [
+    state.minMax,
+    state.suppliers,
+    state.minMaxIssues,
+    state.supplierIssues,
+    state.overrides,
+    state.settings,
+    state.snapshotId,
+    state.rebalance.registry,
+    state.rebalance.policies,
+    state.rebalance.accepted,
+  ] as const;
+}
+
+function samePurchasingInputs(previous: AppState, next: AppState): boolean {
+  const inputs = purchasingInputs(next);
+  return purchasingInputs(previous).every(
+    (input, index) => input === inputs[index],
+  );
+}
+
+function buildPurchasingBasis(state: AppState): PurchasingBasis | null {
+  if (!state.minMax || !state.suppliers) return null;
   const resolutions = resolveSuppliers(
     state.suppliers.history.filter((row) => isSupplierInPool(row.supplier)),
     state.overrides,
@@ -128,13 +146,137 @@ export function derive(state: AppState): DerivedState {
     state.rebalance.accepted,
     registry,
   );
-  const baseProjection = buildOrderProjection(
-    purchaseDemand,
-    resolutions,
+  const demandBySupplier = new Map<string, PurchaseDemandLine[]>();
+  for (const line of purchaseDemand) {
+    if (line.selectedSupplier === null) continue;
+    const rows = demandBySupplier.get(line.selectedSupplier) ?? [];
+    rows.push(line);
+    demandBySupplier.set(line.selectedSupplier, rows);
+  }
+  return {
+    data: {
+      quantityPolicies,
+      resolutions,
+      demand,
+      originalDemand: demand,
+      purchaseDemand,
+      snapshot,
+      acceptedSummary: {
+        transferCount: state.rebalance.accepted.length,
+        diagnostics: acceptedEconomicDiagnostics(
+          snapshot.snapshot,
+          state.rebalance.accepted,
+        ),
+      },
+    },
+    supplierBySku: new Map(
+      resolutions.map((resolution) => [
+        resolution.skuCode,
+        resolution.selectedSupplier,
+      ]),
+    ),
+    demandBySupplier,
+    dataIssues: collectPurchasingIssues(state.minMax, state.minMaxIssues),
+  };
+}
+
+function purchasingProjection(state: AppState): CachedPurchasing | null {
+  const cached = purchasingCache.get(state);
+  if (cached) return cached;
+
+  const basis = buildPurchasingBasis(state);
+  if (!basis) return null;
+  const projection = buildOrderProjection(
+    basis.data.purchaseDemand,
+    basis.data.resolutions,
     state.edits,
     state.settings,
-    collectPurchasingIssues(state.minMax, state.minMaxIssues),
+    basis.dataIssues,
   );
+  const result = { basis, projection };
+  purchasingCache.set(state, result);
+  return result;
+}
+
+/** Carry a session-owned calculation across metadata changes and publication. */
+export function reusePurchasingProjection(
+  previous: AppState,
+  next: AppState,
+): void {
+  const cached = purchasingCache.get(previous);
+  if (
+    cached &&
+    previous.edits === next.edits &&
+    samePurchasingInputs(previous, next)
+  ) {
+    purchasingCache.set(next, {
+      basis: cached.basis,
+      projection: cached.projection,
+    });
+  }
+}
+
+/** Reuses the normal order builder within the only suppliers whose inputs changed. */
+export function reconcileOrderQtyEdits(
+  previous: AppState,
+  next: AppState,
+): AppState | null {
+  if (!samePurchasingInputs(previous, next)) return null;
+  const current = purchasingProjection(previous);
+  if (!current) return null;
+  const { basis, projection: before } = current;
+
+  const byKey = (edits: AppState['edits']) =>
+    new Map(edits.map((edit) => [`${edit.skuCode}\0${edit.branch}`, edit]));
+  const beforeEdits = byKey(previous.edits);
+  const afterEdits = byKey(next.edits);
+  const suppliers = new Set<string>();
+  for (const [key, edit] of new Map([...beforeEdits, ...afterEdits])) {
+    if (beforeEdits.get(key)?.qty === afterEdits.get(key)?.qty) continue;
+    // A legacy composite key containing another delimiter can match multiple suppliers.
+    if (key.indexOf('\0') !== key.lastIndexOf('\0')) return null;
+    const supplier = basis.supplierBySku.get(edit.skuCode);
+    if (supplier != null) suppliers.add(supplier);
+  }
+
+  const replacements = new Map<string, Order>();
+  for (const supplier of suppliers) {
+    const rows = basis.demandBySupplier.get(supplier);
+    if (!rows) continue;
+    const scoped = buildOrderProjection(
+      rows,
+      basis.data.resolutions,
+      next.edits,
+      next.settings,
+      basis.dataIssues,
+    );
+    for (const order of scoped.orders) replacements.set(order.id, order);
+  }
+  // The report and suppliers are unchanged, so quantity edits cannot add or remove order IDs.
+  const affected = changedOrderIds(
+    before.orders.filter((order) => replacements.has(order.id)),
+    [...replacements.values()],
+  );
+  const projection = {
+    ...before,
+    orders: before.orders.map((order) => replacements.get(order.id) ?? order),
+  };
+  const result = {
+    ...next,
+    reviewedOrderIds: next.reviewedOrderIds.filter((id) => !affected.has(id)),
+    exportedOrderIds: next.exportedOrderIds.filter((id) => !affected.has(id)),
+  };
+  purchasingCache.set(result, { basis, projection });
+  return result;
+}
+
+/** Builds the purchasing view, or an empty view until both reports are loaded. */
+export function derive(state: AppState): DerivedState {
+  const current = purchasingProjection(state);
+  if (!current) return EMPTY_DERIVED_STATE;
+  if (current.view) return current.view;
+
+  const { basis, projection: baseProjection } = current;
   const exportedIds = new Set(state.exportedOrderIds ?? []);
   const reviewedIds = new Set(state.reviewedOrderIds ?? []);
 
@@ -151,22 +293,10 @@ export function derive(state: AppState): DerivedState {
   }));
 
   const result: DerivedState = {
-    quantityPolicies,
-    resolutions,
-    demand,
-    originalDemand: demand,
-    purchaseDemand,
-    snapshot,
+    ...basis.data,
     proposal: state.rebalance.proposal,
-    acceptedSummary: {
-      transferCount: state.rebalance.accepted.length,
-      diagnostics: acceptedEconomicDiagnostics(
-        snapshot.snapshot,
-        state.rebalance.accepted,
-      ),
-    },
     projection: { ...baseProjection, orders },
   };
-  derivedCache.set(state, result);
+  current.view = result;
   return result;
 }

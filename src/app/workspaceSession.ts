@@ -1,4 +1,8 @@
-import { derive } from './selectors';
+import {
+  derive,
+  reconcileOrderQtyEdits,
+  reusePurchasingProjection,
+} from './selectors';
 import { buildAcceptedTransferStatePatch } from '../domain/rebalanceWorkflow';
 import type { AppState, StatePatch } from './appStore';
 import type { StoredWorkspace, WorkspaceFile } from '../domain/workspace';
@@ -99,8 +103,10 @@ export function createWorkspaceSession({
       return operation;
     },
     transient(patch: Partial<AppState>) {
-      state = { ...state, ...patch };
-      publish(state);
+      const next = { ...state, ...patch };
+      reusePurchasingProjection(state, next);
+      state = next;
+      publish(next);
     },
     commit(patch: StatePatch): Promise<void> {
       const operation = tail.then(async () => {
@@ -144,25 +150,33 @@ export function createWorkspaceSession({
           !replaced &&
           (update.edits || update.overrides || update.settings)
         ) {
-          const before = derive(previous),
-            after = derive(next);
-          const workflow = buildAcceptedTransferStatePatch({
-            previousDemand: before.purchaseDemand,
-            nextDemand: after.purchaseDemand,
-            previousProjection: before.projection,
-            resolutions: after.resolutions,
-            settings: next.settings,
-            edits: next.edits,
-            reviewedOrderIds: next.reviewedOrderIds,
-            exportedOrderIds: next.exportedOrderIds,
-          });
-          next = {
-            ...next,
-            edits: workflow.edits,
-            reviewedOrderIds: workflow.reviewedOrderIds,
-            exportedOrderIds: workflow.exportedOrderIds,
-          };
+          const scoped = update.edits
+            ? reconcileOrderQtyEdits(previous, next)
+            : null;
+          if (scoped) {
+            next = scoped;
+          } else {
+            const before = derive(previous);
+            const after = derive(next);
+            const workflow = buildAcceptedTransferStatePatch({
+              previousDemand: before.purchaseDemand,
+              nextDemand: after.purchaseDemand,
+              previousProjection: before.projection,
+              resolutions: after.resolutions,
+              settings: next.settings,
+              edits: next.edits,
+              reviewedOrderIds: next.reviewedOrderIds,
+              exportedOrderIds: next.exportedOrderIds,
+            });
+            next = {
+              ...next,
+              edits: workflow.edits,
+              reviewedOrderIds: workflow.reviewedOrderIds,
+              exportedOrderIds: workflow.exportedOrderIds,
+            };
+          }
         }
+        reusePurchasingProjection(previous, next);
         const stored = workspaceFromState(next);
         if (replaced && previous.workspaceRevision >= 0)
           stored.previousActive = {
@@ -174,7 +188,7 @@ export function createWorkspaceSession({
           replaced ? -1 : previous.workspaceRevision,
           update.pendingFiles ?? [],
         );
-        next = {
+        const published = {
           ...next,
           pendingFiles: [],
           storageError: null,
@@ -182,8 +196,9 @@ export function createWorkspaceSession({
           minMaxLoading: update.minMaxLoading ?? state.minMaxLoading,
           supplierLoading: update.supplierLoading ?? state.supplierLoading,
         };
-        state = next;
-        publish(next);
+        reusePurchasingProjection(next, published);
+        state = published;
+        publish(published);
       });
       tail = operation.catch(() => undefined);
       return operation;

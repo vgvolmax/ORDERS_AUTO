@@ -1,4 +1,5 @@
 import { moneySum } from '../../domain/money';
+import type { OrderLine } from '../../domain/types';
 import { useMemo, useState } from 'react';
 import { orderToCsv } from '../../export/csv';
 import { useStore } from '../../app/appStore';
@@ -33,6 +34,20 @@ import { OrderDrawer } from './OrderDrawer';
 import { SupplierOrdersDrawer } from './SupplierOrdersDrawer';
 
 type ExportMode = 'ALL' | 'REVIEWED';
+
+function renderOrderMovement(line: OrderLine) {
+  const transferCount = line.purchaseContext?.acceptedTransferIds.length;
+  if (!transferCount) return null;
+  return (
+    <MovementIndicator
+      scope={{ skuCode: line.skuCode, branch: line.branch }}
+      manualOrderQty={
+        line.orderQty !== line.calculatedQty ? line.orderQty : undefined
+      }
+      transferCount={transferCount}
+    />
+  );
+}
 
 export function OrdersPage() {
   const { state, set, commit, saving } = useStore();
@@ -591,14 +606,7 @@ export function OrdersPage() {
           order={selected}
           exportError={exportError}
           saving={Boolean(busy || saving)}
-          renderMovement={(line) => (
-            <MovementIndicator
-              scope={{ skuCode: line.skuCode, branch: line.branch }}
-              manualOrderQty={
-                line.orderQty !== line.calculatedQty ? line.orderQty : undefined
-              }
-            />
-          )}
+          renderMovement={renderOrderMovement}
           onClose={() => setSelectedId(null)}
           onEdit={(skuCode, _branch, qty) => editOrder(selected, skuCode, qty)}
           onReviewedChange={(reviewed) => setReviewed(selected.id, reviewed)}
@@ -612,14 +620,7 @@ export function OrdersPage() {
         <SupplierOrdersDrawer
           supplier={selectedSupplier}
           saving={Boolean(busy || saving)}
-          renderMovement={(line) => (
-            <MovementIndicator
-              scope={{ skuCode: line.skuCode, branch: line.branch }}
-              manualOrderQty={
-                line.orderQty !== line.calculatedQty ? line.orderQty : undefined
-              }
-            />
-          )}
+          renderMovement={renderOrderMovement}
           orders={selectedSupplierOrders}
           branchOrder={branches}
           widthPreferences={
