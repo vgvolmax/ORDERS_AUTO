@@ -260,6 +260,9 @@ export function calculateRebalance(
       }
     }
     const checkedReceivers = receivers.filter((receiver) => !excludedReceivers.has(receiver.id));
+    const checkedFlow = excludedReceivers.size > 0
+      ? allocateFlow(donors, checkedReceivers, routes.outgoing, step, preferred)
+      : physicalFlow;
     // A shortage is not a veto: propose every economically valid full or partial
     // line, then leave the unmet quantity in purchasing after acceptance.
     const allocation = prioritizeDonorStock(
