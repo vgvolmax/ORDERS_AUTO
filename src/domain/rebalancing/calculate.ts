@@ -43,7 +43,7 @@ import {
   type SkippedRebalanceSku,
 } from './types';
 
-export const ALGORITHM_VERSION = 'full-sku-joint-donor-plan-v7';
+export const ALGORITHM_VERSION = 'partial-sku-joint-donor-plan-v8';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const transferKey = (skuCode: string, from: string, to: string) =>
   JSON.stringify([skuCode, from, to]);
@@ -145,6 +145,14 @@ export function calculateRebalance(
     accepted.map((t) => JSON.stringify([t.fromBranchId, t.toBranchId])),
   );
   const searchBudget = { remaining: MAX_STATES_PER_CALCULATION };
+  const coverageBySku = new Map<string, {
+    neededByRecipient: Map<string, number>;
+    capacityQty: number;
+    physicalQty: number;
+    stepLimited: boolean;
+    amountConstrained: boolean;
+    searchLimited: boolean;
+  }>();
   for (const sku of [...s.skus].sort((a, b) => compare(a.skuCode, b.skuCode))) {
     const rows = [...(skuStocks.get(sku.skuCode) ?? [])].sort((a, b) =>
       compare(a.branchId, b.branchId),
@@ -252,42 +260,19 @@ export function calculateRebalance(
       }
     }
     const checkedReceivers = receivers.filter((receiver) => !excludedReceivers.has(receiver.id));
-    const checkedFlow = excludedReceivers.size > 0
-      ? allocateFlow(donors, checkedReceivers, routes.outgoing, step, preferred)
-      : physicalFlow;
-    const recipients = [...neededByRecipient]
-      .filter(([branchId]) => !excludedReceivers.has(branchId))
-      .map(([branchId, neededQty]) => ({
-      branchId,
-      neededQty,
-      deliverableQty: sumQuantities(
-        checkedFlow.filter((t) => t.to === branchId)
-          .map((t) => quantityFromUnits(t.units, step)),
-      ),
-    }));
-    if (recipients.some((r) => r.deliverableQty !== r.neededQty)) {
-      const neededQty = sumQuantities(recipients.map((r) => r.neededQty));
-      const deliverableQty = sumQuantities(recipients.map((r) => r.deliverableQty));
-      const capacityQty = sumQuantities(
-        donors.map((d) => quantityFromUnits(d.capacity, step)),
-      );
-      skippedSkus.push({
-        skuCode: sku.skuCode,
-        neededQty,
-        deliverableQty,
-        missingQty: subtractQuantity(neededQty, deliverableQty),
-        reason: stepLimited
-          ? 'QUANTITY_STEP'
-          : capacityQty < neededQty
-            ? 'INSUFFICIENT_SURPLUS'
-            : 'ROUTE_LIMIT',
-        recipients,
-      });
-      continue;
-    }
+    // A shortage is not a veto: propose every economically valid full or partial
+    // line, then leave the unmet quantity in purchasing after acceptance.
     const allocation = prioritizeDonorStock(
       donors, checkedReceivers, routes.outgoing, step, preferred, checkedFlow, searchBudget,
     );
+    coverageBySku.set(sku.skuCode, {
+      neededByRecipient,
+      capacityQty: sumQuantities(donors.map((d) => quantityFromUnits(d.capacity, step))),
+      physicalQty: sumQuantities(physicalFlow.map((t) => quantityFromUnits(t.units, step))),
+      stepLimited,
+      amountConstrained: excludedReceivers.size > 0,
+      searchLimited: allocation.limited,
+    });
     if (allocation.limited) emit(
       'TRANSFER_SEARCH_LIMIT',
       'Поиск остановлен по лимиту расчёта. Показан лучший из проверенных допустимых планов',
@@ -384,6 +369,39 @@ export function calculateRebalance(
     const incoming = proposedIncoming.get(to) ?? [];
     incoming.push(t.qty);
     proposedIncoming.set(to, incoming);
+  }
+  // Measure remaining need from the FINAL proposed lines, not an optimistic
+  // physical trial flow. That includes partial proposals and the amount filter.
+  for (const [skuCode, coverage] of coverageBySku) {
+    const recipients = [...coverage.neededByRecipient].map(([branchId, neededQty]) => ({
+      branchId,
+      neededQty,
+      deliverableQty: sumQuantities(
+        proposedIncoming.get(stockKey(skuCode, branchId)) ?? [],
+      ),
+    }));
+    const neededQty = sumQuantities(recipients.map((r) => r.neededQty));
+    const deliverableQty = sumQuantities(recipients.map((r) => r.deliverableQty));
+    if (deliverableQty >= neededQty) continue;
+    const amountLimited = amountFilter.enabled && (
+      coverage.amountConstrained || deliverableQty < coverage.physicalQty
+    );
+    skippedSkus.push({
+      skuCode,
+      neededQty,
+      deliverableQty,
+      missingQty: subtractQuantity(neededQty, deliverableQty),
+      reason: coverage.stepLimited
+        ? 'QUANTITY_STEP'
+        : amountLimited
+          ? 'AMOUNT_THRESHOLD'
+          : coverage.searchLimited
+            ? 'SEARCH_LIMIT'
+            : coverage.capacityQty < neededQty
+              ? 'INSUFFICIENT_SURPLUS'
+              : 'ROUTE_LIMIT',
+      recipients,
+    });
   }
   const balances = s.stocks
     .map((row) => {

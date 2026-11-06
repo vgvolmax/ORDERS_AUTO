@@ -127,12 +127,13 @@ export interface UncoveredNeed {
   toMin: number;
   toTarget: number;
 }
+/** Remaining need after legal proposed transfers; does not mean the whole SKU is skipped. */
 export interface SkippedRebalanceSku {
   skuCode: string;
   neededQty: number;
   deliverableQty: number;
   missingQty: number;
-  reason: 'INSUFFICIENT_SURPLUS' | 'ROUTE_LIMIT' | 'QUANTITY_STEP';
+  reason: 'INSUFFICIENT_SURPLUS' | 'ROUTE_LIMIT' | 'QUANTITY_STEP' | 'AMOUNT_THRESHOLD' | 'SEARCH_LIMIT';
   recipients: Array<{
     branchId: string;
     neededQty: number;
