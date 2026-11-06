@@ -26,7 +26,7 @@ it('removes all entrances to manual priorities and marks an older algorithm stal
   expect(screen.getByText(/Предложения устарели/)).toBeVisible();
 });
 
-it('opens skipped need from the dashboard and explains why trial flow was discarded', async () => {
+it('shows the two uncovered units and the partial proposals in the dashboard', async () => {
   const { useState } = await import('react');
   const { fireEvent, within } = await import('@testing-library/react');
   const initial = rebalanceAppState();
@@ -54,19 +54,19 @@ it('opens skipped need from the dashboard and explains why trial flow was discar
   expect(
     screen.getByText('Не распределено', { selector: '.metric > span' })
       .parentElement,
-  ).toHaveTextContent('14 шт');
+  ).toHaveTextContent('2 шт');
   expect(
     screen.getByText('К перемещению', { selector: '.metric > span' })
       .parentElement,
-  ).toHaveTextContent('0,00');
+  ).toHaveTextContent('1 200,00');
   fireEvent.click(screen.getByRole('button', { name: 'Показать список' }));
   const list = screen.getByRole('region', {
     name: 'Нераспределённые артикулы',
   });
   expect(list).toHaveTextContent('Нужно: 14');
-  expect(list).toHaveTextContent('Можно доставить: 12');
-  expect(list).toHaveTextContent('Не хватает: 2');
-  expect(list).toHaveTextContent('1 400,00');
+  expect(list).toHaveTextContent('Предложено: 12');
+  expect(list).toHaveTextContent('Осталось: 2');
+  expect(list).toHaveTextContent('200,00');
   fireEvent.click(
     within(list).getByRole('button', { name: /Потребность подразделений/ }),
   );

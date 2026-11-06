@@ -93,13 +93,14 @@ export function prioritizeDonorStock(
   const targets = receivers.map((receiver) => ({
     receiver, routes: eligibleDonorRoutes(donors, receiver, allowed),
   })).filter((target) => target.routes.length > 0);
-  if (!targets.length || donors.length < 2)
+  if (!targets.length)
     return { lines: legalSeed, limited: false };
 
-  // If the whole demand fits on one route, every feasible two-route plan loses.
+  // Fast path only when one donor can actually cover the target in full.
+  // With a smaller donor we must search for legal partial quantities above the amount minimum.
   if (targets.length === 1) {
     const { receiver, routes } = targets[0]!;
-    if (routes.length === 1 || routes.some(({ donor }) => donors[donor]!.capacity >= receiver.targetNeed)) {
+    if (routes.some(({ donor }) => donors[donor]!.capacity >= receiver.targetNeed)) {
       const eligible = routes.map(({ donor }) => donors[donor]!);
       const rank = reserveScale(eligible, step);
       const ranked = eligible.map((d, i) => {

@@ -12,7 +12,9 @@ export const skippedReasonLabel: Record<SkippedRebalanceSku['reason'], string> =
   {
     INSUFFICIENT_SURPLUS: 'Недостаточно излишка сверх Max',
     ROUTE_LIMIT: 'Не позволяют выбранные маршруты',
-    QUANTITY_STEP: 'Потребность не закрывается целым количеством',
+    QUANTITY_STEP: 'Остаток потребности меньше шага',
+    AMOUNT_THRESHOLD: 'Не проходят минимальную сумму перемещения',
+    SEARCH_LIMIT: 'Достигнут лимит поиска оптимального плана',
   };
 export interface CoverageTotals {
   byUnit: { unit: string | null; skuCode?: string; qty: number }[];
@@ -93,7 +95,7 @@ export function buildFullCoverageSummary(input: {
     skipped: total(
       (input.proposal?.skippedSkus ?? []).map((s) => ({
         skuCode: s.skuCode,
-        qty: s.neededQty,
+        qty: s.missingQty,
       })),
     ),
   };

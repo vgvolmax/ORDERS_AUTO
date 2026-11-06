@@ -3,7 +3,7 @@ import { buildFullCoverageSummary } from '../../src/features/rebalancing/skipped
 import { createProposal } from '../../src/app/rebalanceActions';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
 
-it('reports the whole skipped need14 rather than the actual shortage2 and keeps missing prices unknown', () => {
+it('reports the actual uncovered two rather than all fourteen and keeps missing prices unknown', () => {
   const state = rebalanceAppState();
   const proposal = {
     ...createProposal(state),
@@ -47,10 +47,10 @@ it('reports the whole skipped need14 rather than the actual shortage2 and keeps 
   });
   expect(result.skipped.byUnit).toEqual([
     { unit: 'м', qty: 2 },
-    { unit: 'шт', qty: 14 },
+    { unit: 'шт', qty: 2 },
   ]);
   expect(result.skipped.amount).toBeNull();
-  expect(result.skipped.knownAmount).toBe(1400);
+  expect(result.skipped.knownAmount).toBe(200);
   expect(result.skipped.missingPriceSkuCount).toBe(1);
 });
 it('pending excludes accepted sources and rejections, separately from total proposal volume', () => {

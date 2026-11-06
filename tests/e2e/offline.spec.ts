@@ -2373,7 +2373,7 @@ test('E2E-10 nine-branch route matrix fits, edits pairs and groups, and preserve
   expect(evidence.remoteRequests).toEqual([]);
 });
 
-test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets survive disabling and revoke offline', async ({
+test('E2E-11 partial coverage preserves twelve units, two remain, and accepted subsets survive offline', async ({
   page,
 }, testInfo) => {
   test.setTimeout(90_000);
@@ -2383,10 +2383,10 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   await configureFullCoverage(page);
   await expect(
     coverageMetric(page, 'К перемещению').locator('.coverage-quantity'),
-  ).toHaveText('28 шт');
+  ).toHaveText('40 шт');
   const skippedMetric = coverageMetric(page, 'Не распределено');
-  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('14 шт');
-  await expect(skippedMetric).toContainText('1 400,00');
+  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('2 шт');
+  await expect(skippedMetric).toContainText('200,00');
   await expect(skippedMetric).toContainText('1 SKU');
   await expect(coverageMetric(page, 'Принято на сумму')).toContainText('0,00');
   await expect(
@@ -2395,7 +2395,7 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
       exact: true,
     }),
   ).toBeVisible();
-  // A trial flow of12 is diagnostic only: there is no partial SKIP14 line.
+  // An incomplete network is not a veto: both six-unit lines remain proposed.
   const resultsQuery = page.getByRole('textbox', {
     name: 'Поиск по коду, артикулу, товару и маршруту',
     exact: true,
@@ -2403,13 +2403,13 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   await resultsQuery.fill('SKIP14');
   await expect(
     page.getByRole('button', { name: /^Открыть перемещение / }),
-  ).toHaveCount(0);
+  ).toHaveCount(2);
   await expect(
     page.getByRole('checkbox', {
       name: 'Выбрать видимые предложения',
       exact: true,
     }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await resultsQuery.fill('');
   await skippedMetric
     .getByRole('button', { name: 'Показать список', exact: true })
@@ -2426,10 +2426,10 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   ).toBeVisible();
   const skippedRow = skipped.getByRole('row').filter({ hasText: 'SKIP14' });
   await expect(skippedRow).toContainText('Нужно: 14');
-  await expect(skippedRow).toContainText('Можно доставить: 12');
-  await expect(skippedRow).toContainText('Не хватает: 2');
+  await expect(skippedRow).toContainText('Предложено: 12');
+  await expect(skippedRow).toContainText('Осталось: 2');
   await expect(skippedRow).toContainText('Недостаточно излишка сверх Max');
-  await expect(skippedRow).toContainText('1 400,00');
+  await expect(skippedRow).toContainText('200,00');
   await skipped
     .getByRole('textbox', {
       name: 'Поиск нераспределённого товара',
@@ -2457,7 +2457,7 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
     reason.getByRole('row').filter({ hasText: 'Второй' }),
   ).toContainText('6');
   await page.screenshot({
-    path: testInfo.outputPath('21-skipped-whole-need.png'),
+    path: testInfo.outputPath('21-skipped-partial-need.png'),
   });
   await page.keyboard.press('Escape');
   await skipped
@@ -2475,8 +2475,8 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
     name: 'Открыть перемещение Донор А → Первый',
     exact: true,
   });
-  await expect(route).toContainText('2 SKU');
-  await expect(route).toContainText('16 шт');
+  await expect(route).toContainText('3 SKU');
+  await expect(route).toContainText('22 шт');
   await route.click();
   const transfer = page.getByRole('dialog', {
     name: 'Состав перемещения',
@@ -2484,7 +2484,7 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   });
   await expect(
     transfer.getByRole('row').filter({ hasText: 'SKIP14' }),
-  ).toHaveCount(0);
+  ).toContainText('Предложено');
   const fullRow = transfer.getByRole('row').filter({ hasText: 'FULL1' });
   await expect(fullRow).toContainText('18 → 10');
   await expect(fullRow).toContainText('0 → 8');
@@ -2538,11 +2538,11 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   await page.keyboard.press('Escape');
   await expect(
     coverageMetric(page, 'К перемещению').locator('.coverage-quantity'),
-  ).toHaveText('20 шт');
+  ).toHaveText('32 шт');
   await expect(coverageMetric(page, 'Принято на сумму')).toContainText(
     '800,00',
   );
-  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('14 шт');
+  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('2 шт');
 
   await page.getByRole('button', { name: 'Первый', exact: true }).click();
   await page
@@ -2606,7 +2606,7 @@ test('E2E-11 whole-SKU coverage skips14 rather than2 and accepted subsets surviv
   await expect(coverageMetric(page, 'Принято на сумму')).toContainText(
     '800,00',
   );
-  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('14 шт');
+  await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('2 шт');
   await route.click();
   await expect(
     transfer.getByRole('row').filter({ hasText: 'FULL1' }),

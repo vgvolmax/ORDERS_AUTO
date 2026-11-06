@@ -84,7 +84,7 @@ it('separates accepted from remaining proposals and exports current purchase tot
     'Сводка',
     'Исключения',
     'Не распределено',
-    'Получатели пропущенных',
+    'Получатели с остатком',
     'Параметры',
   ]);
   expect(wb.getWorksheet('Принятые')!.getCell('D2').value).toBe(15);
@@ -113,7 +113,7 @@ it('supplier CSV/XLSX share the accepted projection; manual quantity remains the
   }
 });
 
-it('exports whole skipped need and route feasibility separately with recipient breakdown', async () => {
+it('exports uncovered residual separately from partial proposals and recipient breakdown', async () => {
   const s = rebalanceAppState();
   s.minMax!.branchStocks[0]!.stock = 67;
   s.minMax!.branchStocks[1]!.stock = 65;
@@ -137,10 +137,10 @@ it('exports whole skipped need and route feasibility separately with recipient b
   const skipped = wb.getWorksheet('Не распределено');
   expect(skipped).toBeDefined();
   expect(skipped!.getRow(2).values).toEqual(
-    expect.arrayContaining(['SKU1', 14, 12, 2, 1400]),
+    expect.arrayContaining(['SKU1', 14, 12, 2, 200]),
   );
-  expect(wb.getWorksheet('Получатели пропущенных')!.getRow(2).values).toEqual(
+  expect(wb.getWorksheet('Получатели с остатком')!.getRow(2).values).toEqual(
     expect.arrayContaining(['SKU1', 'Получатель', 14, 12, 2]),
   );
-  expect(wb.getWorksheet('Предложения')!.rowCount).toBe(1);
+  expect(wb.getWorksheet('Предложения')!.rowCount).toBe(3);
 });

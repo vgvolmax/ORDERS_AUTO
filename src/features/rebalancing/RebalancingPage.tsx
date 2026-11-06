@@ -577,7 +577,7 @@ export function RebalancingPage() {
               </button>
             </>
           }
-          note={`${coverage.skipped.skuCount} SKU · вся пропущенная потребность`}
+          note={`${coverage.skipped.skuCount} SKU · остаток после предложений`}
         />
         <MetricCard
           label="Принято на сумму"

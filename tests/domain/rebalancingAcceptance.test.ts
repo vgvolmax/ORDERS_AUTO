@@ -93,10 +93,10 @@ describe('rebalancing business acceptance', () => {
     expect(calculateRebalance(s, c, accepted.nextAccepted).transfers).toEqual(
       [],
     );
-    expect(qty(s, config({ receiverPct: 50 }))).toBe(0); // target1.75 cannot be reached by whole units without overflow.
+    expect(qty(s, config({ receiverPct: 50 }))).toBe(1); // legal partial unit: target1.75, projected stock1.5.
     expect(qty(s, config({ receiverPct: 0 }))).toBe(0); // next whole unit would exceed Min1.
   });
-  it('rejects the entire SKU when a fractional selected shortage cannot be filled exactly', () => {
+  it('offers the legal partial step even when a fractional selected shortage remains', () => {
     const s = snapshot();
     s.stocks[0]!.stock = 61;
     Object.assign(s.stocks[1]!, { stock: 0.5, min: 1, max: 2 });
@@ -114,15 +114,15 @@ describe('rebalancing business acceptance', () => {
       config({ recipientTrigger: 'BELOW_MAX' }),
       [],
     );
-    expect(result.transfers).toEqual([]);
+    expect(result.transfers.map((t) => [t.toBranchId, t.qty])).toEqual([['R', 1]]);
     expect(result.skippedSkus).toContainEqual(
       expect.objectContaining({ reason: 'QUANTITY_STEP' }),
     );
     expect(result.balances.find((b) => b.branchId === 'R')!.stockAfter).toBe(
-      0.5,
+      1.5,
     );
     expect(result.uncoveredNeed.find((b) => b.branchId === 'R')!.toMin).toBe(
-      0.5,
+      0,
     );
   });
   it('accepts missing price when filters are off and keeps money unknown', () => {
@@ -235,7 +235,7 @@ describe('rebalancing business acceptance', () => {
       config({ recipientTrigger: 'BELOW_MAX' }),
       accepted,
     );
-    expect(next.transfers).toEqual([]);
+    expect(next.transfers.map((t) => t.qty)).toEqual([5]);
     expect(next.skippedSkus).toContainEqual(
       expect.objectContaining({
         neededQty: 35,
@@ -285,11 +285,10 @@ describe('rebalancing business acceptance', () => {
       },
     });
     expect(qty(s, c)).toBe(0);
+    // A fully closed inbound direction is not an eligible rebalance recipient.
+    expect(calculateRebalance(s, c, []).uncoveredNeed).toEqual([]);
     expect(calculateRebalance(s, config(), []).uncoveredNeed).toContainEqual({
-      skuCode: '00001',
-      branchId: 'R',
-      toMin: 10,
-      toTarget: 50,
+      skuCode: '00001', branchId: 'R', toMin: 0, toTarget: 30,
     });
   });
 });

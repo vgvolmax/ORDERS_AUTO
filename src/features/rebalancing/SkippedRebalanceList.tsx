@@ -73,9 +73,8 @@ export function SkippedRebalanceList({
         </Button>
       </div>
       <p>
-        Весь артикул пропущен: потребность не закрывается полностью. «Можно
-        доставить» — проверка возможностей, эти количества не предложены к
-        принятию.
+        Показан остаток потребности после предложенных перемещений. Частичные
+        перемещения сохраняются, если проходят условия и рублёвый порог.
       </p>
       {!proposal ? (
         <EmptyState>Сначала рассчитайте перемещения.</EmptyState>
@@ -121,19 +120,19 @@ export function SkippedRebalanceList({
               })),
               {
                 key: 'need',
-                header: 'Нужно · можно доставить · не хватает',
+                header: 'Нужно · предложено · осталось',
                 width: 'minmax(170px, 1fr)',
                 render: (r) => (
                   <div className="skip-cell">
                     <strong>Нужно: {fmtQty(r.neededQty)}</strong>
-                    <span>Можно доставить: {fmtQty(r.deliverableQty)}</span>
-                    <span>Не хватает: {fmtQty(r.missingQty)}</span>
+                    <span>Предложено: {fmtQty(r.deliverableQty)}</span>
+                    <span>Осталось: {fmtQty(r.missingQty)}</span>
                   </div>
                 ),
               },
               {
                 key: 'reason',
-                header: 'Причина · сумма всей потребности',
+                header: 'Причина · сумма остатка',
                 width: 'minmax(230px, 1.3fr)',
                 render: (r) => {
                   const price = skuMap.get(r.skuCode)?.referencePrice;
@@ -143,9 +142,9 @@ export function SkippedRebalanceList({
                       <strong>
                         {price == null ||
                         price < 0 ||
-                        !Number.isFinite(price * r.neededQty)
+                        !Number.isFinite(price * r.missingQty)
                           ? 'Сумма неизвестна'
-                          : money(price * r.neededQty)}
+                          : money(price * r.missingQty)}
                       </strong>
                       <button className="link" onClick={() => setOpened(r)}>
                         Потребность подразделений · {r.recipients.length}
@@ -187,14 +186,14 @@ export function SkippedRebalanceList({
           >
             <MetricCard label="Нужно" value={fmtQty(opened.neededQty)} />
             <MetricCard
-              label="Можно доставить"
+              label="Предложено"
               value={fmtQty(opened.deliverableQty)}
             />
             <MetricCard label="Не хватает" value={fmtQty(opened.missingQty)} />
           </div>
           <p>
-            {skippedReasonLabel[opened.reason]}. Артикул не включён в новый план
-            перемещений.
+            {skippedReasonLabel[opened.reason]}. Допустимые перемещения по товару
+            остаются в плане; непокрытая потребность сохраняется в закупке.
           </p>
           <VirtualTable
             rows={opened.recipients}
@@ -214,7 +213,7 @@ export function SkippedRebalanceList({
               },
               {
                 key: 'possible',
-                header: 'Можно доставить',
+                header: 'Предложено',
                 width: '140px',
                 render: (r) => fmtQty(r.deliverableQty),
               },
