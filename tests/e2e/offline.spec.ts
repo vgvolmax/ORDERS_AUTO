@@ -26,6 +26,10 @@ test('E2E-21 all import messages are reachable and a manual pool supplier withou
     }).flat(),
     ['NEW', 'NEW-ARTICLE', 'Товар без истории закупок', null, null, null, 42.5],
     [null, null, 'Ленина', 0, 2, 10, null],
+    ...Array.from({ length: 65 }, (_, index) => [
+      [`PENDING-${index + 1}`, null, `Нераспределённый товар ${index + 1}`, null, null, null, 100],
+      [null, null, 'Ленина', 0, 2, 10, null],
+    ]).flat(),
   ]);
   await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles({
     name: 'all-issues.xlsx',
@@ -64,6 +68,9 @@ test('E2E-21 all import messages are reachable and a manual pool supplier withou
   await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
   const select = page.getByRole('combobox', { name: 'Поставщик NEW', exact: true });
+  const supplierFields = page.locator('.decision-list select');
+  await expect(page.getByText('По поиску: 66', { exact: true })).toBeVisible();
+  await expect(supplierFields.first()).toHaveAttribute('aria-label', 'Поставщик NEW');
   await expect(select.locator('option')).toHaveCount(33);
   await expect(page.getByRole('button', { name: 'Применить автовыбор', exact: true })).toBeDisabled();
   await select.focus();
@@ -71,6 +78,8 @@ test('E2E-21 all import messages are reachable and a manual pool supplier withou
   await page.screenshot({ path: testInfo.outputPath('21-pool-supplier-select.png'), fullPage: true });
   await page.keyboard.press('Escape');
   await select.selectOption('ООО "Терем"');
+  await expect(page.getByRole('heading', { name: /Требуют решения · 65 позиций/ })).toBeVisible();
+  await expect(supplierFields.first()).toHaveAttribute('aria-label', 'Поставщик NEW');
   await expect(select.locator('option:checked')).toHaveText('Назначен: ООО "Терем"');
   await select.selectOption(chosenSupplier);
   await expect(select.locator('option:checked')).toHaveText(`Назначен: ${chosenSupplier}`);
@@ -1169,7 +1178,7 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   });
   await page.keyboard.press('Escape');
   await choice.selectOption(secondAllowed);
-  await expect(choice).toHaveCount(0);
+  await expect(choice.locator('option:checked')).toHaveText(`Назначен: ${secondAllowed}`);
   await page.reload();
   await expect(
     page.getByRole('heading', { name: 'Поставщики', exact: true }),
@@ -1177,9 +1186,7 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   await expect(
     page.locator('.decision .product-code').getByText('SKU2', { exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole('combobox', { name: 'Поставщик SKU3' }),
-  ).toHaveCount(0);
+  await expect(choice.locator('option:checked')).toHaveText(`Назначен: ${secondAllowed}`);
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.screenshot({
     path: testInfo.outputPath('11-approved-suppliers-narrow-1024.png'),
@@ -2854,10 +2861,9 @@ test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work 
   const decision = page.locator('.decision').filter({ hasText: '000123' });
   await expect(decision).toContainText('ART-ZERO');
   await expect(decision).toContainText('Товар с полным кодом');
-  await decision
-    .getByRole('combobox', { name: 'Поставщик 000123' })
-    .selectOption(allowed);
-  await expect(decision).toHaveCount(0);
+  const supplierChoice = decision.getByRole('combobox', { name: 'Поставщик 000123' });
+  await supplierChoice.selectOption(allowed);
+  await expect(supplierChoice.locator('option:checked')).toHaveText(`Назначен: ${allowed}`);
   await page
     .getByRole('button', { name: 'Ребалансировка', exact: true })
     .click();

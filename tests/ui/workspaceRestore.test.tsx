@@ -65,11 +65,7 @@ it('restores an excluded choice as unresolved and persists an explicit allowed r
   expect(within(choice).getAllByRole('option')).toHaveLength(2);
   expect(screen.getByText(/не входит в рабочий пул/)).toBeVisible();
   fireEvent.change(choice, { target: { value: allowed } });
-  await waitFor(() =>
-    expect(
-      screen.queryByRole('combobox', { name: 'Поставщик SKU1' }),
-    ).not.toBeInTheDocument(),
-  );
+  await waitFor(() => expect(choice).toHaveDisplayValue(`Назначен: ${allowed}`));
   const saved = (await loadActiveWorkspace())!.data;
   expect(saved.overrides[0]!.supplier).toBe(allowed);
   expect(saved.suppliers!.history.some((row) => row.supplier === hidden)).toBe(
