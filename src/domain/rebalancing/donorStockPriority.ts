@@ -4,7 +4,7 @@ import {
   type FlowDonor,
   type FlowReceiver,
 } from './flow';
-import { integerWeights, quantityFromUnits, subtractQuantity } from './numbers';
+import { integerWeights, quantityFromUnits } from './numbers';
 
 export interface StockDonor extends FlowDonor {
   stock: number;
@@ -13,107 +13,70 @@ export interface StockDonor extends FlowDonor {
 }
 
 type Routes = ReadonlyMap<string, ReadonlySet<string>>;
+interface CandidateRoute {
+  donor: number;
+  minimum: number;
+}
 
-function isComplete(flow: FlowAssignment[], receivers: FlowReceiver[]): boolean {
-  return (
-    flow.reduce((sum, line) => sum + line.units, 0) ===
-    receivers.reduce((sum, receiver) => sum + receiver.targetNeed, 0)
+export function eligibleDonorRoutes(
+  donors: StockDonor[],
+  receiver: FlowReceiver,
+  allowed: Routes,
+): CandidateRoute[] {
+  return donors.flatMap((d, donor) =>
+    allowed.get(d.id)?.has(receiver.id) &&
+    Math.min(d.capacity, receiver.targetNeed) >= d.minimumUnits
+      ? [{ donor, minimum: d.minimumUnits }]
+      : [],
   );
 }
 
-function mergeRouteQuantities(flow: FlowAssignment[]): FlowAssignment[] {
-  const lines = new Map<string, FlowAssignment>();
-  for (const line of flow) {
-    const key = JSON.stringify([line.from, line.to]);
-    const existing = lines.get(key);
-    lines.set(key, { ...line, units: line.units + (existing?.units ?? 0) });
-  }
-  return [...lines.values()];
+// A bounded deterministic search returns its best legal plan and flags incomplete optimization.
+const MAX_STATES_PER_SKU = 4_000;
+export const MAX_STATES_PER_CALCULATION = 30_000;
+
+interface Choice {
+  receiver: FlowReceiver;
+  full: boolean;
+  routes: CandidateRoute[];
+  reserved: number;
+}
+interface Plan {
+  lines: FlowAssignment[];
+  full: number;
+  units: number;
+  reserve: bigint;
+  donorsUsed: bigint;
 }
 
-/** A route either ships nothing or ships at least its monetary minimum. */
-function findCompleteMonetaryFlow(
-  donors: StockDonor[],
-  receivers: FlowReceiver[],
-  allowed: Routes,
-  step: number,
-  preferred: ReadonlySet<string>,
-): FlowAssignment[] | null {
-  const minimums = new Map(donors.map((d) => [d.id, d.minimumUnits]));
-  const eligible = new Map(donors.map((d) => {
-    const destinations = receivers.filter((r) =>
-      allowed.get(d.id)?.has(r.id) &&
-      Math.min(d.capacity, r.targetNeed) >= d.minimumUnits,
-    );
-    return [d.id, new Set(destinations.map((r) => r.id))];
-  }));
-
-  function search(
-    remainingDonors: FlowDonor[],
-    remainingReceivers: FlowReceiver[],
-    routes: Routes,
-    reserved: FlowAssignment[],
-  ): FlowAssignment[] | null {
-    const flow = allocateFlow(
-      remainingDonors, remainingReceivers, routes, step, preferred,
-    );
-    if (!isComplete(flow, remainingReceivers)) return null;
-    const small = flow.find(({ from, to, units }) =>
-      units < minimums.get(from)! &&
-      !reserved.some((line) => line.from === from && line.to === to),
-    );
-    if (!small)
-      return reserved.length ? mergeRouteQuantities([...reserved, ...flow]) : flow;
-
-    const { from, to } = small;
-    const without = new Map(routes);
-    const destinations = new Set(without.get(from));
-    destinations.delete(to);
-    without.set(from, destinations);
-    const alternative = search(
-      remainingDonors, remainingReceivers, without, reserved,
-    );
-    if (alternative) return alternative;
-
-    const units = minimums.get(from)!;
-    const donor = remainingDonors.find((d) => d.id === from)!;
-    const receiver = remainingReceivers.find((r) => r.id === to)!;
-    if (units > Math.min(donor.capacity, receiver.targetNeed)) return null;
-    const qty = quantityFromUnits(units, step);
-    return search(
-      remainingDonors.map((d) =>
-        d === donor ? { ...d, capacity: d.capacity - units } : d,
-      ),
-      remainingReceivers.map((r) => r === receiver
-        ? {
-            ...r,
-            minNeed: Math.max(0, r.minNeed - units),
-            minDeficit: Math.max(0, subtractQuantity(r.minDeficit, qty)),
-            targetNeed: r.targetNeed - units,
-          }
-        : r,
-      ),
-      routes,
-      [...reserved, { from, to, units }],
-    );
-  }
-  return search(donors, receivers, eligible, []);
+function gcd(a: bigint, b: bigint): bigint {
+  while (b !== 0n) [a, b] = [b, a % b];
+  return a;
 }
 
-function compareReserve(
-  a: { stock: number; max: number },
-  b: { stock: number; max: number },
-): number {
-  // Positive stock against Max=0 ranks first; 0/0 ranks as zero remaining stock.
-  const [aStock, aMax, bStock, bMax] = integerWeights([
-    a.stock, a.stock === 0 && a.max === 0 ? 1 : a.max,
-    b.stock, b.stock === 0 && b.max === 0 ? 1 : b.max,
-  ]) as [bigint, bigint, bigint, bigint];
-  const difference = bStock * aMax - aStock * bMax;
-  return difference < 0n ? -1 : difference > 0n ? 1 : 0;
+/** Compare the mean remaining stock / Max of the donors used by a tied plan. */
+function reserveScale(donors: StockDonor[], step: number) {
+  const [unit, ...values] = integerWeights([
+    step,
+    ...donors.map((d) => d.stock),
+    ...donors.map((d) => d.max),
+  ]);
+  const stocks = values.slice(0, donors.length);
+  const maxes = values.slice(donors.length);
+  const positive = maxes.filter((m) => m > 0n);
+  const common = positive.reduce((a, b) => a / gcd(a, b) * b, 1n);
+  const largestStock = stocks.reduce((a, b) => a > b ? a : b, 0n);
+  const smallestMax = positive.reduce((a, b) => a < b ? a : b, common);
+  // Positive stock at Max=0 ranks above any finite ratio; zero stock scores zero.
+  const zeroMaxWeight = common / smallestMax * (largestStock + 1n);
+  return {
+    stocks, unit: unit!,
+    costs: new Map(donors.map((d, i) => [
+      d.id, maxes[i] === 0n ? zeroMaxWeight : common / maxes[i]!,
+    ])),
+  };
 }
 
-/** Prefer one donor per recipient without giving up an available complete plan. */
 export function prioritizeDonorStock(
   donors: StockDonor[],
   receivers: FlowReceiver[],
@@ -121,54 +84,203 @@ export function prioritizeDonorStock(
   step: number,
   preferred: ReadonlySet<string>,
   physicalFlow: FlowAssignment[],
-): FlowAssignment[] {
-  if (donors.length < 2 || !receivers.length) return physicalFlow;
-  const minimums = new Map(donors.map((d) => [d.id, d.minimumUnits]));
-  const monetaryFlow = physicalFlow.every(
-    (line) => line.units >= minimums.get(line.from)!,
-  )
-    ? physicalFlow
-    : findCompleteMonetaryFlow(donors, receivers, allowed, step, preferred);
-  let remainingDonors = donors;
-  let remainingReceivers = receivers;
-  let remainingFlow = monetaryFlow ?? physicalFlow;
-  const assignments: FlowAssignment[] = [];
+  budget = { remaining: MAX_STATES_PER_CALCULATION },
+): { lines: FlowAssignment[]; limited: boolean } {
+  const donorIndex = new Map(donors.map((d, i) => [d.id, i]));
+  const legalSeed = physicalFlow.filter((line) =>
+    line.units >= donors[donorIndex.get(line.from)!]!.minimumUnits,
+  );
+  const targets = receivers.map((receiver) => ({
+    receiver, routes: eligibleDonorRoutes(donors, receiver, allowed),
+  })).filter((target) => target.routes.length > 0);
+  if (!targets.length || donors.length < 2)
+    return { lines: legalSeed, limited: false };
 
-  for (const receiver of receivers) {
-    const qty = quantityFromUnits(receiver.targetNeed, step);
-    const candidates = remainingDonors
-      .filter((d) =>
-        d.capacity >= receiver.targetNeed &&
-        d.minimumUnits <= receiver.targetNeed &&
-        allowed.get(d.id)?.has(receiver.id),
-      )
-      .map((donor) => ({
-        donor, stock: subtractQuantity(donor.stock, qty), max: donor.max,
-      }))
-      .sort(compareReserve);
-    const nextReceivers = remainingReceivers.filter((r) => r !== receiver);
-    for (const candidate of candidates) {
-      const { donor, stock } = candidate;
-      const nextDonors = remainingDonors.map((d) => d === donor
-        ? { ...d, stock, capacity: d.capacity - receiver.targetNeed }
-        : d,
-      );
-      const alreadyAssigned = remainingFlow.some((line) =>
-        line.from === donor.id && line.to === receiver.id &&
-        line.units === receiver.targetNeed,
-      );
-      const nextFlow = alreadyAssigned
-        ? remainingFlow.filter((line) => line.to !== receiver.id)
-        : monetaryFlow
-          ? findCompleteMonetaryFlow(nextDonors, nextReceivers, allowed, step, preferred)
-          : allocateFlow(nextDonors, nextReceivers, allowed, step, preferred);
-      if (!nextFlow || !isComplete(nextFlow, nextReceivers)) continue;
-      assignments.push({ from: donor.id, to: receiver.id, units: receiver.targetNeed });
-      remainingDonors = nextDonors;
-      remainingReceivers = nextReceivers;
-      remainingFlow = nextFlow;
-      break;
+  // If the whole demand fits on one route, every feasible two-route plan loses.
+  if (targets.length === 1) {
+    const { receiver, routes } = targets[0]!;
+    if (routes.length === 1 || routes.some(({ donor }) => donors[donor]!.capacity >= receiver.targetNeed)) {
+      const eligible = routes.map(({ donor }) => donors[donor]!);
+      const rank = reserveScale(eligible, step);
+      const ranked = eligible.map((d, i) => {
+        const units = Math.min(d.capacity, receiver.targetNeed);
+        return { d, units, reserve: (rank.stocks[i]! - BigInt(units) * rank.unit) * rank.costs.get(d.id)! };
+      }).sort((a, b) => b.units - a.units || (a.reserve > b.reserve ? -1 : a.reserve < b.reserve ? 1 : 0));
+      const best = ranked[0]!;
+      return { lines: [{ from: best.d.id, to: receiver.id, units: best.units }], limited: false };
     }
   }
-  return [...assignments, ...remainingFlow];
+
+  const rank = reserveScale(donors, step);
+  const caps = donors.map((d) => d.capacity);
+  const choices: Choice[] = [];
+  const visited = new Set<string>();
+  let states = Math.min(MAX_STATES_PER_SKU, budget.remaining);
+  const initialStates = states;
+  let limited = false;
+
+  function measure(lines: FlowAssignment[]): Plan {
+    const incoming = new Map<string, number>();
+    const outgoing = new Map<string, number>();
+    let units = 0;
+    for (const line of lines) {
+      incoming.set(line.to, (incoming.get(line.to) ?? 0) + line.units);
+      outgoing.set(line.from, (outgoing.get(line.from) ?? 0) + line.units);
+      units += line.units;
+    }
+    let reserve = 0n;
+    for (const [id, moved] of outgoing) {
+      const stock = rank.stocks[donorIndex.get(id)!]!;
+      reserve += (stock - BigInt(moved) * rank.unit) * rank.costs.get(id)!;
+    }
+    return {
+      lines, units, reserve, donorsUsed: BigInt(outgoing.size),
+      full: targets.filter(({ receiver }) => incoming.get(receiver.id) === receiver.targetNeed).length,
+    };
+  }
+
+  let best = measure(legalSeed);
+  function consider(lines: FlowAssignment[]): void {
+    const plan = measure(lines);
+    const order = plan.full - best.full || plan.units - best.units ||
+      best.lines.length - plan.lines.length;
+    if (order > 0 || (order === 0 &&
+      plan.reserve * best.donorsUsed > best.reserve * plan.donorsUsed))
+      best = plan;
+  }
+
+  function spend(): boolean {
+    if (states <= 0) {
+      limited = true;
+      return false;
+    }
+    states--;
+    return true;
+  }
+
+  function finish(): void {
+    const remainingRoutes = new Map<string, Set<string>>();
+    const residual: FlowReceiver[] = [];
+    const lines: FlowAssignment[] = [];
+    for (const { receiver, routes, full, reserved } of choices) {
+      const left = receiver.targetNeed - reserved - Number(!full);
+      for (const route of routes) {
+        const from = donors[route.donor]!.id;
+        lines.push({ from, to: receiver.id, units: route.minimum });
+        if (left <= 0) continue;
+        const destinations = remainingRoutes.get(from) ?? new Set<string>();
+        destinations.add(receiver.id);
+        remainingRoutes.set(from, destinations);
+      }
+      if (left > 0) residual.push({
+        id: receiver.id, targetNeed: left,
+        minNeed: full ? left : 0,
+        minDeficit: full ? quantityFromUnits(left, step) : 0,
+      });
+    }
+    if (!residual.length) return consider(lines);
+    const flow = allocateFlow(
+      donors.map((d, i) => ({ id: d.id, capacity: caps[i]! })),
+      residual, remainingRoutes, step, preferred, rank.costs,
+    );
+    for (const target of residual) {
+      if (target.minNeed > 0 && flow.filter((t) => t.to === target.id)
+        .reduce((total, line) => total + line.units, 0) !== target.targetNeed)
+        return;
+    }
+    const extra = new Map(flow.map((line) => [JSON.stringify([line.from, line.to]), line.units]));
+    consider(lines.map((line) => ({
+      ...line, units: line.units + (extra.get(JSON.stringify([line.from, line.to])) ?? 0),
+    })));
+  }
+
+  function visit(index: number, full: number, demand: number, count: number): void {
+    if (limited) return;
+    const pending = choices.flatMap((choice) => {
+      const left = choice.receiver.targetNeed - choice.reserved - Number(!choice.full);
+      return left > 0
+        ? [{ left, full: choice.full, donors: choice.routes.map((route) => route.donor) }]
+        : [];
+    });
+    // Processed receivers are interchangeable for later feasibility when their residual demands match.
+    const key = JSON.stringify([index, full, demand, count, caps, pending]);
+    if (visited.has(key)) return;
+    visited.add(key);
+    if (!spend()) return;
+
+    const available = caps.reduce((sum, cap) => sum + cap, 0);
+    const required = pending.reduce(
+      (sum, entry) => sum + (entry.full ? entry.left : 0), 0,
+    );
+    if (required > available) return;
+    const future = targets.slice(index);
+    const fullNeeds = future.filter(({ receiver, routes }) =>
+      routes.reduce((sum, { donor, minimum }) =>
+        sum + (caps[donor]! >= minimum ? caps[donor]! : 0), 0) >= receiver.targetNeed,
+    ).map(({ receiver }) => receiver.targetNeed).sort((a, b) => a - b);
+    let fullUpper = full;
+    let remaining = available - required;
+    for (const need of fullNeeds) {
+      if (remaining < need) break;
+      remaining -= need;
+      fullUpper++;
+    }
+    const reserved = donors.reduce((sum, donor, i) => sum + donor.capacity - caps[i]!, 0);
+    const volumeUpper = Math.min(
+      reserved + available,
+      demand + future.reduce((sum, { receiver }) => sum + receiver.targetNeed, 0),
+    );
+    if (fullUpper < best.full || (fullUpper === best.full && (
+      volumeUpper < best.units ||
+      (volumeUpper === best.units && count + fullUpper - full > best.lines.length)
+    ))) return;
+
+    const next = targets[index];
+    if (!next) return finish();
+    const { receiver, routes } = next;
+
+    function choose(bundle: CandidateRoute[], fullChoice: boolean, minimum: number): void {
+      const max = fullChoice ? receiver.targetNeed : receiver.targetNeed - 1;
+      const capacity = bundle.reduce((sum, route) => sum + caps[route.donor]!, 0);
+      if (minimum > max || (fullChoice && capacity < max)) return;
+      const chosen = fullChoice && bundle.length === 1
+        ? [{ donor: bundle[0]!.donor, minimum: max }]
+        : bundle;
+      const reservedUnits = fullChoice && bundle.length === 1 ? max : minimum;
+      for (const route of chosen) caps[route.donor]! -= route.minimum;
+      choices.push({ receiver, full: fullChoice, routes: chosen, reserved: reservedUnits });
+      visit(index + 1, full + Number(fullChoice), demand + max, count + chosen.length);
+      choices.pop();
+      for (const route of chosen) caps[route.donor]! += route.minimum;
+    }
+
+    function combinations(bundle: CandidateRoute[], start: number, minimum: number, fullChoice: boolean): void {
+      const max = fullChoice ? receiver.targetNeed : receiver.targetNeed - 1;
+      for (let i = start; i < routes.length && !limited; i++) {
+        const route = routes[i]!;
+        const nextMinimum = minimum + route.minimum;
+        if (caps[route.donor]! < route.minimum || nextMinimum > max) continue;
+        bundle.push(route);
+        if (bundle.length > 1) {
+          if (!spend()) return;
+          choose([...bundle], fullChoice, nextMinimum);
+        }
+        if (nextMinimum < max) combinations(bundle, i + 1, nextMinimum, fullChoice);
+        bundle.pop();
+      }
+    }
+
+    for (const fullChoice of [true, false]) {
+      for (const route of routes) {
+        if (limited) break;
+        if (caps[route.donor]! >= route.minimum) choose([route], fullChoice, route.minimum);
+      }
+      combinations([], 0, 0, fullChoice);
+    }
+    visit(index + 1, full, demand, count);
+  }
+
+  visit(0, 0, 0, 0);
+  budget.remaining -= initialStates - states;
+  return { lines: best.lines, limited };
 }

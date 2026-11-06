@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { calculateRebalance } from '../../src/domain/rebalancing/calculate';
+import { prioritizeDonorStock } from '../../src/domain/rebalancing/donorStockPriority';
 import type { RebalanceConfig, RebalanceSnapshot } from '../../src/domain/rebalancing/types';
 import { config } from '../fixtures/rebalanceFixtures';
 
@@ -100,5 +101,69 @@ describe('donor selection by stock remaining relative to Max', () => {
       },
     );
     expect(lines(result)).toEqual([['A', 'Y', 16], ['B', 'X', 10]]);
+  });
+
+  it('prefers two whole shipments over three when recipients compete for the same donor', () => {
+    expect(lines(calculate([
+      ['A', 11, 1], ['B', 36, 30], ['X', 0, 6], ['Y', 0, 10],
+    ]))).toEqual([['A', 'Y', 10], ['B', 'X', 6]]);
+  });
+
+  it('does not reserve stock for an impossible monetary route', () => {
+    const result = calculate(
+      [['A', 110, 100], ['B', 103, 100], ['R', 0, 10], ['Z', 0, 3]],
+      {
+        transferAmountFilter: { enabled: true, threshold: 400 },
+        routeConfig: { mode: 'SELECTIVE', pairs: [
+          { branchAId: 'A', branchBId: 'R', direction: 'A_TO_B' },
+          { branchAId: 'B', branchBId: 'R', direction: 'A_TO_B' },
+          { branchAId: 'A', branchBId: 'Z', direction: 'A_TO_B' },
+        ] },
+      },
+    );
+    expect(lines(result)).toEqual([['A', 'R', 10]]);
+    expect(result.uncoveredNeed.map((need) => [need.branchId, need.toTarget]))
+      .toEqual([['Z', 3]]);
+  });
+
+  it('releases the same reservation when the remaining stock cannot cover both recipients', () => {
+    const result = calculate(
+      [['A', 110, 100], ['R', 0, 10], ['Z', 0, 3]],
+      { transferAmountFilter: { enabled: true, threshold: 400 } },
+    );
+    expect(lines(result)).toEqual([['A', 'R', 10]]);
+    expect(result.uncoveredNeed.map((need) => [need.branchId, need.toTarget]))
+      .toEqual([['Z', 3]]);
+    expect(result.exclusions).toContainEqual(expect.objectContaining({
+      code: 'TRANSFER_AMOUNT_FILTER', fromBranchId: 'A', toBranchId: 'Z', amount: 300,
+    }));
+  });
+
+  it('covers six of seven recipients on the dense network without timing out', () => {
+    const result = calculate(
+      [
+        ...Array.from({ length: 6 }, (_, i): [string, number, number] => ['D' + i, 49, 30]),
+        ...Array.from({ length: 7 }, (_, i): [string, number, number] => ['R' + i, 0, 10]),
+      ],
+      { transferAmountFilter: { enabled: true, threshold: 600 } },
+    );
+    expect(result.transfers.filter((t) => t.qty === 10)).toHaveLength(6);
+    expect(result.transfers.reduce((sum, t) => sum + t.qty, 0)).toBe(69);
+    expect(result.exclusions.some((i) => i.code === 'TRANSFER_SEARCH_LIMIT')).toBe(false);
+  }, 3000);
+
+  it('reports a stopped search and returns only legal lines when the budget is exhausted', () => {
+    const donors = [
+      { id: 'A', capacity: 8, stock: 108, max: 100, minimumUnits: 4 },
+      { id: 'B', capacity: 6, stock: 106, max: 100, minimumUnits: 4 },
+    ];
+    const receivers = [{ id: 'R', targetNeed: 10, minNeed: 10, minDeficit: 10 }];
+    const physical = [
+      { from: 'A', to: 'R', units: 8 },
+      { from: 'B', to: 'R', units: 2 },
+    ];
+    const allowed = new Map(donors.map((d) => [d.id, new Set(['R'])]));
+    expect(prioritizeDonorStock(donors, receivers, allowed, 1, new Set(), physical, { remaining: 0 }))
+      .toEqual({ lines: [physical[0]], limited: true });
   });
 });
