@@ -3,6 +3,7 @@ import {
   getAmountExemptDonors,
   getTransferAmountFilter,
   groupTransferSkuAmounts,
+  minimumTransferUnits,
 } from './transferAmounts';
 import { validatedSnapshot } from './validation';
 import {
@@ -21,7 +22,8 @@ import {
   sumQuantities,
 } from './numbers';
 import { buildRouteIndex } from './routes';
-import { allocateFlow, type FlowDonor, type FlowReceiver } from './flow';
+import { allocateFlow, type FlowReceiver } from './flow';
+import { prioritizeDonorStock, type StockDonor } from './donorStockPriority';
 import { acceptedEconomicDiagnostics } from './economics';
 import {
   RebalanceError,
@@ -36,7 +38,7 @@ import {
   type SkippedRebalanceSku,
 } from './types';
 
-export const ALGORITHM_VERSION = 'full-sku-route-sku-amount-v5';
+export const ALGORITHM_VERSION = 'full-sku-donor-stock-priority-v6';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const transferKey = (skuCode: string, from: string, to: string) =>
   JSON.stringify([skuCode, from, to]);
@@ -92,6 +94,7 @@ export function calculateRebalance(
     ],
     routes = buildRouteIndex(config.routeConfig, s.branches),
     totals = acceptedTotals(accepted);
+  const exemptDonors = getAmountExemptDonors(s, config, totals.outgoing);
   for (const p of routes.stalePairs)
     exclusions.push({
       code: 'STALE_ROUTE',
@@ -140,7 +143,10 @@ export function calculateRebalance(
       compare(a.branchId, b.branchId),
     );
     const step = sku.quantityStep!;
-    const donors: FlowDonor[] = [],
+    const minimumUnits = amountFilter.enabled
+      ? minimumTransferUnits(step, sku.referencePrice, amountFilter.threshold)
+      : 1;
+    const donors: StockDonor[] = [],
       receivers: FlowReceiver[] = [];
     const neededByRecipient = new Map<string, number>();
     let stepLimited = false;
@@ -159,16 +165,18 @@ export function calculateRebalance(
         if (!active.has(row.branchId)) continue;
         const key = stockKey(row.skuCode, row.branchId),
           stock = projected(row);
+        const reserved = totals.outgoing.get(key) ?? 0;
         const physicalSurplus = Math.max(
-          0,
-          sumQuantities([
-            row.stock,
-            -(totals.outgoing.get(key) ?? 0),
-            -row.max!,
-          ]),
+          0, sumQuantities([row.stock, -reserved, -row.max!]),
         );
         const capacity = stepUnits(physicalSurplus, step);
-        if (capacity > 0) donors.push({ id: row.branchId, capacity });
+        if (capacity > 0) donors.push({
+          id: row.branchId,
+          capacity,
+          stock: subtractQuantity(row.stock, reserved),
+          max: row.max!,
+          minimumUnits: exemptDonors.has(key) ? 1 : minimumUnits,
+        });
         if (!hasInbound(row.branchId)) continue;
         const trigger =
           config.recipientTrigger === 'BELOW_MIN' ? row.min! : row.max!;
@@ -215,37 +223,32 @@ export function calculateRebalance(
       );
       continue;
     }
-    const allocation = allocateFlow(
+    const physicalFlow = allocateFlow(
       donors,
       receivers,
       routes.outgoing,
       step,
       preferred,
-    ).map((a) => ({
-      sourceLineId: transferKey(sku.skuCode, a.from, a.to),
-      skuCode: sku.skuCode,
-      fromBranchId: a.from,
-      toBranchId: a.to,
-      qty: quantityFromUnits(a.units, step),
-    }));
-    const totalQty = sumQuantities(allocation.map((t) => t.qty));
+    );
     const recipients = [...neededByRecipient].map(([branchId, neededQty]) => ({
       branchId,
       neededQty,
       deliverableQty: sumQuantities(
-        allocation.filter((t) => t.toBranchId === branchId).map((t) => t.qty),
+        physicalFlow.filter((t) => t.to === branchId)
+          .map((t) => quantityFromUnits(t.units, step)),
       ),
     }));
     if (recipients.some((r) => r.deliverableQty !== r.neededQty)) {
       const neededQty = sumQuantities(recipients.map((r) => r.neededQty));
+      const deliverableQty = sumQuantities(recipients.map((r) => r.deliverableQty));
       const capacityQty = sumQuantities(
         donors.map((d) => quantityFromUnits(d.capacity, step)),
       );
       skippedSkus.push({
         skuCode: sku.skuCode,
         neededQty,
-        deliverableQty: totalQty,
-        missingQty: subtractQuantity(neededQty, totalQty),
+        deliverableQty,
+        missingQty: subtractQuantity(neededQty, deliverableQty),
         reason: stepLimited
           ? 'QUANTITY_STEP'
           : capacityQty < neededQty
@@ -255,12 +258,19 @@ export function calculateRebalance(
       });
       continue;
     }
-    transfers.push(...allocation);
+    const allocation = prioritizeDonorStock(
+      donors, receivers, routes.outgoing, step, preferred, physicalFlow,
+    );
+    transfers.push(...allocation.map((a) => ({
+      sourceLineId: transferKey(sku.skuCode, a.from, a.to),
+      skuCode: sku.skuCode,
+      fromBranchId: a.from,
+      toBranchId: a.to,
+      qty: quantityFromUnits(a.units, step),
+    })));
   }
-  // Filter each SKU×donor×recipient after allocation. Other lines survive,
-  // even when removing a small line leaves its recipient below the target.
+  // If the amount rule prevents a complete plan, retain the qualifying lines.
   if (amountFilter.enabled) {
-    const exemptDonors = getAmountExemptDonors(s, config, totals.outgoing);
     const excluded = new Set<RebalanceTransfer>();
     for (const group of groupTransferSkuAmounts(s, transfers).values()) {
       if (exemptDonors.has(stockKey(group.skuCode, group.fromBranchId))) continue;
