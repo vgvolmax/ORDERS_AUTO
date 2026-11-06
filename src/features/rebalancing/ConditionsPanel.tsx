@@ -1,4 +1,6 @@
+import { useId } from 'react';
 import { getTransferAmountFilter } from '../../domain/rebalancing';
+import { BrandIcon } from '../../components/BrandIcon';
 import { Input, Select } from '../../components/ui';
 import { QuantityInput } from '../../components/QuantityInput';
 import type { RebalanceConfig } from '../../domain/rebalancing';
@@ -11,13 +13,20 @@ export function ConditionsPanel({
   onChange: (config: RebalanceConfig) => void | Promise<void>;
 }) {
   const filter = getTransferAmountFilter(config);
+  const stockException = config.stockAmountException ?? {
+    enabled: false,
+    multiplier: 2 as const,
+  };
+  const stockGroup = useId();
+  const stockHelp = `${stockGroup}-help`;
   return (
     <>
       <section className="panel">
         <h2>Условия перемещений</h2>
         <p>
           Сумма перемещения SKU рассчитывается по справочной цене MIN/MAX. При
-          включённом фильтре позиции с неизвестной ценой попадут в исключения.
+          включённом фильтре неизвестная цена исключает строку, если для неё
+          не действует исключение по остатку.
         </p>
         <div className="rebalance-fields">
           <label>
@@ -94,14 +103,62 @@ export function ConditionsPanel({
               />
             </label>
           </div>
+          <div className="stock-amount-condition">
+            <label className="checkbox-control">
+              <input
+                type="checkbox"
+                checked={stockException.enabled}
+                aria-describedby={stockHelp}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    stockAmountException: {
+                      ...stockException,
+                      enabled: e.target.checked,
+                    },
+                  })
+                }
+              />
+              Остаток
+            </label>
+            <fieldset
+              className="stock-multiplier"
+              disabled={!stockException.enabled}
+            >
+              <legend className="sr-only">Кратность максимума</legend>
+              {([2, 3] as const).map((multiplier) => (
+                <label key={multiplier}>
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    name={stockGroup}
+                    checked={stockException.multiplier === multiplier}
+                    onChange={() =>
+                      onChange({
+                        ...config,
+                        stockAmountException: { ...stockException, multiplier },
+                      })
+                    }
+                  />
+                  <BrandIcon name="check" />
+                  ×{multiplier}
+                </label>
+              ))}
+            </fieldset>
+            <p id={stockHelp}>
+              Если остаток донора за вычетом принятых исходящих перемещений
+              строго выше выбранной кратности Max, рублёвый порог для этого SKU
+              и донора пропускается.
+            </p>
+          </div>
         </div>
         <p>
           Количество одного SKU × цена MIN/MAX проверяется отдельно для каждого
           направления «донор → получатель». Сумма должна быть не ниже порога;
           равенство допускается. Разные SKU, доноры и получатели не
-          складываются. Строки ниже порога исключаются, остальные сохраняются.
-          После принятия недостающий до MAX остаток остаётся в потребности на
-          закупку.
+          складываются. Строки ниже порога исключаются, кроме подходящих
+          под условие «Остаток». После принятия недостающий до MAX остаток
+          остаётся в потребности на закупку.
         </p>
       </section>
     </>

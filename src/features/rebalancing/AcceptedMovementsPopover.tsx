@@ -34,7 +34,7 @@ export function AcceptedMovementsPopover({
           <Button className="secondary" onClick={onClose}>
             Закрыть
           </Button>
-          <Button onClick={onOpenRebalancing}>Открыть ребалансировку</Button>
+          <Button onClick={onOpenRebalancing}>Открыть перемещения</Button>
         </>
       }
     >

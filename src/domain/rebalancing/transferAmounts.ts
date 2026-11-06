@@ -1,13 +1,37 @@
 import { moneyProduct, moneySum } from '../money';
-import type {
-  RebalanceConfig,
-  RebalanceSnapshot,
-  RebalanceTransfer,
+import { integerWeights } from './numbers';
+import {
+  stockKey,
+  type RebalanceConfig,
+  type RebalanceSnapshot,
+  type RebalanceTransfer,
 } from './types';
 
 /** Live legacy settings retain their enabled/value; historical accepted configs are not migrated. */
 export function getTransferAmountFilter(config: RebalanceConfig) {
   return config.transferAmountFilter ?? config.skuAmountFilter;
+}
+
+export function getAmountExemptDonors(
+  snapshot: RebalanceSnapshot,
+  config: RebalanceConfig,
+  outgoing: ReadonlyMap<string, number>,
+): Set<string> {
+  const donors = new Set<string>();
+  const exception = config.stockAmountException;
+  if (!exception?.enabled || !getTransferAmountFilter(config).enabled) return donors;
+
+  for (const row of snapshot.stocks) {
+    if (row.max === null) continue;
+    const key = stockKey(row.skuCode, row.branchId);
+    const [stock, reserved, max] = integerWeights([
+      row.stock,
+      outgoing.get(key) ?? 0,
+      row.max,
+    ]) as [bigint, bigint, bigint];
+    if (stock - reserved > BigInt(exception.multiplier) * max) donors.add(key);
+  }
+  return donors;
 }
 
 export const transferSkuKey = (

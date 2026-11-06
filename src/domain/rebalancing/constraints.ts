@@ -74,6 +74,14 @@ export function assertConfig(config: RebalanceConfig): void {
     )
       throw new RebalanceError('INVALID_CONFIG');
   }
+  const stockException = config.stockAmountException;
+  if (
+    stockException !== undefined &&
+    (!stockException ||
+      typeof stockException.enabled !== 'boolean' ||
+      ![2, 3].includes(stockException.multiplier))
+  )
+    throw new RebalanceError('INVALID_CONFIG');
   routeRules(config);
 }
 export function routeAllows(
@@ -120,6 +128,9 @@ export function rebalanceConfigFingerprint(config: RebalanceConfig): string {
           config.transferAmountFilter.enabled,
           config.transferAmountFilter.threshold,
         ]
+      : []),
+    ...(config.stockAmountException?.enabled
+      ? [config.stockAmountException.multiplier]
       : []),
   ]);
 }

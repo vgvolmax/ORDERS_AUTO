@@ -87,6 +87,8 @@ export interface RebalanceConfig {
   skuAmountFilter: MoneyFilter;
   /** Minimum of one SKU × donor × recipient. Missing in legacy saved conditions. */
   transferAmountFilter?: MoneyFilter;
+  /** Bypass the amount minimum for a donor whose available stock exceeds multiplier × Max. */
+  stockAmountException?: { enabled: boolean; multiplier: 2 | 3 };
 }
 export interface RebalanceTransfer {
   sourceLineId: string;
@@ -106,6 +108,8 @@ export interface AcceptedTransfer {
   snapshotId: string;
   acceptedAt: string;
   acceptedConfig: RebalanceConfig;
+  /** Frozen eligibility for the amount exception when this line was accepted. */
+  amountExemptByStock?: true;
 }
 export interface RebalanceBalance {
   skuCode: string;

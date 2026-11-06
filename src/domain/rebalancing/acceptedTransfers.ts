@@ -10,6 +10,7 @@ import {
 import { receiverTarget, sumQuantities } from './numbers';
 import { moneyProductsLessThan } from '../money';
 import {
+  getAmountExemptDonors,
   getTransferAmountFilter,
   groupTransferSkuAmounts,
   transferSkuKey,
@@ -160,12 +161,10 @@ export function acceptTransfers(
   const next = [...input.currentAccepted, ...additions];
   const issues = validateAcceptedLedger(input.snapshot, next);
   if (issues.length) throw new RebalanceError('INVALID_TRANSFER_BATCH', issues);
-  const totals = acceptedTotals(next),
-    skus = new Map(input.snapshot.skus.map((s) => [s.skuCode, s]));
+  const totals = acceptedTotals(next);
   const stocks = new Map(
     input.snapshot.stocks.map((s) => [stockKey(s.skuCode, s.branchId), s]),
   );
-  const addedSkus = new Set(additions.map((t) => t.skuCode));
   for (const t of additions) {
     const key = stockKey(t.skuCode, t.toBranchId),
       to = stocks.get(key)!;
@@ -175,15 +174,21 @@ export function acceptTransfers(
     )
       throw new RebalanceError('INVALID_TRANSFER_BATCH');
   }
-  for (const code of addedSkus) {
-    const price = skus.get(code)!.referencePrice;
-    if (getTransferAmountFilter(p.config).enabled) {
-      if (price === null || !Number.isFinite(price) || price < 0)
-        throw new RebalanceError('INVALID_TRANSFER_BATCH');
-    }
-  }
   const amountFilter = getTransferAmountFilter(p.config);
   if (amountFilter.enabled) {
+    if (p.config.stockAmountException?.enabled) {
+      // Lines already accepted from this plan share the same starting stock.
+      const earlier = input.currentAccepted.filter((t) => t.sourceRunId !== p.runId);
+      const exemptDonors = getAmountExemptDonors(
+        input.snapshot,
+        p.config,
+        acceptedTotals(earlier).outgoing,
+      );
+      for (const t of additions) {
+        if (exemptDonors.has(stockKey(t.skuCode, t.fromBranchId)))
+          t.amountExemptByStock = true;
+      }
+    }
     const changedRoutes = new Set(additions.map(transferSkuKey));
     const sameRun = next.filter(
       (t) => t.sourceRunId === p.runId && changedRoutes.has(transferSkuKey(t)),
@@ -193,8 +198,9 @@ export function acceptTransfers(
       sameRun,
     ).values()) {
       if (
-        group.amount === null ||
-        moneyProductsLessThan(group.products, amountFilter.threshold)
+        !group.lines.every((t) => t.amountExemptByStock) &&
+        (group.amount === null ||
+          moneyProductsLessThan(group.products, amountFilter.threshold))
       )
         throw new RebalanceError('INVALID_TRANSFER_BATCH');
     }
