@@ -1506,7 +1506,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   const xlsx = await xlsxDownload,
     workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await readWorkbook((await xlsx.path())!));
-  expect(workbook.getWorksheet('Получатель')!.getCell('D2').value).toBe(40);
+  expect(workbook.getWorksheet('Получатель')!.getCell('D9').value).toBe(40);
   await page.getByRole('button', { name: /Все заказы ИП Баранов/ }).click();
   await expect(page.getByLabel('Количество SKU1 Получатель')).toHaveValue('40');
   await page.setViewportSize({ width: 1440, height: 900 });
