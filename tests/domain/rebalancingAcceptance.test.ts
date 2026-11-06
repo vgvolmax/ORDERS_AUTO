@@ -285,9 +285,8 @@ describe('rebalancing business acceptance', () => {
       },
     });
     expect(qty(s, c)).toBe(0);
-    expect(calculateRebalance(s, c, []).uncoveredNeed).toContainEqual({
-      skuCode: '00001', branchId: 'R', toMin: 10, toTarget: 50,
-    });
+    // A fully closed inbound direction is not an eligible rebalance recipient.
+    expect(calculateRebalance(s, c, []).uncoveredNeed).toEqual([]);
     expect(calculateRebalance(s, config(), []).uncoveredNeed).toContainEqual({
       skuCode: '00001', branchId: 'R', toMin: 0, toTarget: 30,
     });
