@@ -1,4 +1,5 @@
 import { moneyProduct, moneySum } from '../money';
+import { decimal, multiplyDecimal } from '../decimal';
 import { integerWeights } from './numbers';
 import {
   stockKey,
@@ -10,6 +11,23 @@ import {
 /** Live legacy settings retain their enabled/value; historical accepted configs are not migrated. */
 export function getTransferAmountFilter(config: RebalanceConfig) {
   return config.transferAmountFilter ?? config.skuAmountFilter;
+}
+
+/** Least positive number of quantity steps whose unrounded amount meets the minimum. */
+export function minimumTransferUnits(
+  step: number,
+  price: number | null,
+  threshold: number,
+): number {
+  if (price === null || !Number.isFinite(price) || price < 0) return Infinity;
+  if (threshold === 0) return 1;
+  if (price === 0) return Infinity;
+  const unitAmount = multiplyDecimal(decimal(step), decimal(price));
+  const limit = decimal(threshold);
+  const numerator = limit.n * unitAmount.d;
+  const denominator = limit.d * unitAmount.n;
+  const units = (numerator + denominator - 1n) / denominator;
+  return units <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(units) : Infinity;
 }
 
 export function getAmountExemptDonors(

@@ -213,6 +213,9 @@ export function RebalancingPage() {
       []),
     ...d.acceptedSummary.diagnostics,
   ];
+  const limitedSkuCount = r.proposal?.exclusions.filter(
+    (issue) => issue.code === 'TRANSFER_SEARCH_LIMIT',
+  ).length ?? 0;
   const stale = Boolean(
     r.proposal &&
       (r.proposal.algorithmVersion !== ALGORITHM_VERSION ||
@@ -593,6 +596,13 @@ export function RebalancingPage() {
         <Alert tone="warning">
           Предложения устарели после изменения условий. Выполните новый расчёт.
           Принятые перемещения продолжают учитываться.
+        </Alert>
+      )}
+      {limitedSkuCount > 0 && !stale && (
+        <Alert tone="warning">
+          Достигнут лимит поиска для {limitedSkuCount} SKU. Для этих позиций
+          показан лучший из проверенных допустимых планов. Коды товаров
+          указаны в исключениях.
         </Alert>
       )}
       <div

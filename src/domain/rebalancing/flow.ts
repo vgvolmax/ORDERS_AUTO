@@ -6,7 +6,7 @@ export interface FlowAssignment { from: string; to: string; units: number }
 interface Edge { to: number; reverse: number; capacity: number; original: number; cost: bigint }
 
 /** Min-cost maximum flow: actual Min coverage first, total transferable quantity second. */
-export function allocateFlow(donors: FlowDonor[], receivers: FlowReceiver[], allowed: ReadonlyMap<string, ReadonlySet<string>>, step: number, preferredRoutes: ReadonlySet<string> = new Set()): FlowAssignment[] {
+export function allocateFlow(donors: FlowDonor[], receivers: FlowReceiver[], allowed: ReadonlyMap<string, ReadonlySet<string>>, step: number, preferredRoutes: ReadonlySet<string> = new Set(), donorCosts: ReadonlyMap<string, bigint> = new Map()): FlowAssignment[] {
   const source = 0, sink = donors.length + receivers.length + 1;
   const graph: Edge[][] = Array.from({ length: sink + 1 }, () => []);
   const edge = (from: number, to: number, capacity: number, cost = 0n): Edge => {
@@ -16,7 +16,7 @@ export function allocateFlow(donors: FlowDonor[], receivers: FlowReceiver[], all
   };
   const transfers: Array<{ donor: FlowDonor; receiver: FlowReceiver; edge: Edge }> = [];
   donors.forEach((donor, i) => {
-    edge(source, 1 + i, donor.capacity);
+    edge(source, 1 + i, donor.capacity, donorCosts.get(donor.id));
     const ordered = receivers.map((receiver, j) => ({ receiver, j })).sort((a, b) => {
       const preferred = Number(preferredRoutes.has(JSON.stringify([donor.id, b.receiver.id]))) - Number(preferredRoutes.has(JSON.stringify([donor.id, a.receiver.id])));
       return preferred || b.receiver.targetNeed - a.receiver.targetNeed || (a.receiver.id < b.receiver.id ? -1 : a.receiver.id > b.receiver.id ? 1 : 0);
@@ -26,13 +26,16 @@ export function allocateFlow(donors: FlowDonor[], receivers: FlowReceiver[], all
     }
   });
   const weights = integerWeights([step, ...receivers.map((r) => r.minDeficit)]), fullStepWeight = weights[0]!;
+  const minPriority = donors.reduce(
+    (cost, d) => cost + (donorCosts.get(d.id) ?? 0n) * BigInt(d.capacity), 1n,
+  );
   receivers.forEach((r, j) => {
     const node = 1 + donors.length + j;
-    edge(node, sink, r.minNeed, -fullStepWeight);
+    edge(node, sink, r.minNeed, -fullStepWeight * minPriority);
     // Only the remaining physical shortage counts; excess within this step is above Min.
     const remainder = weights[j + 1]! - BigInt(r.minNeed) * fullStepWeight;
     const partialStep = r.minNeed < r.targetNeed && remainder > 0n ? 1 : 0;
-    if (partialStep) edge(node, sink, 1, -remainder);
+    if (partialStep) edge(node, sink, 1, -remainder * minPriority);
     edge(node, sink, r.targetNeed - r.minNeed - partialStep);
   });
   // Successive shortest residual paths keep every fixed-volume flow optimal.
