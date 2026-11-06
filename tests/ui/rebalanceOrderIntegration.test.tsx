@@ -1,5 +1,6 @@
 import { fireEvent, screen, within } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+import * as rebalancing from '../../src/domain/rebalancing';
 import { DemandPage } from '../../src/features/demand/DemandPage';
 import { SuppliersPage } from '../../src/features/suppliers/SuppliersPage';
 import { OrdersPage } from '../../src/features/orders/OrdersPage';
@@ -79,4 +80,24 @@ it('explains a manual quantity in both order views using the same accepted basis
   expect(
     screen.getByRole('dialog', { name: 'Учтённые перемещения' }),
   ).toHaveTextContent('Ручное количество к заказу: 40');
+});
+it('shows movement counts in both order views before calculating popup details', () => {
+  const summary = vi.spyOn(rebalancing, 'buildMovementSummary');
+  try {
+    renderWithStore(<OrdersPage />, accepted());
+    fireEvent.click(screen.getByRole('button', { name: /SKU · Готов/ }));
+    const indicator = screen.getByRole('button', { name: /Учтённые перемещения/ });
+    expect(indicator).toHaveTextContent('Перемещения(1)');
+    expect(summary).not.toHaveBeenCalled();
+    fireEvent.click(indicator);
+    expect(screen.getByRole('dialog', { name: 'Учтённые перемещения' })).toHaveTextContent('Донор А');
+    expect(summary).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Закрыть' }));
+    fireEvent.click(screen.getByRole('button', { name: /Все заказы ИП Баранов/ }));
+    expect(screen.getByRole('button', { name: /Учтённые перемещения/ })).toHaveTextContent('Перемещения(1)');
+    expect(summary).toHaveBeenCalledTimes(1);
+  } finally {
+    summary.mockRestore();
+  }
 });

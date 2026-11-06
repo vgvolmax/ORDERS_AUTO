@@ -103,23 +103,29 @@ export function AcceptedMovementsPopover({
 export function MovementIndicator({
   scope,
   manualOrderQty,
+  transferCount,
 }: {
   scope: MovementScope;
+  transferCount?: number;
   manualOrderQty?: number | undefined;
 }) {
   const { state, set } = useStore(),
     d = useDerivedState(state),
     [open, setOpen] = useState(false);
   if (!state.rebalance.accepted.length) return null;
-  const summary = buildMovementSummary({
-    purchaseDemand: d.purchaseDemand,
-    acceptedTransfers: state.rebalance.accepted,
-    registry: state.rebalance.registry,
-    policies: d.quantityPolicies,
-    scope,
-    manualOrderQty,
-  });
-  if (!summary.transferCount) return null;
+  const summary =
+    open || transferCount === undefined
+      ? buildMovementSummary({
+          purchaseDemand: d.purchaseDemand,
+          acceptedTransfers: state.rebalance.accepted,
+          registry: state.rebalance.registry,
+          policies: d.quantityPolicies,
+          scope,
+          manualOrderQty,
+        })
+      : null;
+  const count = transferCount ?? summary?.transferCount ?? 0;
+  if (!count) return null;
   return (
     <>
       <button
@@ -127,15 +133,15 @@ export function MovementIndicator({
         aria-label={`Учтённые перемещения ${scope.skuCode ?? ''} ${
           scope.branch ?? ''
         }`.trim()}
-        title={`Потребность с учётом принятых перемещений: ${summary.transferCount}`}
+        title={`Потребность с учётом принятых перемещений: ${count}`}
         onClick={() => setOpen(true)}
       >
         <span className="movement-indicator-label">Перемещения</span>
         <span className="movement-indicator-count">
-          ({summary.transferCount})
+          ({count})
         </span>
       </button>
-      {open && (
+      {open && summary && (
         <AcceptedMovementsPopover
           summary={summary}
           skus={state.minMax?.skus ?? []}

@@ -45,6 +45,16 @@ function signature(order: Order | undefined): string {
       .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
   ]);
 }
+export function changedOrderIds(before: Order[], after: Order[]): Set<string> {
+  const beforeById = new Map(before.map((order) => [order.id, order]));
+  const afterById = new Map(after.map((order) => [order.id, order]));
+  return new Set(
+    [...new Set([...beforeById.keys(), ...afterById.keys()])].filter(
+      (id) => signature(beforeById.get(id)) !== signature(afterById.get(id)),
+    ),
+  );
+}
+
 export function buildAcceptedTransferStatePatch(
   input: AcceptedWorkflowInput,
 ): AcceptedWorkflowResult {
@@ -69,15 +79,7 @@ export function buildAcceptedTransferStatePatch(
     input.settings,
     input.previousProjection.dataIssues,
   );
-  const beforeById = new Map(
-      input.previousProjection.orders.map((o) => [o.id, o]),
-    ),
-    afterById = new Map(after.orders.map((o) => [o.id, o]));
-  const affected = new Set(
-    [...beforeById.keys(), ...afterById.keys()].filter(
-      (id) => signature(beforeById.get(id)) !== signature(afterById.get(id)),
-    ),
-  );
+  const affected = changedOrderIds(input.previousProjection.orders, after.orders);
   return {
     edits,
     reviewedOrderIds: input.reviewedOrderIds.filter((id) => !affected.has(id)),

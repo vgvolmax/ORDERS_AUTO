@@ -110,6 +110,35 @@ describe('complete durable purchasing workspace', () => {
     expect((await loadActiveWorkspace())!.workspaceId).toBe('w2');
     expect(await listWorkspaces()).toHaveLength(2);
   });
+  it('checks raw import references without loading their bytes when saving an edit', async () => {
+    const first = fixture();
+    const ref = {
+      fileId: 'f1', name: 'input.xlsx', type: '', lastModified: 1, size: 3,
+    };
+    first.data.rawImports.minMax = ref;
+    await saveWorkspace(first, -1, [{ ...ref, bytes: new Uint8Array([1, 2, 3]).buffer }]);
+    const reads = vi.spyOn(IDBObjectStore.prototype, 'get');
+    try {
+      const edited = { ...first, revision: 1 };
+      await saveWorkspace(edited, 0);
+      expect(reads.mock.contexts).not.toContainEqual(
+        expect.objectContaining({ name: 'workspaceFiles' }),
+      );
+      expect(await loadActiveWorkspace()).toEqual(edited);
+      const missing = {
+        ...edited,
+        revision: 2,
+        data: {
+          ...edited.data,
+          rawImports: { minMax: { ...ref, fileId: 'missing' }, suppliers: null },
+        },
+      };
+      await expect(saveWorkspace(missing, 1)).rejects.toThrow('WORKSPACE_FILE_MISSING');
+      expect(await loadActiveWorkspace()).toEqual(edited);
+    } finally {
+      reads.mockRestore();
+    }
+  });
   it('rejects stale saves and stale new-import activation without overwriting either workspace', async () => {
     const first = fixture();
     await saveWorkspace(first, -1);

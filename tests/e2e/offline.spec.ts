@@ -1501,19 +1501,32 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     page.getByRole('button', { name: 'Скачать CSV ещё раз' }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  const xlsxDownload = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Excel все' }).click();
-  const xlsx = await xlsxDownload,
-    workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(await readWorkbook((await xlsx.path())!));
-  expect(workbook.getWorksheet('Получатель')!.getCell('D9').value).toBe(40);
   await page.getByRole('button', { name: /Все заказы ИП Баранов/ }).click();
-  await expect(page.getByLabel('Количество SKU1 Получатель')).toHaveValue('40');
+  const supplierQty = page.getByLabel('Количество SKU1 Получатель', {
+    exact: true,
+  });
+  const supplierReview = page.getByRole('checkbox', {
+    name: 'Проверен Получатель',
+    exact: true,
+  });
+  await expect(supplierQty).toHaveValue('40');
+  await expect(supplierReview).toBeChecked();
+  await supplierQty.fill('41.5');
+  await expect(supplierReview).not.toBeChecked();
+  await supplierReview.click();
+  await expect(supplierReview).toBeChecked();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({
     path: testInfo.outputPath('03-supplier-matrix-1440.png'),
   });
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(page.getByRole('button', { name: /SKU · Готов/ })).toBeVisible();
+  const xlsxDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Excel все' }).click();
+  const xlsx = await xlsxDownload,
+    workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readWorkbook((await xlsx.path())!));
+  expect(workbook.getWorksheet('Получатель')!.getCell('D9').value).toBe(41.5);
   await expect(
     page.getByText('Сеанс сохранён на этом компьютере', { exact: true }),
   ).toBeVisible();
@@ -1523,7 +1536,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   ).toBeVisible();
   await page.getByRole('button', { name: /SKU · Выгружен/ }).click();
   await expect(page.getByLabel('Количество SKU1', { exact: true })).toHaveValue(
-    '40',
+    '41.5',
   );
   await expect(
     page.getByRole('checkbox', { name: 'Заказ проверен' }),
