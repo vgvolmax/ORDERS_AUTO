@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { cpSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { resolve } from 'node:path';
@@ -3097,6 +3097,31 @@ test('E2E-22 Volmax workspace ships local artwork and distinct native control st
   await expect(continueButton).toBeDisabled();
   await expect(continueButton).toHaveCSS('cursor', 'not-allowed');
 
+  const expectPointerStates = async (control: Locator, name: string) => {
+    const background = () =>
+      control.evaluate((element) => {
+        const { backgroundColor, backgroundImage } = getComputedStyle(element);
+        return [backgroundColor, backgroundImage];
+      });
+    await page.mouse.move(4, 4);
+    const normal = await background();
+    await control.hover();
+    const hover = await background();
+    await page.mouse.down();
+    const pressed = await background();
+    await page.mouse.move(4, 4);
+    await page.mouse.up();
+    expect.soft(hover, `${name}: hover`).not.toEqual(normal);
+    expect.soft(pressed, `${name}: pressed`).not.toEqual(hover);
+  };
+
+  await expectPointerStates(
+    page.locator('label.button').filter({
+      has: page.getByLabel('Выбрать файл Отчёт MIN/MAX'),
+    }),
+    'Загрузка файла',
+  );
+
   const products = [
     ['310701', 'Смеситель кухонный, чёрный', 1140],
     ['39459', 'Коллектор PPR RTP, 5 контуров', 450],
@@ -3135,19 +3160,19 @@ test('E2E-22 Volmax workspace ships local artwork and distinct native control st
     });
   }
 
-  const css = () => continueButton.evaluate((element) => getComputedStyle(element).backgroundImage);
   await expect(continueButton).toBeEnabled();
   await expect(continueButton).toHaveCSS('cursor', 'pointer');
-  const normal = await css();
-  await continueButton.hover();
-  const hover = await css();
-  expect(hover).not.toBe(normal);
-  await page.mouse.down();
-  expect(await css()).not.toBe(hover);
-  await page.mouse.move(4, 4);
-  await page.mouse.up();
+  await expectPointerStates(continueButton, 'Основная кнопка');
   await continueButton.click();
   await expect(page.getByRole('heading', { name: 'Потребность всей сети' })).toBeVisible();
+  await expectPointerStates(
+    page.locator('.sidebar button[aria-current="page"]'),
+    'Активный пункт меню',
+  );
+  await expectPointerStates(
+    page.locator('.workspace-shortcuts button[aria-current="page"]'),
+    'Активный верхний переход',
+  );
   const search = page.locator('main .search-control input').first();
   await expect(search).toHaveCSS('cursor', 'text');
   await page.keyboard.press('Tab');
@@ -3161,15 +3186,46 @@ test('E2E-22 Volmax workspace ships local artwork and distinct native control st
 
   await page.getByRole('button', { name: 'Раздел: Ребалансировка', exact: true }).click();
   await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  await expectPointerStates(
+    page.getByRole('tab', { name: 'Условия', selected: true }),
+    'Выбранная вкладка',
+  );
   const threshold = page.getByRole('spinbutton', { name: 'Порог суммы SKU' });
   await threshold.fill('-1');
   await threshold.blur();
   await expect(threshold).toHaveAttribute('aria-invalid', 'true');
   await expect(threshold).toHaveCSS('border-top-color', 'rgb(163, 38, 54)');
+  await threshold.hover();
+  await expect.soft(threshold, 'Рамка ошибки при наведении').toHaveCSS(
+    'border-top-color',
+    'rgb(163, 38, 54)',
+    { timeout: 500 },
+  );
   await threshold.fill('0');
   await threshold.blur();
   await expect(threshold).toHaveAttribute('aria-invalid', 'false');
-  await page.getByRole('button', { name: 'Рассчитать перемещения', exact: true }).click();
+  const calculate = page.getByRole('button', {
+    name: 'Рассчитать перемещения',
+    exact: true,
+  });
+  const busyCursor = await calculate.evaluateHandle((button) => {
+    const result = { value: '' };
+    const observer = new MutationObserver(() => {
+      if (button.getAttribute('aria-busy') !== 'true') return;
+      result.value = getComputedStyle(button).cursor;
+      observer.disconnect();
+    });
+    observer.observe(button, { attributeFilter: ['aria-busy'] });
+    return result;
+  });
+  await calculate.click();
+  await expect.soft
+    .poll(() => busyCursor.evaluate((state) => state.value), {
+      message: 'Курсор во время расчёта',
+      timeout: 1000,
+    })
+    .toBe('progress');
+  await busyCursor.dispose();
   await expect(page.getByRole('tab', { name: 'Результаты', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('button', { name: /^Открыть перемещение / }).first().click();
   const composition = page.getByRole('dialog');
