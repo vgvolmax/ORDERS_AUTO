@@ -168,7 +168,7 @@ export function OrdersPage() {
     setExportError('');
     setBusy(`Создание Excel для ${supplier}…`);
     try {
-      const buffer = await buildSupplierWorkbook(supplier, supplierOrders);
+      const buffer = await buildSupplierWorkbook(supplier, supplierOrders, mode);
       save(
         new Blob([buffer], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

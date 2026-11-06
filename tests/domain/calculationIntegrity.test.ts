@@ -356,6 +356,6 @@ describe('calculation audit regressions: import → purchasing → orders', () =
     expect(orderToCsv(order)).not.toContain('0.30000000000000004');
     const buffer = await buildSupplierWorkbook(supplier, [order]);
     const book = XLSX.read(buffer, { type: 'array' });
-    expect(book.Sheets['Общий заказ']!['B2'].v).toBe(0.5);
+    expect(book.Sheets['Общий заказ']!['A6'].v).toBe(0.5);
   });
 });
