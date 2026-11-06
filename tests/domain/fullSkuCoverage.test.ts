@@ -91,10 +91,10 @@ function accept(
     ),
   });
 }
-describe('whole-SKU network coverage', () => {
-  it('discards all trial flow if surplus12 cannot cover needs8+6', () => {
+describe('partial-network coverage and independent purchasing residuals', () => {
+  it('proposes twelve legal units even when the network needs fourteen', () => {
     const out = total(network());
-    expect(out.transfers).toEqual([]);
+    expect(out.transfers.reduce((sum, t) => sum + t.qty, 0)).toBe(12);
     expect(diagnostic(out)).toEqual([
       expect.objectContaining({
         skuCode: 'sku',
@@ -104,11 +104,8 @@ describe('whole-SKU network coverage', () => {
         reason: 'INSUFFICIENT_SURPLUS',
       }),
     ]);
-    expect(
-      out.balances.every(
-        (b) => b.proposedIncoming === 0 && b.proposedOutgoing === 0,
-      ),
-    ).toBe(true);
+    expect(out.balances.reduce((sum, b) => sum + b.proposedIncoming, 0)).toBe(12);
+    expect(out.uncoveredNeed.reduce((sum, r) => sum + r.toTarget, 0)).toBe(2);
   });
   it('combines multiple donors and emits no active allocation fields', () => {
     const out = total(network([8, 6]));
@@ -118,7 +115,7 @@ describe('whole-SKU network coverage', () => {
       false,
     );
   });
-  it('rejects route cuts and disconnected shortage even with enough network surplus', () => {
+  it('still moves reachable units when a route cut prevents full coverage', () => {
     const s = network([16, 4]);
     for (const pairs of [
       [
@@ -132,7 +129,7 @@ describe('whole-SKU network coverage', () => {
       ],
     ]) {
       const out = total(s, routes(pairs));
-      expect(out.transfers).toEqual([]);
+      expect(out.transfers.reduce((sum, t) => sum + t.qty, 0)).toBe(12);
       expect(diagnostic(out)).toEqual([
         expect.objectContaining({
           neededQty: 14,
@@ -152,17 +149,17 @@ describe('whole-SKU network coverage', () => {
           ['D1', 'R1'],
           ['D2', 'R2'],
         ]),
-      ).transfers,
-    ).toEqual([]);
+      ).transfers.map((t) => t.qty),
+    ).toEqual([8]);
     expect(
       total(s, routes([['D1', 'R1']])).transfers.map((t) => t.qty),
     ).toEqual([8]);
   });
-  it('rejects non-step need0.3 with step0.2 without exceeding target', () => {
+  it('moves the allowed step even if a fractional remainder cannot be moved', () => {
     const s = network([1, 0], [0.3, 0]);
     s.skus[0]!.quantityStep = 0.2;
     const out = total(s);
-    expect(out.transfers).toEqual([]);
+    expect(out.transfers.map((t) => t.qty)).toEqual([0.2]);
     expect(diagnostic(out)).toEqual([
       expect.objectContaining({
         neededQty: 0.3,
@@ -343,23 +340,22 @@ describe('whole-SKU network coverage', () => {
   });
 });
 
-it('preserves initial coverage shortage diagnostics before the document amount post-filter', () => {
+it('applies the amount threshold even when there is not enough physical stock for the network', () => {
   for (const threshold of [130, 60]) {
     const out = calculateRebalance(
       network(),
       config({ transferAmountFilter: { enabled: true, threshold } }),
       [],
     );
-    expect(out.transfers).toEqual([]);
+    const moved = out.transfers.reduce((sum, t) => sum + t.qty, 0);
+    expect(moved).toBe(threshold === 130 ? 0 : 8);
     expect(out.skippedSkus).toEqual([
       expect.objectContaining({
         neededQty: 14,
-        deliverableQty: 12,
-        missingQty: 2,
+        deliverableQty: moved,
+        missingQty: 14 - moved,
+        reason: 'AMOUNT_THRESHOLD',
       }),
     ]);
-    expect(
-      out.exclusions.some((i) => i.code === 'TRANSFER_AMOUNT_FILTER'),
-    ).toBe(false);
   }
 });

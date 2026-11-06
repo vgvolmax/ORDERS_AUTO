@@ -152,6 +152,42 @@ describe('donor selection by stock remaining relative to Max', () => {
     expect(result.exclusions.some((i) => i.code === 'TRANSFER_SEARCH_LIMIT')).toBe(false);
   }, 3000);
 
+  it('keeps fifteen when twenty surplus cannot fully cover two recipients and ten is below the threshold', () => {
+    const result = calculate(
+      [['D', 120, 100], ['X', 0, 10], ['Y', 0, 15]],
+      { transferAmountFilter: { enabled: true, threshold: 1100 } },
+    );
+    expect(lines(result)).toEqual([['D', 'Y', 15]]);
+    expect(result.balances.find((b) => b.branchId === 'D')?.stockAfter).toBe(105);
+    expect(result.uncoveredNeed).toEqual([{ skuCode: 'SKU', branchId: 'X', toMin: 10, toTarget: 10 }]);
+    expect(result.skippedSkus).toEqual([expect.objectContaining({
+      neededQty: 25, deliverableQty: 15, missingQty: 10,
+      reason: 'AMOUNT_THRESHOLD',
+    })]);
+  });
+
+  it('allows a partial receiver line above the threshold with one donor', () => {
+    const result = calculate(
+      [['D', 115, 100], ['R', 0, 20]],
+      { transferAmountFilter: { enabled: true, threshold: 1100 } },
+    );
+    expect(lines(result)).toEqual([['D', 'R', 15]]);
+    expect(result.uncoveredNeed.map((need) => need.toTarget)).toEqual([5]);
+    expect(result.skippedSkus?.[0]).toMatchObject({
+      neededQty: 20, deliverableQty: 15, missingQty: 5,
+      reason: 'INSUFFICIENT_SURPLUS',
+    });
+  });
+
+  it('combines two qualifying partial donor lines when neither can finish the recipient', () => {
+    const result = calculate(
+      [['A', 108, 100], ['B', 106, 100], ['R', 0, 20]],
+      { transferAmountFilter: { enabled: true, threshold: 400 } },
+    );
+    expect(lines(result)).toEqual([['A', 'R', 8], ['B', 'R', 6]]);
+    expect(result.uncoveredNeed.map((need) => need.toTarget)).toEqual([6]);
+  });
+
   it('reports a stopped search and returns only legal lines when the budget is exhausted', () => {
     const donors = [
       { id: 'A', capacity: 8, stock: 108, max: 100, minimumUnits: 4 },

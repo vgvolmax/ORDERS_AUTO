@@ -127,7 +127,10 @@ describe('minimum amount belongs to one SKU from one donor to one recipient', ()
       toMin: 2,
       toTarget: 2,
     });
-    expect(p.skippedSkus).toEqual([]);
+    expect(p.skippedSkus).toEqual([expect.objectContaining({
+      neededQty: 10, deliverableQty: 8, missingQty: 2,
+      reason: 'AMOUNT_THRESHOLD',
+    })]);
     expect(p.exclusions).toContainEqual(
       expect.objectContaining({
         code: 'TRANSFER_AMOUNT_FILTER',
@@ -178,13 +181,14 @@ describe('minimum amount belongs to one SKU from one donor to one recipient', ()
       plan(network([['A', 0.099999999, 3, 0]]), settings(0.3)).transfers,
     ).toEqual([]);
   });
-  it('preserves the initial whole-SKU shortage rule before applying the document filter', () => {
+  it('moves a qualifying eight even when the recipient still needs two', () => {
     const s = network([['A', 1000, 8, 2]]);
     s.stocks.find((r) => r.branchId === 'D2')!.stock = 100;
     const p = plan(s);
-    expect(p.transfers).toEqual([]);
+    expect(p.transfers.map((t) => t.qty)).toEqual([8]);
     expect(p.skippedSkus).toContainEqual(
       expect.objectContaining({
+        deliverableQty: 8,
         missingQty: 2,
         reason: 'INSUFFICIENT_SURPLUS',
       }),
@@ -359,9 +363,9 @@ describe('minimum amount belongs to one SKU from one donor to one recipient', ()
     expect(p.skippedSkus).toEqual([
       expect.objectContaining({
         neededQty: 10,
-        deliverableQty: 8,
-        missingQty: 2,
-        reason: 'INSUFFICIENT_SURPLUS',
+        deliverableQty: 0,
+        missingQty: 10,
+        reason: 'AMOUNT_THRESHOLD',
       }),
     ]);
   });
@@ -445,7 +449,7 @@ describe('donor stock exception to the directed SKU minimum', () => {
     expect(accepted.diagnostics).toEqual([]);
   });
 
-  it('does not override routes or the full-coverage check', () => {
+  it('does not override blocked routes', () => {
     const s = network([['A', 10, 101, 2]]);
     const c = stockException(2);
     c.routeConfig.pairs.push({ branchAId: 'D', branchBId: 'R', direction: 'BLOCKED' });
