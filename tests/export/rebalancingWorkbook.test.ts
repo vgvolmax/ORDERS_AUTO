@@ -109,7 +109,7 @@ it('supplier CSV/XLSX share the accepted projection; manual quantity remains the
     await wb.xlsx.load(
       await buildSupplierWorkbook('ИП Баранов Роман Борисович', [order]),
     );
-    expect(wb.getWorksheet('Получатель')!.getCell('D2').value).toBe(qty);
+    expect(wb.getWorksheet('Получатель')!.getCell('D9').value).toBe(qty);
   }
 });
 

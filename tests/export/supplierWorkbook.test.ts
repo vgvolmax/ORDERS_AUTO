@@ -111,9 +111,7 @@ describe('buildSupplierWorkbook', () => {
 
     expect(dashboard.getImages()).toHaveLength(1);
     expect(dashboard.views[0]).toMatchObject({ state: 'frozen', ySplit: 8, showGridLines: false });
-    expect(dashboard.autoFilter).toEqual({
-      from: { row: 8, column: 1 }, to: { row: 9, column: 7 },
-    });
+    expect(dashboard.autoFilter).toBe('A8:G9');
     expect(dashboard.pageSetup.orientation).toBe('landscape');
     expect(dashboard.pageSetup.printTitlesRow).toBe('8:8');
     expect(dashboard.pageSetup.printArea).toBe('A1:G12');
