@@ -1513,7 +1513,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await expect(supplierReview).toBeChecked();
   await supplierQty.fill('41.5');
   await expect(supplierReview).not.toBeChecked();
-  await supplierReview.check();
+  await supplierReview.click();
   await expect(supplierReview).toBeChecked();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({
