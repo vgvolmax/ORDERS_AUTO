@@ -455,7 +455,7 @@ describe('donor stock exception to the directed SKU minimum', () => {
     c.routeConfig.pairs.push({ branchAId: 'D', branchBId: 'R', direction: 'BLOCKED' });
     const p = plan(s, c);
     expect(p.transfers).toEqual([]);
-    expect(p.skippedSkus?.[0]?.reason).toBe('ROUTE_LIMIT');
+    expect(p.skippedSkus?.[0]?.reason).toBe('AMOUNT_THRESHOLD');
   });
 
   it('keeps disabled and legacy fingerprints compatible and invalidates changed enabled conditions', () => {

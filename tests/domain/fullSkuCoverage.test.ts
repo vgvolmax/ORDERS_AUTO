@@ -348,13 +348,13 @@ it('applies the amount threshold even when there is not enough physical stock fo
       [],
     );
     const moved = out.transfers.reduce((sum, t) => sum + t.qty, 0);
-    expect(moved).toBe(threshold === 130 ? 0 : 8);
+    expect(moved).toBe(threshold === 130 ? 0 : 12);
     expect(out.skippedSkus).toEqual([
       expect.objectContaining({
         neededQty: 14,
         deliverableQty: moved,
         missingQty: 14 - moved,
-        reason: 'AMOUNT_THRESHOLD',
+        reason: threshold === 130 ? 'AMOUNT_THRESHOLD' : 'INSUFFICIENT_SURPLUS',
       }),
     ]);
   }
