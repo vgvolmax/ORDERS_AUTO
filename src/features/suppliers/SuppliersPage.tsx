@@ -93,16 +93,6 @@ export function SuppliersPage() {
   const problems = operationPool.filter(
     (resolution) => resolution.status !== 'MANUAL_SELECTED',
   );
-  const poolAssignmentCodes = new Set(
-    state.overrides
-      .filter((item) => item.allowWithoutHistory && item.source !== 'AUTO')
-      .map((item) => item.skuCode),
-  );
-  const poolAssignments = operationPool.filter(
-    (resolution) =>
-      resolution.status === 'MANUAL_SELECTED' &&
-      poolAssignmentCodes.has(resolution.skuCode),
-  );
   const problemSkuCodes = new Set(problems.map((problem) => problem.skuCode));
   const problemDemand = derived.purchaseDemand.filter(
     (line) => problemSkuCodes.has(line.skuCode) && line.purchaseQty > 0,
@@ -301,11 +291,10 @@ export function SuppliersPage() {
         />
       </div>
 
-      {(problems.length > 0 || poolAssignments.length > 0) && (
+      {operationPool.length > 0 && (
         <SupplierDecisions
           skus={state.minMax?.skus ?? []}
-          problems={problems}
-          poolAssignments={poolAssignments}
+          problemCount={problems.length}
           operationPool={operationPool}
           problemAmount={problemAmount}
           open={decisionsOpen}
@@ -405,8 +394,7 @@ export function SuppliersPage() {
 
 function SupplierDecisions({
   skus,
-  problems,
-  poolAssignments,
+  problemCount,
   operationPool,
   problemAmount,
   open,
@@ -424,8 +412,7 @@ function SupplierDecisions({
   onChoose,
 }: {
   skus: Sku[];
-  problems: SupplierResolution[];
-  poolAssignments: SupplierResolution[];
+  problemCount: number;
   operationPool: SupplierResolution[];
   problemAmount: number | null;
   open: boolean;
@@ -445,10 +432,7 @@ function SupplierDecisions({
   const supplierBusy = bulkBusy || manualBusyCode !== null;
   const [productQuery, setProductQuery] = useState('');
   const skuMap = new Map(skus.map((s) => [s.code, s]));
-  const displayedProblems = (overwriteManual
-    ? operationPool
-    : [...problems, ...poolAssignments]
-  ).filter(
+  const visibleResolutions = operationPool.filter(
     (r) =>
       [
         r.skuCode,
@@ -460,8 +444,10 @@ function SupplierDecisions({
         .includes(productQuery.trim().toLocaleLowerCase('ru')),
   );
   const allSelected =
-    displayedProblems.length > 0 &&
-    displayedProblems.every((problem) => selectedSkuCodes.has(problem.skuCode));
+    visibleResolutions.length > 0 &&
+    visibleResolutions.every((resolution) =>
+      selectedSkuCodes.has(resolution.skuCode),
+    );
 
   function toggleOne(skuCode: string, checked: boolean): void {
     const next = new Set(selectedSkuCodes);
@@ -475,9 +461,9 @@ function SupplierDecisions({
 
   function toggleAll(checked: boolean): void {
     const next = new Set(selectedSkuCodes);
-    for (const problem of displayedProblems)
-      if (checked) next.add(problem.skuCode);
-      else next.delete(problem.skuCode);
+    for (const resolution of visibleResolutions)
+      if (checked) next.add(resolution.skuCode);
+      else next.delete(resolution.skuCode);
     onSelectedSkuCodesChange(next);
   }
 
@@ -488,18 +474,21 @@ function SupplierDecisions({
     >
       <div className="decision-panel-head">
         <div>
-          {problems.length > 0 ? (
+          {problemCount > 0 ? (
             <>
               <h2>
-                Требуют решения · {problems.length} позиций ·{' '}
+                Требуют решения · {problemCount} позиций ·{' '}
                 {problemAmount == null ? 'сумма неизвестна' : money(problemAmount)}
               </h2>
-              <p>Для нераспределённых позиций нужно выбрать поставщика.</p>
+              <p>
+                Для нераспределённых позиций нужно выбрать поставщика.
+                Сохранённые ручные назначения остаются в списке.
+              </p>
             </>
           ) : (
             <>
-              <h2>Ручные назначения · {poolAssignments.length}</h2>
-              <p>Здесь можно изменить поставщика, выбранного без истории.</p>
+              <h2>Ручные назначения · {operationPool.length}</h2>
+              <p>Здесь можно изменить сохранённые ручные назначения.</p>
             </>
           )}
         </div>
@@ -509,7 +498,7 @@ function SupplierDecisions({
           onClick={() => onOpenChange(!open)}
         >
           {open ? 'Свернуть' : 'Развернуть'}{' '}
-          {problems.length > 0 ? '«Требуют решения»' : 'ручные назначения'}
+          {problemCount > 0 ? '«Требуют решения»' : 'ручные назначения'}
         </button>
       </div>
 
@@ -568,13 +557,13 @@ function SupplierDecisions({
                 type="checkbox"
                 aria-label="Выбрать все позиции"
                 checked={allSelected}
-                disabled={supplierBusy || !displayedProblems.length}
+                disabled={supplierBusy || !visibleResolutions.length}
                 onChange={(event) => toggleAll(event.target.checked)}
               />
               Отметить все по поиску
             </label>
             <small>Отмечено: {selectedSkuCodes.size}</small>
-            <small>По поиску: {displayedProblems.length}</small>
+            <small>По поиску: {visibleResolutions.length}</small>
           </div>
 
           <label>
@@ -587,7 +576,7 @@ function SupplierDecisions({
           </label>
           <div className="decision-list">
             <VirtualTable
-              rows={displayedProblems}
+              rows={visibleResolutions}
               getRowKey={(r) => r.skuCode}
               rowClassName="decision"
               columns={[

@@ -133,44 +133,61 @@ it('does not silently convert a disappeared historical choice into permission to
   expect(derive(harness.session.getState()).projection.orders).toEqual([]);
 });
 
-it('locks conflicting supplier controls while a manual choice is saving and preserves that choice', async () => {
-  const harness = renderDurable();
-  fireEvent.change(screen.getByRole('combobox', { name: 'Поставщик SKU1' }), {
-    target: { value: manualSupplier },
-  });
-  await waitFor(() => expect(harness.attempts).toBe(1));
-  expect(
-    screen.getByRole('combobox', { name: 'Поставщик SKU1' }),
-  ).toBeDisabled();
-  const auto = screen.getByRole('button', { name: 'Применить автовыбор' });
-  expect(auto).toBeDisabled();
-  expect(
-    screen.getByRole('checkbox', { name: 'Перезаписать ручные назначения' }),
-  ).toBeDisabled();
-  expect(
-    screen.getByRole('combobox', { name: 'Область применения' }),
-  ).toBeDisabled();
-  expect(screen.getByRole('checkbox', { name: 'Выбрать SKU1' })).toBeDisabled();
-  expect(screen.getByText('Сохраняем выбор…')).toBeVisible();
-  fireEvent.click(auto);
-  await act(async () => harness.release());
-  await waitFor(() =>
-    expect(harness.session.getState().overrides[0]).toMatchObject({
-      supplier: manualSupplier,
-      source: 'MANUAL',
-    }),
-  );
-  expect(
-    harness.saved.filter((w) =>
-      w.data.overrides.some((o) => o.source === 'AUTO'),
-    ),
-  ).toHaveLength(0);
-  expect(
-    derive(harness.session.getState()).projection.orders.every(
-      (order) => order.lines[0]!.unitPrice === 100,
-    ),
-  ).toBe(true);
-});
+it.each([false, true])(
+  'locks conflicting controls during a historical supplier save and keeps the row editable; stale choice=%s',
+  async (staleChoice) => {
+    const initial = ambiguousState();
+    if (staleChoice) {
+      initial.overrides = [
+        {
+          skuCode: 'SKU1',
+          supplier: 'Поставщик из старого отчёта',
+          source: 'MANUAL',
+          updatedAt: '2026-10-22',
+        },
+      ];
+    }
+    const harness = renderDurable(initial);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Поставщик SKU1' }), {
+      target: { value: manualSupplier },
+    });
+    await waitFor(() => expect(harness.attempts).toBe(1));
+    expect(
+      screen.getByRole('combobox', { name: 'Поставщик SKU1' }),
+    ).toBeDisabled();
+    const auto = screen.getByRole('button', { name: 'Применить автовыбор' });
+    expect(auto).toBeDisabled();
+    expect(
+      screen.getByRole('checkbox', { name: 'Перезаписать ручные назначения' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('combobox', { name: 'Область применения' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Выбрать SKU1' })).toBeDisabled();
+    expect(screen.getByText('Сохраняем выбор…')).toBeVisible();
+    fireEvent.click(auto);
+    await act(async () => harness.release());
+    await waitFor(() =>
+      expect(harness.session.getState().overrides[0]).toMatchObject({
+        supplier: manualSupplier,
+        source: 'MANUAL',
+      }),
+    );
+    expect(
+      harness.saved.filter((w) =>
+        w.data.overrides.some((o) => o.source === 'AUTO'),
+      ),
+    ).toHaveLength(0);
+    expect(
+      derive(harness.session.getState()).projection.orders.every(
+        (order) => order.lines[0]!.unitPrice === 100,
+      ),
+    ).toBe(true);
+    expect(
+      screen.getByRole('combobox', { name: 'Поставщик SKU1' }),
+    ).toHaveDisplayValue(`Назначен: ${manualSupplier}`);
+  },
+);
 
 it.each([false, true])(
   'revalidates a queued manual choice at commit; explicit overwrite=%s',
