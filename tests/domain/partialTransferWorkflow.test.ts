@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { createProposal, prepareAcceptedChange } from '../../src/app/rebalanceActions';
 import { derive } from '../../src/app/selectors';
+import type { AppState } from '../../src/app/appStore';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
 
 it('reduces purchasing only after accepting a partial movement and restores it on revoke', () => {
@@ -16,11 +17,11 @@ it('reduces purchasing only after accepting a partial movement and restores it o
     skuCode: 'SKU1', branchId: 'b2', toMin: 0, toTarget: 35,
   });
 
-  const proposedState = {
+  const proposedState: AppState = {
     ...state,
     rebalance: { ...state.rebalance, proposal },
   };
-  const need = (current: typeof proposedState) =>
+  const need = (current: AppState) =>
     derive(current).purchaseDemand.find((line) => line.branch === 'Получатель')!.purchaseQty;
   const ordered = (current: typeof proposedState) =>
     derive(current).projection.orders
