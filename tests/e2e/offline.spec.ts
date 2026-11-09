@@ -1023,8 +1023,10 @@ async function expectOfflineApp(
     page.getByText('Отчёт поставщиков', { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText('ORDERS_AUTO запускается…', { exact: true }),
+    page.getByText('«Волмакс Буст» запускается…', { exact: true }),
   ).toHaveCount(0);
+  await expect(page).toHaveTitle('Волмакс Буст');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', './assets/volmax-mark.svg');
 
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.consoleErrors).toEqual([]);

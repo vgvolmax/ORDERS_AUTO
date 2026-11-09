@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import companyLogo from '../../src/styles/brand/volmax-company.png?inline';
 import { describe, expect, it } from 'vitest';
 import { buildSupplierWorkbook } from '../../src/export/supplierWorkbook';
 import type { Order } from '../../src/domain/types';
@@ -89,8 +90,8 @@ describe('buildSupplierWorkbook', () => {
     expect(workbook.creator).toContain('Волмакс');
 
     const dashboard = workbook.getWorksheet('Общий заказ')!;
-    expect(dashboard.getCell('B1').value).toBe('ВОЛМАКС');
-    expect(dashboard.getCell('B2').value).toContain('УК ВОЛМАКС');
+    expect(dashboard.getCell('A2').value).toBe('УК Волмакс');
+    expect(workbook.model.media[0]?.buffer).toEqual(Buffer.from(companyLogo.split(',')[1]!, 'base64'));
     expect(dashboard.getCell('E1').value).toBe('ЗАКАЗ ПОСТАВЩИКУ');
     expect(String(dashboard.getCell('E2').value)).toContain('ПРОВЕРЕННЫЕ ЗАКАЗЫ');
     expect(dashboard.getCell('A3').value).toBe('ПОСТАВЩИК');

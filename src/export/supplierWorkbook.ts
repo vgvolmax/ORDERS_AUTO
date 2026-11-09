@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import companyLogo from '../styles/brand/volmax-company.png?inline';
 import type { Order, OrderLine } from '../domain/types';
 import { uniqueSheetName } from './filenames';
 import { moneySum } from '../domain/money';
@@ -11,17 +12,14 @@ interface AggregatedLine {
 
 export type SupplierWorkbookMode = 'ALL' | 'REVIEWED';
 
-// Offline-safe rendition of the blue/red dot sign used on volmax.ru.
-// The company wordmark and legal name stay editable native Excel text.
-const BRAND_DOTS_PNG =
-  'iVBORw0KGgoAAAANSUhEUgAAAFAAAABICAYAAABhlHJbAAAB+UlEQVR42u2bsXHDMAxFyZwvfapsoDJ7ZAKN4QFSe4CM4QmyR8ps4Cq9GqfSnayTKJAmCCh+KC0eKD598X/Zcrxer2Gpns8/ywf+UQ19F+/t8RQoALoEKJH30Hdxa5xkTM1eOfOpKzA1Se4J1Ozlab64ZiIpQxn6Lm59NvRd/H17vxnz8v0VtXqNULbMr/bFEgGUOvT05OYLni7cspe5iaSu8HhsbcHzY617mQOUnEhqwdMxrXtpQSTGABCAjwNQ4mZzZ1wb07qXlhNnK1ASUFMLnx5r3UujinKgNFyHEMLldLxZ8JKzvn58bs437bMWylvDuwtgTkwYF5GKJaOaJH1yxmlXFYASJcwVtFQSJa4p3Qri3QBbwqu5XxNjyIEApAC4IxfOMZQaprIbFy6BqO3MLXNgtVs496RLnj68wQshhING7rL4Ub41ODUTkcKrfQtbvUmBCwMQgAAs2cxru7CViRwsr94IcQmUxrczroN0DVe8nI5F4KzUpwqwRbywBNcMoBZID/CaubCGCr28gkyMASAAAWix4T+UiaBAZ4rxor6mObBGBPEEzvQWLgHhEZ4ZwBIFev3vHiYCQAACEBOh9gcwR1Fe1WeuQMu/J+z6SUSS87yDcweQPRCAFAABCEAAUgAEIAABSAEQgAAEIAVAAAIQgFSq/gA7vmUjmUkNfwAAAABJRU5ErkJggg==';
+const COMPANY_NAME = 'УК Волмакс';
+const COMPANY_SITE = 'volmax.ru';
 
 const C = {
   ink: '172832',
   navy: '173D58',
   muted: '6A8292',
-  cyan: '00A7D6',
-  red: 'EE2D48',
+  cyan: '009ADD',
   white: 'FFFFFF',
   pale: 'EEF6FA',
   stripe: 'F6F9FB',
@@ -58,13 +56,13 @@ export async function buildSupplierWorkbook(
   );
   const usedSheetNames = new Set<string>();
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'ООО «УК «Волмакс»';
-  workbook.title = 'Заказ поставщику — УК Волмакс';
+  workbook.creator = COMPANY_NAME;
+  workbook.title = `Заказ поставщику — ${COMPANY_NAME}`;
   workbook.subject = 'Состав заказа поставщику и распределение по подразделениям';
-  workbook.company = 'ООО «УК «Волмакс»';
+  workbook.company = COMPANY_NAME;
 
   const logoImage = workbook.addImage({
-    base64: BRAND_DOTS_PNG,
+    base64: companyLogo,
     extension: 'png',
   });
   const generatedAt = new Date();
@@ -171,14 +169,14 @@ function applySheetFrame(
     margins: { left: 0.26, right: 0.26, top: 0.38, bottom: 0.38, header: 0.12, footer: 0.16 },
     printTitlesRow: '8:8',
   };
-  sheet.headerFooter.oddFooter = '&LУК Волмакс · volmax.ru&CЗаказ поставщику&RСтраница &P из &N';
+  sheet.headerFooter.oddFooter = `&L${COMPANY_NAME} · ${COMPANY_SITE}&CЗаказ поставщику&RСтраница &P из &N`;
   sheet.addImage(imageId, {
-    tl: { col: 0.07, row: 0.12 },
-    ext: { width: 69, height: 65 },
+    tl: { col: 0.07, row: 0.04 },
+    ext: { width: 300, height: 300 * 399 / 2048 },
     editAs: 'oneCell',
   });
 
-  sheet.getRow(1).height = 38;
+  sheet.getRow(1).height = 47;
   sheet.getRow(2).height = 23;
   sheet.getRow(3).height = 31;
   sheet.getRow(4).height = 8;
@@ -186,16 +184,13 @@ function applySheetFrame(
   sheet.getRow(6).height = 42;
   sheet.getRow(7).height = 32;
   sheet.getRow(8).height = 35;
-  sheet.mergeCells('B1:D1');
-  sheet.mergeCells('B2:D2');
+  sheet.mergeCells('A2:D2');
   sheet.mergeCells('E1:G1');
   sheet.mergeCells('E2:G2');
-  sheet.getCell('B1').value = 'ВОЛМАКС';
-  sheet.getCell('B1').font = { name: FONT, size: 25, bold: true, color: { argb: C.ink } };
-  sheet.getCell('B1').alignment = { vertical: 'middle' };
-  sheet.getCell('B2').value = 'ИНЖЕНЕРНЫЙ ЦЕНТР  ·  УК ВОЛМАКС';
-  sheet.getCell('B2').font = { name: FONT, size: 9, bold: true, color: { argb: C.red } };
-  sheet.getCell('B2').alignment = { vertical: 'top' };
+  const company = sheet.getCell('A2');
+  company.value = COMPANY_NAME;
+  company.font = { name: FONT, size: 10, bold: true, color: { argb: C.ink } };
+  company.alignment = { vertical: 'middle', indent: 1 };
 
   const head = sheet.getCell('E1');
   head.value = heading;
@@ -330,7 +325,7 @@ function finishTable(
   const footer = sheet.getRow(summaryIndex + 2);
   footer.height = 23;
   sheet.mergeCells('A' + footer.number + ':G' + footer.number);
-  footer.getCell(1).value = 'ООО «УК «Волмакс»  ·  volmax.ru  ·  Документ сформирован для поставщика';
+  footer.getCell(1).value = `${COMPANY_NAME}  ·  ${COMPANY_SITE}  ·  Документ сформирован для поставщика`;
   footer.getCell(1).font = { name: FONT, size: 9, color: { argb: C.muted } };
   footer.getCell(1).alignment = { vertical: 'middle' };
   sheet.pageSetup.printArea = 'A1:G' + footer.number;

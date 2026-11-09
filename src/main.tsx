@@ -24,8 +24,8 @@ function mountApp(): void {
     console.error('ORDERS_AUTO startup failure', error);
     root.innerHTML = `
       <div class="startup-fallback app-failure" role="alert">
-        <strong>ORDERS_AUTO не запустился</strong>
-        <p>Скачайте и распакуйте свежую версию ORDERS_AUTO целиком, затем снова откройте index.html.</p>
+        <strong>«Волмакс Буст» не запустился</strong>
+        <p>Скачайте и распакуйте архив ORDERS_AUTO.zip целиком, затем снова откройте index.html.</p>
       </div>
     `;
   }

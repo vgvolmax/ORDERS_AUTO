@@ -18,9 +18,9 @@ describe('AppErrorBoundary', () => {
 
     const alert = screen.getByRole('alert');
 
-    expect(alert).toHaveTextContent('ORDERS_AUTO не смог продолжить работу');
+    expect(alert).toHaveTextContent('«Волмакс Буст» не смог продолжить работу');
     expect(alert).toHaveTextContent(
-      /скачайте и распакуйте свежую версию ORDERS_AUTO целиком/i,
+      /скачайте и распакуйте архив ORDERS_AUTO.zip целиком/i,
     );
     expect(alert).toHaveTextContent(/index\.html/i);
     errorSpy.mockRestore();
