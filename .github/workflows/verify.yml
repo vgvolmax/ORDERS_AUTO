@@ -130,7 +130,7 @@ jobs:
           cat > "$RUNNER_TEMP/release-notes.md" <<EOF
           **СКАЧИВАТЬ: ORDERS_AUTO.zip**
 
-          Готовая офлайн-версия ORDERS_AUTO.
+          Готовая офлайн-версия «Волмакс Буст».
 
           1. Скачайте ORDERS_AUTO.zip.
           2. Распакуйте архив.
@@ -157,10 +157,10 @@ jobs:
           if gh release view latest >/dev/null 2>&1; then
             gh release upload latest ORDERS_AUTO.zip --clobber
             gh release edit latest \
-              --title 'ORDERS_AUTO — последняя версия' \
+              --title 'Волмакс Буст — последняя версия' \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           else
             gh release create latest ORDERS_AUTO.zip \
-              --title 'ORDERS_AUTO — последняя версия' \
+              --title 'Волмакс Буст — последняя версия' \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
