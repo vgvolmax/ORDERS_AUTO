@@ -1,5 +1,6 @@
 import { db } from './db';
 import type {
+  ActiveWorkspace,
   StoredWorkspace,
   WorkspaceFile,
   WorkspaceMetadata,
@@ -36,6 +37,9 @@ export async function loadActiveWorkspace(): Promise<StoredWorkspace | null> {
   if (active && (!value || value.revision !== active.revision))
     throw new Error('WORKSPACE_CORRUPT: активная версия сеанса не найдена');
   return value;
+}
+export async function readActiveWorkspaceRevision(): Promise<ActiveWorkspace | null> {
+  return (await (await db()).get('workspaceMeta', 'main')) ?? null;
 }
 export async function loadWorkspaceFile(
   id: string,

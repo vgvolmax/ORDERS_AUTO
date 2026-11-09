@@ -30,10 +30,16 @@ import {
 import { supplierWorkbookFilename } from '../../export/orderFilenames';
 import { buildSupplierWorkbook } from '../../export/supplierWorkbook';
 import { money } from '../../format/numbers';
+import { readActiveWorkspaceRevision } from '../../persistence/workspaces';
 import { OrderDrawer } from './OrderDrawer';
 import { SupplierOrdersDrawer } from './SupplierOrdersDrawer';
 
 type ExportMode = 'ALL' | 'REVIEWED';
+
+const staleExportMessage =
+  'Рабочий сеанс изменился. Обновите страницу и повторите выгрузку.';
+
+class StaleOrderExportError extends Error {}
 
 function renderOrderMovement(line: OrderLine) {
   const transferCount = line.purchaseContext?.acceptedTransferIds.length;
@@ -117,6 +123,23 @@ export function OrdersPage() {
     ? (ordersBySupplier.get(selectedSupplier) ?? [])
     : [];
 
+  async function verifyExportRevision(): Promise<void> {
+    if (!commit) return;
+    const active = await readActiveWorkspaceRevision();
+    if (
+      active?.workspaceId !== state.workspaceId ||
+      active.revision !== state.workspaceRevision
+    ) {
+      throw new StaleOrderExportError(staleExportMessage);
+    }
+  }
+
+  function reportExportError(error: unknown, message: string) {
+    const detail = error instanceof StaleOrderExportError ? error.message : message;
+    setExportError(detail);
+    set({ toast: detail });
+  }
+
   const markExported = async (
     exported: WorkflowOrder[],
     allowBelowThreshold = false,
@@ -151,7 +174,7 @@ export function OrdersPage() {
     setExportError('');
     setBusy(`Формирование ${target.length} CSV…`);
     try {
-      await downloadReadyOrdersZip(target);
+      await downloadReadyOrdersZip(target, verifyExportRevision);
       await markExported(target);
       set({
         toast:
@@ -160,13 +183,12 @@ export function OrdersPage() {
             : `Создан ZIP: ${target.length} CSV.`,
       });
     } catch (error) {
-      console.error('Failed to export orders ZIP', error);
-      setExportError(
+      if (!(error instanceof StaleOrderExportError))
+        console.error('Failed to export orders ZIP', error);
+      reportExportError(
+        error,
         'Не удалось сформировать ZIP с заказами. Повторите выгрузку.',
       );
-      set({
-        toast: 'Не удалось сформировать ZIP с заказами. Повторите выгрузку.',
-      });
     } finally {
       setBusy('');
     }
@@ -184,6 +206,7 @@ export function OrdersPage() {
     setBusy(`Создание Excel для ${supplier}…`);
     try {
       const buffer = await buildSupplierWorkbook(supplier, supplierOrders, mode);
+      await verifyExportRevision();
       save(
         new Blob([buffer], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -198,14 +221,10 @@ export function OrdersPage() {
             : `Excel для ${supplier} сформирован.`,
       });
     } catch (error) {
-      console.error(
-        `Failed to export supplier workbook for ${supplier}`,
+      if (!(error instanceof StaleOrderExportError))
+        console.error(`Failed to export supplier workbook for ${supplier}`, error);
+      reportExportError(
         error,
-      );
-      set({
-        toast: `Не удалось сформировать Excel для ${supplier}. Повторите выгрузку.`,
-      });
-      setExportError(
         `Не удалось сформировать Excel для ${supplier}. Повторите выгрузку.`,
       );
     } finally {
@@ -291,16 +310,23 @@ export function OrdersPage() {
     }
     if (order.belowThreshold && !allowBelowThreshold) return;
 
+    setBusy('Формирование CSV…');
     try {
+      await verifyExportRevision();
       downloadCsv(order);
       await markExported([order], allowBelowThreshold);
       set({
         toast: `CSV заказа ${order.branch} → ${order.supplier} сформирован.`,
       });
     } catch (error) {
-      console.error(`Failed to export CSV for order ${order.id}`, error);
-      setExportError('Не удалось сформировать CSV заказа. Повторите выгрузку.');
-      set({ toast: 'Не удалось сформировать CSV заказа. Повторите выгрузку.' });
+      if (!(error instanceof StaleOrderExportError))
+        console.error(`Failed to export CSV for order ${order.id}`, error);
+      reportExportError(
+        error,
+        'Не удалось сформировать CSV заказа. Повторите выгрузку.',
+      );
+    } finally {
+      setBusy('');
     }
   }
 
