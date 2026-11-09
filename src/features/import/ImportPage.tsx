@@ -10,12 +10,13 @@ import { Alert, Button } from '../../components/ui';
 import { ImportIssues } from './ImportIssues';
 
 export function ImportPage() {
-  const { state, set, commit } = useStore();
+  const { state, set, commit, saving } = useStore();
   const reads = useRef({ min: 0, sup: 0 });
   const pendingReads = useRef(new Set<'min' | 'sup'>());
   const [failures, setFailures] = useState({ min: '', sup: '' });
   const configured = state.supplierAssignments !== undefined;
   const ready = Boolean(state.minMax && configured);
+  const resumeSetup = !configured && Boolean(state.minMax && state.suppliers);
   const anyLoading = state.minMaxLoading || state.supplierLoading;
   const supplierPoolCount = new Set(
     state.suppliers?.suppliers.filter(isSupplierInPool).map(supplierKey),
@@ -142,15 +143,25 @@ export function ImportPage() {
 
   return (
     <main>
-      <header>
-        <p className="eyebrow">Рабочий сеанс</p>
-        <h1>Импорт отчётов 1С</h1>
-        <p>
-          {configured
-            ? 'Для следующей недели загрузите только отчёт MIN/MAX.'
-            : 'Для начала загрузите отчёты MIN/MAX и поставщиков в любом порядке.'}{' '}
-          Файлы обрабатываются только в браузере.
-        </p>
+      <header className="header-actions">
+        <div>
+          <p className="eyebrow">Рабочий сеанс</p>
+          <h1>Импорт отчётов 1С</h1>
+          <p>
+            {resumeSetup
+              ? 'Оба отчёта сохранены. Нажмите «Перейти к потребности», чтобы подготовить связи поставщиков.'
+              : configured
+                ? 'Для следующей недели загрузите только отчёт MIN/MAX.'
+                : 'Для начала загрузите отчёты MIN/MAX и поставщиков в любом порядке.'}{' '}
+            Файлы обрабатываются только в браузере.
+          </p>
+        </div>
+        <Button
+          disabled={!(ready || resumeSetup) || anyLoading || saving}
+          onClick={() => set({ page: 'all', toast: 'Потребность рассчитана.' })}
+        >
+          Перейти к потребности
+        </Button>
       </header>
       <details className="import-help">
         <summary>Какие отчёты загрузить</summary>
@@ -171,10 +182,10 @@ export function ImportPage() {
           Принятые перемещения, ручные количества и отметки заказов сбросятся.
         </p>
       )}
-      {!configured && state.suppliers && (
+      {!configured && state.suppliers && !state.minMax && (
         <p>Осталось загрузить отчёт MIN/MAX.</p>
       )}
-      {!configured && state.minMax && (
+      {!configured && state.minMax && !state.suppliers && (
         <p>Осталось загрузить отчёт поставщиков.</p>
       )}
 
@@ -230,12 +241,6 @@ export function ImportPage() {
         </section>
       )}
 
-      <Button
-        disabled={!ready || anyLoading}
-        onClick={() => set({ page: 'all', toast: 'Потребность рассчитана.' })}
-      >
-        Перейти к потребности
-      </Button>
       {ready && !anyLoading && (
         <p className="import-ready" role="status">
           Отчёт MIN/MAX сохранён. Можно перейти к работе с потребностью.
