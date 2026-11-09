@@ -5,6 +5,21 @@ import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 
+function supplierLinks(page: Page, skuCode: string) {
+  return page.getByRole('button', { name: `Связи ${skuCode}`, exact: true });
+}
+
+async function assignPrimary(page: Page, skuCode: string, supplier: string) {
+  await supplierLinks(page, skuCode).click();
+  const dialog = page.getByRole('dialog', { name: 'Связи товара', exact: true });
+  await dialog.getByRole('combobox', { name: 'Основной поставщик', exact: true })
+    .selectOption(supplier);
+  await dialog.getByRole('button', { name: 'Сделать основным', exact: true }).click();
+  await expect(dialog.getByRole('region', { name: 'Текущий основной поставщик' })).toContainText(supplier);
+  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+  await expect(dialog).toHaveCount(0);
+}
+
 test('E2E-21 all import messages are reachable and a manual pool supplier without history survives reload and CSV', async ({
   page,
 }, testInfo) => {
@@ -67,25 +82,15 @@ test('E2E-21 all import messages are reachable and a manual pool supplier withou
   });
   await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
-  const select = page.getByRole('combobox', { name: 'Поставщик NEW', exact: true });
-  const supplierFields = page.locator('.decision-list select');
-  await expect(page.getByText('По поиску: 66', { exact: true })).toBeVisible();
-  await expect(supplierFields.first()).toHaveAttribute('aria-label', 'Поставщик NEW');
-  await expect(select.locator('option')).toHaveCount(33);
-  await expect(page.getByRole('button', { name: 'Применить автовыбор', exact: true })).toBeDisabled();
-  await select.focus();
-  await page.keyboard.press('Space');
+  await page.getByRole('textbox', { name: 'Поиск товара', exact: true }).fill('NEW-ARTICLE');
+  await assignPrimary(page, 'NEW', 'ООО "Терем"');
+  await assignPrimary(page, 'NEW', chosenSupplier);
   await page.screenshot({ path: testInfo.outputPath('21-pool-supplier-select.png'), fullPage: true });
-  await page.keyboard.press('Escape');
-  await select.selectOption('ООО "Терем"');
-  await expect(page.getByRole('heading', { name: /Требуют решения · 65 позиций/ })).toBeVisible();
-  await expect(supplierFields.first()).toHaveAttribute('aria-label', 'Поставщик NEW');
-  await expect(select.locator('option:checked')).toHaveText('Назначен: ООО "Терем"');
-  await select.selectOption(chosenSupplier);
-  await expect(select.locator('option:checked')).toHaveText(`Назначен: ${chosenSupplier}`);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Поставщики', exact: true })).toBeVisible();
-  await expect(select.locator('option:checked')).toHaveText(`Назначен: ${chosenSupplier}`);
+  await page.getByRole('textbox', { name: 'Поиск товара', exact: true }).fill('NEW-ARTICLE');
+  const product = page.getByRole('row').filter({ has: supplierLinks(page, 'NEW') });
+  await expect(product).toContainText(chosenSupplier);
   await page.getByRole('button', { name: 'Все товары', exact: true }).click();
   const filter = page.getByRole('combobox', { name: 'Поставщик', exact: true });
   await filter.selectOption(chosenSupplier);
@@ -162,7 +167,7 @@ test('E2E-20 bulk revoke respects SKU search and direction filters, survives rel
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         buffer: Buffer.from(bytes),
       });
-    await expect(page.getByLabel(label)).toBeEnabled();
+    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
     await expect(
       page.getByText('Обработка отчёта…', { exact: true }),
     ).toHaveCount(0);
@@ -427,7 +432,7 @@ test('E2E-19 stable rebalancing chrome and accepted route register export full c
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       buffer: Buffer.from(bytes),
     });
-    await expect(page.getByLabel(label)).toBeEnabled();
+    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
     await expect(
       page.getByText('Обработка отчёта…', { exact: true }),
     ).toHaveCount(0);
@@ -667,7 +672,7 @@ test('E2E-18 one SKU per donor-recipient must meet the minimum; other SKUs and d
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       buffer: Buffer.from(bytes),
     });
-    await expect(page.getByLabel(label)).toBeEnabled();
+    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
     await expect(
       page.getByText('Обработка отчёта…', { exact: true }),
     ).toHaveCount(0);
@@ -854,21 +859,19 @@ test('E2E-17 calculation integrity survives import, export and reload offline', 
     amount,
     'шт',
   ];
-  const upload = async (min: unknown[][], sup: unknown[][]) => {
-    for (const [label, name, rows] of [
+  const upload = async (min: unknown[][], sup?: unknown[][]) => {
+    const files: [string, string, unknown[][]][] = [
       ['Выбрать файл Отчёт MIN/MAX', 'audit-min.xlsx', [mh, ...min]],
-      ['Выбрать файл Отчёт поставщиков', 'audit-sup.xlsx', [sh, ...sup]],
-    ] as const) {
+    ];
+    if (sup) files.push(['Выбрать файл Отчёт поставщиков', 'audit-sup.xlsx', [sh, ...sup]]);
+    for (const [label, name, rows] of files) {
       await page.getByLabel(label).setInputFiles({
         name,
-        mimeType:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        buffer: Buffer.from(buildWorkbook([...rows])),
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        buffer: Buffer.from(buildWorkbook(rows)),
       });
-      await expect(page.getByLabel(label)).toBeEnabled();
-      await expect(
-        page.getByText('Обработка отчёта…', { exact: true }),
-      ).toHaveCount(0);
+      await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('Обработка отчёта…', { exact: true })).toHaveCount(0);
     }
     await page.getByRole('button', { name: 'Перейти к потребности' }).click();
     await page.getByRole('button', { name: 'Заказы', exact: true }).click();
@@ -880,12 +883,16 @@ test('E2E-17 calculation integrity survives import, export and reload offline', 
     [
       parent('FALLBACK'),
       stock('Ленина'),
-      parent('DEC1'),
+      parent('DEC1', 10.1),
       stock('Раменское'),
-      parent('DEC2'),
+      parent('DEC2', 20.2),
       stock('Раменское'),
     ],
-    [hist('FALLBACK', null, 10), hist('DEC1', 10.1), hist('DEC2', 20.2)],
+    [
+      hist('FALLBACK', null, 10), hist('DEC1', 1), hist('DEC2', 2),
+      hist('DUP', 100), hist('OMITTED', 100), hist('PRICE', 0, 0),
+      hist('NEG', 0, 0), hist('GOOD', 100),
+    ],
   );
   await page.getByLabel('Минимальная сумма закупки, ₽').fill('30.3');
   await expect(
@@ -910,41 +917,23 @@ test('E2E-17 calculation integrity survives import, export and reload offline', 
   await expect(page.getByLabel('Минимальная сумма закупки, ₽')).toHaveValue(
     '30.3',
   );
-  // Enter the existing import route, then replace the reports with damaged data.
-  await page
-    .getByRole('button', { name: 'Загрузить новые отчёты', exact: true })
-    .click();
-  await page
-    .getByRole('dialog', { name: 'Загрузить новые отчёты?', exact: true })
-    .getByRole('button', { name: 'Начать новый сеанс', exact: true })
-    .click();
-  await expect(
-    page.getByRole('heading', { name: 'Импорт отчётов 1С', exact: true }),
-  ).toBeVisible();
-  await upload(
-    [
-      parent('DUP'),
-      stock('Ленина', 0, 10),
-      stock('Ленина', 8, 10),
-      parent('OMITTED'),
-      stock('Щурово', 'ошибка', 10),
-      parent('PRICE', 100),
-      stock('Ленина'),
-      parent('PRICE', 200),
-      stock('Ступино'),
-      parent('NEG', -100),
-      stock('Ленина'),
-      parent('GOOD'),
-      stock('Раменское'),
-    ],
-    [
-      hist('DUP', 100),
-      hist('OMITTED', 100),
-      hist('PRICE', 0, 0),
-      hist('NEG', 0, 0),
-      hist('GOOD', 100),
-    ],
-  );
+  await page.getByRole('button', { name: 'Обновить MIN/MAX', exact: true }).click();
+  await expect(page.getByLabel('Выбрать файл Отчёт поставщиков')).toHaveCount(0);
+  await upload([
+    parent('DUP'),
+    stock('Ленина', 0, 10),
+    stock('Ленина', 8, 10),
+    parent('OMITTED'),
+    stock('Щурово', 'ошибка', 10),
+    parent('PRICE', 100),
+    stock('Ленина'),
+    parent('PRICE', 200),
+    stock('Ступино'),
+    parent('NEG', -100),
+    stock('Ленина'),
+    parent('GOOD'),
+    stock('Раменское'),
+  ]);
   await expect(
     page.getByText('Расчёт неполный: есть ошибки в MIN/MAX'),
   ).toBeVisible();
@@ -1135,10 +1124,10 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
     });
   }
   await expect(
-    page.getByText(/2 поставщиков в рабочем пуле · скрыто: 1/),
+    page.getByText(/2 поставщиков в рабочем пуле/),
   ).toBeVisible();
-  await expect(page.getByText(/Нет поставщика:/)).toContainText('1');
-  await expect(page.getByText(/Несколько поставщиков:/)).toContainText('1');
+  await expect(page.getByText(/Без основного поставщика/)).toContainText('2');
+  await expect(page.getByText(/Из них с дополнительными/)).toContainText('1');
   await page.getByRole('button', { name: 'Перейти к потребности' }).click();
   const filter = page.getByRole('combobox', { name: 'Поставщик', exact: true });
   await expect(filter.locator('option')).toHaveText([
@@ -1148,86 +1137,23 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
     secondAllowed,
   ]);
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
-  await expect(page.getByText(/Рабочий пул: 32 поставщика/)).toBeVisible();
-  await expect(
-    page.locator('.decision .product-code').getByText('SKU2', { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText(/Нет истории закупок в рабочем пуле/)).toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Поставщик SKU2', exact: true }).locator('option')).toHaveCount(33);
-  const choice = page.getByRole('combobox', { name: 'Поставщик SKU3' });
-  await expect(choice.locator('option')).toHaveCount(3);
-  await expect(
-    choice.locator('option').filter({ hasText: hidden }),
-  ).toHaveCount(0);
-  const expectDecisionLayout = async () => {
-    const row = page.locator('.decision').filter({ hasText: 'SKU3' });
-    const check = await row.getByRole('checkbox').boundingBox();
-    const identity = await row.locator('.product-code').boundingBox();
-    const select = await choice.boundingBox();
-    expect(check).not.toBeNull();
-    expect(identity).not.toBeNull();
-    expect(select).not.toBeNull();
-    expect(check!.x + check!.width).toBeLessThan(identity!.x);
-    expect(identity!.x + identity!.width).toBeLessThan(select!.x);
-    expect(
-      Math.abs(
-        check!.y + check!.height / 2 - identity!.y - identity!.height / 2,
-      ),
-    ).toBeLessThan(2);
-    expect(
-      Math.abs(
-        select!.y + select!.height / 2 - identity!.y - identity!.height / 2,
-      ),
-    ).toBeLessThan(2);
-    const labels = await page
-      .locator(
-        '.supplier-auto-toolbar > label, .supplier-auto-toolbar > .supplier-auto-strategy',
-      )
-      .evaluateAll((nodes) =>
-        nodes.map((node) => {
-          const rect = node.getBoundingClientRect();
-          return { x: rect.x, right: rect.right };
-        }),
-      );
-    expect(labels).toHaveLength(3);
-    expect(labels[1]!.x - labels[0]!.right).toBeGreaterThanOrEqual(8);
-    expect(labels[2]!.x - labels[1]!.right).toBeGreaterThanOrEqual(8);
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth,
-      ),
-    ).toBe(true);
-  };
-  await expectDecisionLayout();
-  await page.setViewportSize({ width: 1024, height: 768 });
-  await expectDecisionLayout();
-  await page.screenshot({
-    path: testInfo.outputPath('12-supplier-decisions-1024.png'),
-    fullPage: true,
-  });
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await choice.focus();
-  await page.keyboard.press('Space');
-  await page.screenshot({
-    path: testInfo.outputPath('10-approved-supplier-select-1280.png'),
-    fullPage: true,
-  });
-  await page.keyboard.press('Escape');
-  await choice.selectOption(secondAllowed);
-  await expect(choice.locator('option:checked')).toHaveText(`Назначен: ${secondAllowed}`);
+  await supplierLinks(page, 'SKU3').click();
+  const choice = page.getByRole('dialog', { name: 'Связи товара', exact: true });
+  const selector = choice.getByRole('combobox', { name: 'Основной поставщик', exact: true });
+  await expect(selector.locator('option')).toHaveCount(33);
+  await expect(selector.locator('option').filter({ hasText: hidden })).toHaveCount(0);
+  const alternatives = choice.getByRole('region', { name: 'Текущие дополнительные поставщики' });
+  await expect(alternatives.getByRole('listitem')).toHaveText([
+    allowed + 'Удалить', secondAllowed + 'Удалить',
+  ]);
+  await choice.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+  await assignPrimary(page, 'SKU3', secondAllowed);
   await page.reload();
-  await expect(
-    page.getByRole('heading', { name: 'Поставщики', exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.locator('.decision .product-code').getByText('SKU2', { exact: true }),
-  ).toBeVisible();
-  await expect(choice.locator('option:checked')).toHaveText(`Назначен: ${secondAllowed}`);
+  await expect(page.getByRole('heading', { name: 'Поставщики', exact: true })).toBeVisible();
+  await expect(page.getByRole('row').filter({ has: supplierLinks(page, 'SKU3') }))
+    .toContainText(secondAllowed);
   await page.setViewportSize({ width: 1024, height: 768 });
-  await page.screenshot({
-    path: testInfo.outputPath('11-approved-suppliers-narrow-1024.png'),
-    fullPage: true,
-  });
+  await page.screenshot({ path: testInfo.outputPath('11-approved-suppliers-narrow-1024.png'), fullPage: true });
   await page.getByRole('button', { name: 'Заказы', exact: true }).click();
   await expect(
     page.getByRole('button', { name: `Все заказы ${allowed}`, exact: true }),
@@ -1569,17 +1495,22 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await report.xlsx.load(await readWorkbook((await exported.path())!));
   expect(report.getWorksheet('Принятые')!.getCell('D2').value).toBe(15);
   expect(report.getWorksheet('Предложения')!.getCell('D2').value).toBe(5);
-  await page.getByRole('button', { name: 'Загрузить новые отчёты' }).click();
-  await page.getByRole('button', { name: 'Начать новый сеанс' }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Импорт отчётов 1С' }),
-  ).toBeVisible();
+  await page.getByRole('button', { name: 'Обновить MIN/MAX', exact: true }).click();
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles({
+    name: 'week-2.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.from(min),
+  });
+  await expect(page.getByText('week-2.xlsx', { exact: true }).first()).toBeVisible();
   await page.getByRole('button', { name: 'История сеансов' }).click();
   const archived = page
     .getByRole('row')
     .filter({ hasText: 'min.xlsx' })
-    .filter({ hasText: 'sup.xlsx' });
-  await archived
+    .filter({ hasText: 'sup.xlsx' })
+    .filter({ has: page.getByRole('button', { name: 'Восстановить', exact: true }) });
+  // Each startup report may have created a partial snapshot. Restore the latest
+  // complete pre-update snapshot, which contains the decisions made in the test.
+  await archived.first()
     .getByRole('button', { name: 'Восстановить', exact: true })
     .click();
   await page.getByRole('button', { name: 'Восстановить копию' }).click();
@@ -2907,12 +2838,10 @@ test('E2E-14 formatted codes, supplier identity and opaque transfer matrix work 
       buffer,
     });
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
-  const decision = page.locator('.decision').filter({ hasText: '000123' });
-  await expect(decision).toContainText('ART-ZERO');
-  await expect(decision).toContainText('Товар с полным кодом');
-  const supplierChoice = decision.getByRole('combobox', { name: 'Поставщик 000123' });
-  await supplierChoice.selectOption(allowed);
-  await expect(supplierChoice.locator('option:checked')).toHaveText(`Назначен: ${allowed}`);
+  const product = page.getByRole('row').filter({ has: supplierLinks(page, '000123') });
+  await expect(product).toContainText('ART-ZERO');
+  await expect(product).toContainText('Товар с полным кодом');
+  await assignPrimary(page, '000123', allowed);
   await page
     .getByRole('button', { name: 'Перемещения', exact: true })
     .click();
@@ -3294,4 +3223,83 @@ test('E2E-22 Volmax workspace ships local artwork and distinct native control st
   expect(evidence.remoteRequests).toEqual([]);
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.consoleErrors).toEqual([]);
+});
+
+test('E2E-23 weekly MIN/MAX carries supplier links and blocks stale and unpriced exports', async ({ page }) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const { readFile } = await import('node:fs/promises');
+  const supplierA = 'ИП Баранов Роман Борисович';
+  const supplierB = 'ИП Никишин Андрей Николаевич';
+  const input = 'Выбрать файл Отчёт MIN/MAX';
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const entry = pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href;
+  const minMax = (name: string, rows: [string, number | null][]) => ({
+    name,
+    mimeType,
+    buffer: Buffer.from(buildWorkbook([
+      ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+      ...rows.flatMap(([code, price]) => [
+        [code, code, 'Товар ' + code, null, null, null, price],
+        [null, null, 'Ленина', 0, 5, 20, null],
+      ]),
+    ])),
+  });
+  const refresh = async (tab: Page, name: string, rows: [string, number | null][]) => {
+    await tab.getByRole('button', { name: 'Обновить MIN/MAX', exact: true }).click();
+    await expect(tab.getByLabel('Выбрать файл Отчёт поставщиков')).toHaveCount(0);
+    await tab.getByLabel(input).setInputFiles(minMax(name, rows));
+    await expect(tab.getByText(name, { exact: true }).first()).toBeVisible();
+    await tab.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+    await tab.getByRole('button', { name: 'Заказы', exact: true }).click();
+  };
+
+  await page.context().setOffline(true);
+  await page.goto(entry);
+  // Supplier file can be read first and is used for links only.
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles({
+    name: 'suppliers-once.xlsx',
+    mimeType,
+    buffer: Buffer.from(buildWorkbook([
+      ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+      [supplierA, '0001', 'Товар 0001', 10, 800, 'шт'],
+      [supplierB, '0001', 'Товар 0001', 10, 900, 'шт'],
+      [supplierA, '1', 'Товар 1', 10, 800, 'шт'],
+    ])),
+  });
+  await page.getByLabel(input).setInputFiles(minMax('week-1.xlsx', [['0001', 100], ['1', 100]]));
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  await assignPrimary(page, '0001', supplierB);
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await expect(page.getByRole('button', { name: `Все заказы ${supplierB}`, exact: true })).toContainText('2 000,00');
+
+  const stale = await page.context().newPage();
+  await stale.goto(entry);
+  await expect(stale.getByRole('heading', { name: 'Заказы', exact: true })).toBeVisible();
+  await refresh(page, 'week-2.xlsx', [['0001', 115], ['NEW', 100]]);
+  await expect(page.getByRole('button', { name: `Все заказы ${supplierB}`, exact: true })).toContainText('2 300,00');
+  await expect(page.getByRole('button', { name: `Все заказы ${supplierA}`, exact: true })).toHaveCount(0);
+  await stale.locator('.order-cell').first().click();
+  const staleDownloads: string[] = [];
+  stale.on('download', (download) => staleDownloads.push(download.suggestedFilename()));
+  await stale.getByRole('button', { name: 'Скачать CSV заказа', exact: true }).click();
+  await expect(stale.getByRole('alert').filter({ hasText: 'Рабочий сеанс изменился' }).first()).toBeVisible();
+  expect(staleDownloads).toEqual([]);
+  await stale.close();
+
+  await page.locator('.order-cell').first().click();
+  const downloadReady = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Скачать CSV заказа', exact: true }).click();
+  const download = await downloadReady;
+  const csv = await readFile((await download.path())!, 'utf8');
+  expect(csv).toContain('0001;');
+  expect(csv).toContain(';20;шт;115;2300');
+
+  await page.getByRole('dialog').getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await refresh(page, 'week-3.xlsx', [['0001', null], ['1', 110], ['NEW', 100]]);
+  await expect(page.getByRole('button', { name: `Все заказы ${supplierA}`, exact: true })).toContainText('2 200,00');
+  await expect(page.locator('.order-cell').filter({ hasText: 'Не хватает цены' })).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('.order-cell').filter({ hasText: 'Не хватает цены' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Скачать все (1)', exact: true })).toBeEnabled();
 });
