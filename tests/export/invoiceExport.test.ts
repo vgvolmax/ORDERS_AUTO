@@ -1,0 +1,66 @@
+import { describe, expect, it } from 'vitest';
+import * as XLSX from 'xlsx';
+import { buildInvoiceAdjustments, compareInvoice, type InvoiceAdjustment, type InvoiceComparisonRow } from '../../src/domain/invoices';
+import { invoiceAdjustmentCsv, invoiceAdjustmentTsv, invoiceAdjustmentWorkbook, invoiceComparisonCsv } from '../../src/export/invoiceExport';
+import { parseInvoiceWorkbook } from '../../src/import/invoiceParser';
+
+const adjustment: InvoiceAdjustment = {
+  id: 'o', skuCode: '0007', article: '00123', name: 'Товар; "А"', unit: 'шт',
+  qty: 1.25, price: 2.4, amount: 2.99, included: true,
+};
+const excluded = { ...adjustment, id: '2', article: 'Лишнее', included: false };
+
+describe('invoice exports', () => {
+  it('exports included adjustments for 1C with decimal commas in text and no SKU code column', () => {
+    expect(invoiceAdjustmentTsv([adjustment, excluded])).toBe(
+      'Артикул\tНоменклатура\tКоличество\tЕд.\tЦена\tСумма\n00123\tТовар; "А"\t1,25\tшт\t2,4\t2,99',
+    );
+    expect(invoiceAdjustmentCsv([adjustment, excluded])).toContain(
+      '00123;"Товар; ""А""";1,25;шт;2,4;2,99',
+    );
+    expect(invoiceAdjustmentCsv([adjustment, excluded])).not.toContain('Лишнее');
+  });
+
+  it('writes a true BIFF8 workbook with numeric values and a text article', () => {
+    const bytes = invoiceAdjustmentWorkbook([adjustment, excluded]);
+    expect([...new Uint8Array(bytes).slice(0, 4)]).toEqual([0xd0, 0xcf, 0x11, 0xe0]);
+    const book = XLSX.read(bytes, { type: 'array' });
+
+    expect(XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]!]!, { header: 1 })).toEqual([
+      ['Артикул', 'Номенклатура', 'Количество', 'Ед.', 'Цена', 'Сумма'],
+      ['00123', 'Товар; "А"', 1.25, 'шт', 2.4, 2.99],
+    ]);
+  });
+
+  it('includes concurrent difference labels and comments in the comparison CSV', () => {
+    const row: InvoiceComparisonRow = {
+      id: 'o', skuCode: '0007', article: '00123', name: 'Товар', unit: 'шт',
+      orderQty: 1, invoiceQty: 2, orderPrice: 2, invoicePrice: 3, invoiceAmount: 6,
+      differences: ['quantity', 'higher'], notes: ['Проверить'],
+    };
+    expect(invoiceComparisonCsv([row])).toMatch(/Количество.*Дороже.*0007.*Проверить/);
+  });
+});
+
+it('treats formulas in source text as text and leaves negative numbers numeric', () => {
+  const dangerous = { ...adjustment, article: '=2+2', name: '\t+1', price: -2.4 };
+  expect(invoiceAdjustmentCsv([dangerous])).toContain("'=2+2;' +1;1,25;шт;-2,4;2,99");
+  expect(invoiceAdjustmentTsv([dangerous])).toContain("'=2+2\t' +1\t1,25\tшт\t-2,4\t2,99");
+
+  const book = XLSX.read(invoiceAdjustmentWorkbook([dangerous]), { type: 'array' });
+  const data = book.Sheets[book.SheetNames[0]!]!;
+  expect(data.A2).toMatchObject({ t: 's', v: '=2+2' });
+});
+
+it('exports the full invoice value when the only adjacent sum is a VAT amount', () => {
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Артикул', 'Количество', 'Цена с НДС', 'Итого НДС'],
+    ['B-7', 2, 120, 40],
+  ]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Счёт');
+  const parsed = parseInvoiceWorkbook(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }));
+  const correction = buildInvoiceAdjustments(compareInvoice([], parsed.items), 'invoice');
+
+  expect(invoiceAdjustmentTsv(correction.map((row) => ({ ...row, included: true })))).toContain('120\t240');
+});
