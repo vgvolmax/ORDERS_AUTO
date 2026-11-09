@@ -54,6 +54,7 @@ export function SupplierOrdersDrawer({
   onSetReviewed,
   onSetAllReviewed,
   renderMovement,
+  onReconcile,
   widthPreferences,
   onWidthsChange,
   saving = false,
@@ -66,6 +67,7 @@ export function SupplierOrdersDrawer({
   orders: WorkflowOrder[];
   branchOrder: string[];
   onClose: () => void;
+  onReconcile?: (() => void) | undefined;
   onEdit: (
     order: WorkflowOrder,
     skuCode: string,
@@ -246,6 +248,11 @@ export function SupplierOrdersDrawer({
         </div>
 
         <div className="supplier-review-actions">
+          {onReconcile && (
+            <Button className="secondary" disabled={saving} onClick={onReconcile}>
+              Сверить счёт
+            </Button>
+          )}
           <Button
             disabled={saving}
             className="secondary"

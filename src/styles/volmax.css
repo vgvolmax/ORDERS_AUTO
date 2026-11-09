@@ -104,7 +104,7 @@
 
 .workspace-shortcuts, .workspace-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   border: 0;
 }
@@ -313,6 +313,9 @@ thead th, .virtual-header, .virtual-header > .is-frozen { background: var(--tabl
 @media (max-width: 1100px) {
   .workspace-source { display: none; }
   .workspace-shortcuts button { font-size: 12px; }
+}
+@media (max-width: 950px) {
+  .workspace-shortcuts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 820px) {
   .workspace-shortcuts { display: none; }

@@ -8,18 +8,19 @@ type Page = AppState['page'];
 const sections = [
   { page: 'all', label: 'Все товары', toolbar: 'Потребность', icon: 'box' },
   {
-    page: 'rebalancing',
-    label: 'Перемещения',
-    toolbar: 'Перемещения',
-    icon: 'swap',
-  },
-  {
     page: 'suppliers',
     label: 'Поставщики',
     toolbar: 'Поставщики',
     icon: 'people',
   },
+  {
+    page: 'rebalancing',
+    label: 'Перемещения',
+    toolbar: 'Перемещения',
+    icon: 'swap',
+  },
   { page: 'orders', label: 'Заказы', toolbar: 'Заказы', icon: 'cart' },
+  { page: 'invoices', label: 'Счета', toolbar: 'Счета', icon: 'file' },
 ] as const;
 
 type Navigation = {
