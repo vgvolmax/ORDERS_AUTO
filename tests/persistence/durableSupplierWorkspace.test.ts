@@ -1,6 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { createInitialState } from '../../src/app/initialState';
+import { createProposal } from '../../src/app/rebalanceActions';
 import { derive } from '../../src/app/selectors';
 import { createWorkspaceSession, stateFromWorkspace } from '../../src/app/workspaceSession';
 import { applySupplierAssignmentChange } from '../../src/domain/supplierAssignments';
@@ -177,4 +178,61 @@ it('blocks a positive order when the latest MIN/MAX price is unknown despite pur
   const order = derive(session.getState()).projection.orders[0]!;
   expect(order).toMatchObject({ status: 'BLOCKED', totalAmount: null });
   expect(order.lines[0]).toMatchObject({ unitPrice: null, priceSource: 'MISSING' });
+});
+
+
+it('restores participation and routes after a branch returns while respecting a manual disable', async () => {
+  const report = () => {
+    const dataset = minMax();
+    dataset.branches = ['Ленина', 'Ступино', 'Рязань'];
+    dataset.branchStocks = [
+      { skuCode: 'SKU1', branch: 'Ленина', stock: 40, min: 2, max: 10 },
+      { skuCode: 'SKU1', branch: 'Ступино', stock: 0, min: 2, max: 10 },
+      { skuCode: 'SKU1', branch: 'Рязань', stock: 0, min: 2, max: 10 },
+    ];
+    return dataset;
+  };
+  const session = createWorkspaceSession({
+    initial: createInitialState(), save: saveWorkspace, publish: noop,
+  });
+  await session.commit({ minMax: report(), suppliers: suppliers() });
+  const [donor, returning, disabled] = session.getState().rebalance.registry;
+  const routeConfig = {
+    mode: 'SELECTIVE',
+    pairs: [
+      { branchAId: donor!.id, branchBId: returning!.id, direction: 'BOTH' },
+      { branchAId: donor!.id, branchBId: disabled!.id, direction: 'BOTH' },
+    ],
+  } as const;
+  await session.commit(({ rebalance }) => ({
+    rebalance: {
+      ...rebalance,
+      registry: rebalance.registry.map((branch) =>
+        branch.id === disabled!.id ? { ...branch, active: false } : branch,
+      ),
+      config: {
+        ...rebalance.config,
+        routeConfig: { ...routeConfig, pairs: [...routeConfig.pairs] },
+      },
+    },
+  }));
+  const transfers = [{ fromBranchId: donor!.id, toBranchId: returning!.id, qty: 10 }];
+  expect(createProposal(session.getState()).transfers).toMatchObject(transfers);
+  const incomplete = report();
+  incomplete.branches = ['Ленина'];
+  incomplete.branchStocks = incomplete.branchStocks.slice(0, 1);
+  await session.commit({ minMax: incomplete });
+  await session.commit({ minMax: structuredClone(incomplete) });
+  const saved = stateFromWorkspace((await loadActiveWorkspace())!);
+  expect(saved.rebalance.registry.map(({ active }) => active)).toEqual([true, false, false]);
+  expect(createProposal(saved).transfers).toEqual([]);
+
+  const reopened = createWorkspaceSession({ initial: saved, save: saveWorkspace, publish: noop });
+  await reopened.commit({ minMax: report() });
+  const returned = reopened.getState();
+  expect(returned.rebalance.registry.map(({ id, active }) => [id, active])).toEqual([
+    [donor!.id, true], [returning!.id, true], [disabled!.id, false],
+  ]);
+  expect(returned.rebalance.config.routeConfig).toEqual(routeConfig);
+  expect(createProposal(returned).transfers).toMatchObject(transfers);
 });

@@ -56,13 +56,18 @@ export function reconcileRegistry(
   id: () => string,
 ): BranchRegistry {
   const imported = new Set(names.map(normalizeKey));
-  const next = registry.map((b) => ({
-    ...b,
-    active:
-      b.active &&
-      [b.name, ...b.aliases].some((name) => imported.has(normalizeKey(name))),
-    aliases: [...b.aliases],
-  }));
+  const next = registry.map(({ suspendedByImport, ...branch }) => {
+    const enabled = branch.active || suspendedByImport === true;
+    const present = [branch.name, ...branch.aliases].some((name) =>
+      imported.has(normalizeKey(name)),
+    );
+    return {
+      ...branch,
+      active: enabled && present,
+      ...(!present && enabled ? { suspendedByImport: true as const } : {}),
+      aliases: [...branch.aliases],
+    };
+  });
   for (const name of names) {
     const matches = next.filter((b) =>
       [b.name, ...b.aliases].some(

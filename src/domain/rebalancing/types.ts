@@ -4,6 +4,7 @@ export interface RebalanceBranch {
   id: string;
   name: string;
   active: boolean;
+  suspendedByImport?: true;
   aliases: string[];
 }
 export type BranchRegistry = RebalanceBranch[];
