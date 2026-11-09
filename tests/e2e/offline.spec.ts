@@ -3303,3 +3303,97 @@ test('E2E-23 weekly MIN/MAX carries supplier links and blocks stale and unpriced
   await expect(page.locator('.order-cell').filter({ hasText: 'Не хватает цены' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Скачать все (1)', exact: true })).toBeEnabled();
 });
+
+test('E2E-24 reconciles a supplier invoice against reviewed orders and an archived week offline', async ({ page }, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const { readFile } = await import('node:fs/promises');
+  const xlsx = await import('xlsx');
+  const supplier = 'ИП Баранов Роман Борисович';
+  const entry = pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href;
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const workbook = (name: string, rows: unknown[][]) => ({
+    name, mimeType, buffer: Buffer.from(buildWorkbook(rows)),
+  });
+  const minMax = (name: string, price: number) => workbook(name, [
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+    ['0001', 'VM-1', 'Товар 1', null, null, null, price],
+    [null, null, 'Ленина', 0, 2, 10, null],
+    [null, null, 'Ступино', 0, 2, 10, null],
+  ]);
+  const evidence = observeRuntime(page);
+  const nav = page.getByRole('navigation', { name: 'Основная навигация' });
+  await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(entry);
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles(minMax('неделя-1.xlsx', 100));
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles(workbook('поставщики.xlsx', [
+    ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+    [supplier, '0001', 'Товар 1', 1, 10, 'шт'],
+  ]));
+  await page.getByRole('button', { name: 'Перейти к потребности' }).click();
+  expect((await nav.getByRole('button').allTextContents()).slice(0, 5).map((label) => label.trim()))
+    .toEqual(['Все товары', 'Поставщики', 'Перемещения', 'Заказы', 'Счета']);
+
+  await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await page.locator('.order-cell').first().click();
+  const drawer = page.getByRole('dialog', { name: 'Состав заказа' });
+  await drawer.getByRole('spinbutton', { name: 'Количество 0001' }).fill('7');
+  await expect(drawer.getByRole('spinbutton', { name: 'Количество 0001' })).toHaveAttribute('aria-busy', 'false');
+  await drawer.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.getByRole('button', { name: `Все заказы ${supplier}`, exact: true }).click();
+  const supplierOrders = page.getByRole('dialog', { name: `Все заказы ${supplier}` });
+  await supplierOrders.getByRole('button', { name: 'Отметить все проверенными' }).click();
+  await supplierOrders.getByRole('button', { name: 'Сверить счёт' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Сверка счетов', exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ленина` })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ступино` })).toBeChecked();
+  await page.getByLabel('Файл счёта поставщика').setInputFiles({
+    name: 'битый.xlsx', mimeType, buffer: Buffer.from('not an invoice'),
+  });
+  await expect(page.getByRole('alert').filter({ hasText: 'Не удалось' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Сравнить', exact: true })).toBeDisabled();
+  await page.getByLabel('Файл счёта поставщика').setInputFiles(workbook('счёт.xlsx', [
+    ['Код 1С', 'Артикул', 'Наименование', 'Кол-во', 'Ед.', 'Цена без скидки', 'Цена со скидкой', 'Сумма со скидкой'],
+    ['0001', 'VM-1', 'Товар 1', 15, 'шт', 120, 115, 1724.99],
+    ['', 'EXTRA', 'Лишний товар', 2, 'шт', 70, 60, 120],
+  ]));
+  await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeVisible();
+  await expect(page.getByText('Дороже', { exact: true }).first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('24-invoice-reconciliation.png'), fullPage: true });
+  const exportReady = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Excel для 1С', exact: true }).click();
+  const file = await exportReady;
+  const output = xlsx.read(await readFile((await file.path())!), { type: 'buffer' });
+  const rows = xlsx.utils.sheet_to_json(output.Sheets[output.SheetNames[0]!]!, { header: 1 });
+  expect(rows).toEqual([
+    ['Артикул', 'Номенклатура', 'Количество', 'Ед.', 'Цена', 'Сумма'],
+    ['VM-1', 'Товар 1', 15, 'шт', 115, 1724.99],
+  ]);
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(page.getByRole('button', { name: 'Excel для 1С', exact: true })).toBeEnabled();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const draftQty = page.getByRole('textbox', { name: /Количество.*VM-1/ });
+  await draftQty.fill('14');
+  await nav.getByRole('button', { name: 'Обновить MIN/MAX' }).click();
+  const leave = page.getByRole('dialog', { name: 'Выйти из сверки счёта?' });
+  await leave.getByRole('button', { name: 'Остаться' }).click();
+  await expect(draftQty).toHaveValue('14');
+  await nav.getByRole('button', { name: 'Обновить MIN/MAX' }).click();
+  await leave.getByRole('button', { name: 'Выйти из сверки' }).click();
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles(minMax('неделя-2.xlsx', 130));
+  await expect(page.getByText('неделя-2.xlsx', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Перейти к потребности' }).click();
+  await nav.getByRole('button', { name: 'Счета', exact: true }).click();
+  const source = page.getByRole('combobox', { name: 'Рабочий сеанс', exact: true });
+  const weekOne = source.locator('option').filter({ hasText: 'неделя-1.xlsx' });
+  await expect(weekOne).toHaveCount(1);
+  await source.selectOption(await weekOne.getAttribute('value') ?? '');
+  await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ленина` })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ступино` })).toBeVisible();
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});

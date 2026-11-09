@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DemandPage } from '../features/demand/DemandPage';
 import { WorkspaceHistoryPage } from '../features/workspaces/WorkspaceHistoryPage';
 import { RebalancingPage } from '../features/rebalancing/RebalancingPage';
 import { ImportPage } from '../features/import/ImportPage';
+import { InvoicesPage } from '../features/invoices/InvoicesPage';
 import { OrdersPage } from '../features/orders/OrdersPage';
 import { SuppliersPage } from '../features/suppliers/SuppliersPage';
 import { StoreContext, type AppState, type StatePatch } from './appStore';
@@ -11,6 +12,8 @@ import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
 import { loadActiveWorkspace, saveWorkspace } from '../persistence/workspaces';
 import { usePageScroll } from './usePageScroll';
 import { AppToast } from '../components/AppToast';
+import { Dialog } from '../components/Dialog';
+import { Button } from '../components/ui';
 import { WorkspaceMasthead, WorkspaceSidebar } from './WorkspaceChrome';
 
 export function App() {
@@ -18,6 +21,12 @@ export function App() {
   const [initializing, setInitializing] = useState(true);
   const [pending, setPending] = useState(0);
   const [retry, setRetry] = useState(0);
+  const [invoiceOrderIds, setInvoiceOrderIds] = useState<string[]>([]);
+  const [invoiceExit, setInvoiceExit] = useState<(() => void) | null>(null);
+  const invoiceDirty = useRef(false);
+  const markInvoiceDirty = useCallback((dirty: boolean) => {
+    invoiceDirty.current = dirty;
+  }, []);
   const session = useRef<ReturnType<typeof createWorkspaceSession> | null>(
     null,
   );
@@ -160,12 +169,27 @@ export function App() {
         </button>
       </main>
     );
+  const leaveInvoice = (navigate: () => void) => {
+    if (state.page === 'invoices' && invoiceDirty.current) {
+      setInvoiceExit(() => navigate);
+    } else {
+      navigate();
+    }
+  };
   const navigation = {
     page: state.page,
     branches: state.supplierAssignments ? state.minMax?.branches : undefined,
-    onNavigate: (page: AppState['page']) => set({ page }),
+    onNavigate: (page: AppState['page']) => {
+      if (page === 'invoices' && state.page === 'invoices') return;
+      leaveInvoice(() => {
+        if (page === 'invoices') setInvoiceOrderIds([]);
+        set({ page });
+      });
+    },
     onImport: () => {
-      if (state.page !== 'import') owner?.transient({ page: 'import' });
+      if (state.page !== 'import') {
+        leaveInvoice(() => owner?.transient({ page: 'import' }));
+      }
     },
   };
   const statusTone = pending
@@ -220,11 +244,40 @@ export function App() {
             <RebalancingPage />
           ) : state.page === 'suppliers' ? (
             <SuppliersPage />
+          ) : state.page === 'invoices' ? (
+            <InvoicesPage
+              initialOrderIds={invoiceOrderIds}
+              onDirtyChange={markInvoiceDirty}
+            />
           ) : (
-            <OrdersPage />
+            <OrdersPage
+              onReconcile={(orderIds) => {
+                setInvoiceOrderIds(orderIds);
+                set({ page: 'invoices' });
+              }}
+            />
           )}
         </div>
 
+        {invoiceExit && (
+          <Dialog
+            title="Выйти из сверки счёта?"
+            onClose={() => setInvoiceExit(null)}
+            actions={
+              <>
+                <Button className="secondary" onClick={() => setInvoiceExit(null)}>Остаться</Button>
+                <Button onClick={() => {
+                  setInvoiceExit(null);
+                  invoiceExit();
+                }}>
+                  Выйти из сверки
+                </Button>
+              </>
+            }
+          >
+            <p>Ручные правки корректировки будут сброшены при переходе в другой раздел.</p>
+          </Dialog>
+        )}
         {state.toast && <AppToast message={state.toast} />}
       </div>
     </StoreContext.Provider>

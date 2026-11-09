@@ -2,6 +2,7 @@ import { moneySum } from '../../domain/money';
 import type { OrderLine } from '../../domain/types';
 import { useMemo, useState } from 'react';
 import { orderToCsv } from '../../export/csv';
+import { canReconcileOrder } from '../../app/invoiceOrders';
 import { useStore } from '../../app/appStore';
 import { derive, type WorkflowOrder } from '../../app/selectors';
 import { useDerivedState } from '../../app/useDerivedState';
@@ -55,7 +56,9 @@ function renderOrderMovement(line: OrderLine) {
   );
 }
 
-export function OrdersPage() {
+export function OrdersPage({
+  onReconcile,
+}: { onReconcile?: (orderIds: string[]) => void } = {}) {
   const { state, set, commit, saving } = useStore();
   const derived = useDerivedState(state);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -121,6 +124,13 @@ export function OrdersPage() {
     : null;
   const selectedSupplierOrders = selectedSupplier
     ? (ordersBySupplier.get(selectedSupplier) ?? [])
+    : [];
+
+  const exportedIds = new Set(state.exportedOrderIds);
+  const eligibleSupplierOrderIds = onReconcile
+    ? selectedSupplierOrders
+      .filter((order) => canReconcileOrder(order, exportedIds.has(order.id)))
+      .map((order) => order.id)
     : [];
 
   async function verifyExportRevision(): Promise<void> {
@@ -636,6 +646,11 @@ export function OrdersPage() {
           onClose={() => setSelectedId(null)}
           onEdit={(skuCode, _branch, qty) => editOrder(selected, skuCode, qty)}
           onReviewedChange={(reviewed) => setReviewed(selected.id, reviewed)}
+          onReconcile={
+            onReconcile && canReconcileOrder(selected, exportedIds.has(selected.id))
+              ? () => onReconcile([selected.id])
+              : undefined
+          }
           onExport={(allowBelowThreshold) =>
             exportSingle(selected, allowBelowThreshold)
           }
@@ -663,6 +678,11 @@ export function OrdersPage() {
           onEdit={editOrder}
           onSetReviewed={setReviewed}
           onSetAllReviewed={setAllReviewed}
+          onReconcile={
+            onReconcile && eligibleSupplierOrderIds.length
+              ? () => onReconcile(eligibleSupplierOrderIds)
+              : undefined
+          }
         />
       )}
     </main>

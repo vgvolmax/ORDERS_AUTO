@@ -15,6 +15,7 @@ export function OrderDrawer({
   onReviewedChange,
   onExport,
   renderMovement,
+  onReconcile,
   saving = false,
   exportError = '',
 }: {
@@ -23,6 +24,7 @@ export function OrderDrawer({
   exportError?: string;
   renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   onClose: () => void;
+  onReconcile?: (() => void) | undefined;
   onEdit: (
     skuCode: string,
     branch: string,
@@ -184,6 +186,11 @@ export function OrderDrawer({
         </div>
 
         <div className="drawer-actions">
+          {onReconcile && (
+            <Button className="secondary" disabled={saving} onClick={onReconcile}>
+              Сверить счёт
+            </Button>
+          )}
           {canOverrideThreshold && (
             <Button
               className="secondary danger-action"
