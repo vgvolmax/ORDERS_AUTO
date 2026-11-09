@@ -9,9 +9,14 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   loadActiveWorkspace,
+  loadWorkspace,
   loadWorkspaceFile,
 } from '../../src/persistence/workspaces';
 import { App } from '../../src/app/App';
+import { ImportPage } from '../../src/features/import/ImportPage';
+import { createProposal, prepareAcceptedChange } from '../../src/app/rebalanceActions';
+import { rebalanceAppState } from '../fixtures/rebalanceAppState';
+import { renderWithStore } from './renderWithStore';
 import {
   buildMinMaxFixture,
   buildSupplierFixture,
@@ -125,35 +130,58 @@ describe('import workflow', () => {
       expect(supplierCard).toHaveAttribute('aria-busy', 'false'),
     );
   });
-  it('does not let an old asynchronous read repopulate a newly started session', async () => {
+
+  it('counts only residual demand when showing SKUs without a primary supplier', () => {
+    const initial = rebalanceAppState();
+    initial.supplierAssignments = [];
+    initial.minMax!.branchStocks[0]!.stock = 110;
+    initial.minMax!.branchStocks[1]!.stock = 60;
+    const proposal = createProposal(initial);
+    initial.rebalance.proposal = proposal;
+    const { patch } = prepareAcceptedChange(initial, {
+      kind: 'accept',
+      ids: [proposal.transfers[0]!.sourceLineId],
+      expectedRevision: 0,
+    });
+    renderWithStore(<ImportPage />, { ...initial, ...patch });
+    expect(screen.getByText(/Без основного поставщика/)).toHaveTextContent(
+      /Без основного поставщика\s*0/,
+    );
+  });
+  it('keeps the active reports through an invalid weekly MIN/MAX and saves only a successful replacement', async () => {
     render(<App />);
     const inputs = await screen.findAllByLabelText(/выбрать файл/i);
     fireEvent.change(inputs[0]!, {
-      target: { files: [asFile(buildMinMaxFixture(), 'original.xlsx', '')] },
+      target: {
+        files: [asFile(buildMinMaxFixture(), 'original.xlsx', '')],
+      },
     });
     fireEvent.change(inputs[1]!, {
-      target: { files: [asFile(buildSupplierFixture(), 'supplier.xlsx', '')] },
+      target: {
+        files: [asFile(buildSupplierFixture(), 'supplier.xlsx', '')],
+      },
     });
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: /перейти к потребности/i }),
-      ).toBeEnabled(),
-    );
-    const late = deferredFile(buildMinMaxFixture(), 'late.xlsx', '');
-    fireEvent.change(inputs[0]!, { target: { files: [late.file] } });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Загрузить новые отчёты' }),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Начать новый сеанс' }));
-    await waitFor(() =>
-      expect(screen.queryByText('original.xlsx')).not.toBeInTheDocument(),
-    );
-    await act(async () => {
-      late.resolve();
+    const proceed = screen.getByRole('button', { name: /перейти к потребности/i });
+    await waitFor(() => expect(proceed).toBeEnabled());
+    const original = (await loadActiveWorkspace())!;
+    const weeklyInput = screen.getByLabelText('Выбрать файл Отчёт MIN/MAX');
+    const invalid = deferredFile(new ArrayBuffer(0), 'invalid.xlsx', '');
+    fireEvent.change(weeklyInput, { target: { files: [invalid.file] } });
+
+    expect(screen.getByText('original.xlsx')).toBeInTheDocument();
+    expect(proceed).toBeDisabled();
+    expect(await loadActiveWorkspace()).toEqual(original);
+    await act(async () => invalid.resolve());
+    await waitFor(() => expect(proceed).toBeEnabled());
+    expect(await loadActiveWorkspace()).toEqual(original);
+
+    fireEvent.change(weeklyInput, {
+      target: { files: [asFile(buildMinMaxFixture(), 'weekly.xlsx', '')] },
     });
-    await waitFor(() =>
-      expect(screen.queryByText('late.xlsx')).not.toBeInTheDocument(),
-    );
-    expect((await loadActiveWorkspace())!.data.minMax).toBeNull();
+    await screen.findByText('weekly.xlsx');
+    const latest = (await loadActiveWorkspace())!;
+    expect(latest.workspaceId).not.toBe(original.workspaceId);
+    expect(latest.data.rawImports.suppliers).toEqual(original.data.rawImports.suppliers);
+    expect(await loadWorkspace(original.workspaceId)).toEqual(original);
   });
 });

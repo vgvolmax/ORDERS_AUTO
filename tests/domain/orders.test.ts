@@ -113,6 +113,37 @@ describe('buildOrderProjection', () => {
     expect(branchMode.orders.every((order) => order.belowThreshold)).toBe(true);
   });
 
+  it.each([
+    ['SUPPLIER_TOTAL', 900, 'BLOCKED'],
+    ['SUPPLIER_TOTAL', 1000, 'READY'],
+    ['BRANCH_SUPPLIER', 900, 'BLOCKED'],
+  ] as const)(
+    'checks %s using available order amounts (%i ₽, %s)',
+    (thresholdMode, knownAmount, expectedStatus) => {
+      const projection = buildOrderProjection(
+        [
+          demand({ unitPrice: knownAmount / 10 }),
+          demand({ branch: 'Ступино', unitPrice: null, priceSource: 'MISSING' }),
+          demand({ skuCode: 'SKU2', branch: 'Ступино', unitPrice: 500 }),
+        ],
+        [resolved, { ...resolved, skuCode: 'SKU2' }],
+        [],
+        { minimumOrderAmount: 1000, thresholdMode },
+      );
+
+      expect(projection.orders[0]).toMatchObject({
+        totalAmount: knownAmount,
+        status: expectedStatus,
+        belowThreshold: expectedStatus === 'BLOCKED',
+      });
+      expect(projection.orders[1]).toMatchObject({
+        totalAmount: null,
+        status: 'BLOCKED',
+      });
+      expect(projection.orders[1]?.blockers).toContain('Не хватает цены');
+    },
+  );
+
   it('hard-blocks an order when a positive line has no price', () => {
     const projection = buildOrderProjection(
       [demand({ unitPrice: null, demandAmount: null, priceSource: 'MISSING' })],

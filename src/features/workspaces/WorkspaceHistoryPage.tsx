@@ -193,8 +193,8 @@ export function WorkspaceHistoryPage() {
           <p>
             Принятых перемещений: {selected.data.rebalance.accepted.length}.
             Ручных количеств: {selected.data.edits.length}. Заказы будут
-            сформированы по сохранённому снимку, а текущая работа останется в
-            истории.
+            сформированы по назначениям поставщиков и ценам MIN/MAX выбранного
+            снимка. Текущий сеанс останется в истории.
           </p>
           {error && <Alert tone="danger">{error}</Alert>}
         </Dialog>

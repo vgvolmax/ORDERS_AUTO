@@ -1,73 +1,55 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { ImportPage } from '../../src/features/import/ImportPage';
-import { buildSupplierFixture } from '../fixtures/workbookBuilders';
+import { IDBFactory } from 'fake-indexeddb';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { App } from '../../src/app/App';
+import { workspaceFromState } from '../../src/app/workspaceSession';
+import {
+  loadActiveWorkspace,
+  loadWorkspace,
+  saveWorkspace,
+} from '../../src/persistence/workspaces';
 import { buildMinMaxFixture } from '../fixtures/workbookBuilders';
-import { baseState, renderWithStore } from './renderWithStore';
+import { baseState } from './renderWithStore';
 
-describe('report import review invalidation', () => {
-  it('clears checked and exported order markers when a MIN/MAX report is replaced', async () => {
-    const initial = baseState();
-    const set = vi.fn((patch) =>
-      typeof patch === 'function' ? patch(initial) : patch,
-    );
-    renderWithStore(
-      <ImportPage />,
-      baseState({
-        reviewedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
-        exportedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
-      }),
-      set,
-    );
+beforeEach(() => vi.stubGlobal('indexedDB', new IDBFactory()));
 
-    fireEvent.change(screen.getByLabelText('Выбрать файл Отчёт MIN/MAX'), {
-      target: {
-        files: [
-          new File([buildMinMaxFixture()], 'Min-Max.xlsx', {
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          }),
-        ],
-      },
-    });
+it('resets weekly order decisions only in the new workspace after MIN/MAX is saved', async () => {
+  const oldOrderId = 'Ленина\0ИП Баранов Роман Борисович';
+  const original = workspaceFromState(baseState({
+    workspaceRevision: 0,
+    page: 'orders',
+    minMaxFileName: 'original.xlsx',
+    supplierFileName: 'suppliers.xls',
+    reviewedOrderIds: [oldOrderId],
+    exportedOrderIds: [oldOrderId],
+    edits: [{ skuCode: 'SKU1', branch: 'Ленина', qty: 2 }],
+  }));
+  await saveWorkspace(original, -1);
+  render(<App />);
 
-    await waitFor(() =>
-      expect(set.mock.results.map((r) => r.value)).toContainEqual(
-        expect.objectContaining({ reviewedOrderIds: [], exportedOrderIds: [] }),
-      ),
-    );
+  fireEvent.click(await screen.findByRole('button', { name: 'Обновить MIN/MAX' }));
+  const input = await screen.findByLabelText('Выбрать файл Отчёт MIN/MAX');
+  expect(screen.queryByLabelText('Выбрать файл Отчёт поставщиков')).toBeNull();
+  expect(await loadActiveWorkspace()).toEqual(original);
+  fireEvent.change(input, {
+    target: { files: [new File([buildMinMaxFixture()], 'weekly.xlsx')] },
   });
 
-  it('clears checked and exported order markers when a supplier report is replaced', async () => {
-    const initial = baseState();
-    const set = vi.fn((patch) =>
-      typeof patch === 'function' ? patch(initial) : patch,
-    );
-    renderWithStore(
-      <ImportPage />,
-      baseState({
-        reviewedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
-        exportedOrderIds: ['Ленина\0ИП Баранов Роман Борисович'],
-      }),
-      set,
-    );
-
-    const supplierInput = screen.getByLabelText(
-      'Выбрать файл Отчёт поставщиков',
-    );
-    fireEvent.change(supplierInput, {
-      target: {
-        files: [
-          new File([buildSupplierFixture('xls')], 'Поставщики.xls', {
-            type: 'application/vnd.ms-excel',
-          }),
-        ],
-      },
+  await screen.findByText('weekly.xlsx');
+  const latest = (await loadActiveWorkspace())!;
+  expect(latest.workspaceId).not.toBe(original.workspaceId);
+  expect(latest.data).toMatchObject({
+    reviewedOrderIds: [],
+    exportedOrderIds: [],
+    edits: [],
+    supplierFileName: 'suppliers.xls',
+    supplierAssignments: original.data.supplierAssignments,
+  });
+  await waitFor(async () => {
+    expect((await loadWorkspace(original.workspaceId))?.data).toMatchObject({
+      reviewedOrderIds: [oldOrderId],
+      exportedOrderIds: [oldOrderId],
+      edits: original.data.edits,
     });
-
-    await waitFor(() =>
-      expect(set.mock.results.map((r) => r.value)).toContainEqual(
-        expect.objectContaining({ reviewedOrderIds: [], exportedOrderIds: [] }),
-      ),
-    );
   });
 });

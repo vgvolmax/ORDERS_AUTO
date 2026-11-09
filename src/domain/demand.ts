@@ -100,6 +100,23 @@ export function priceDemand(
   skus: Sku[],
   resolutions: SupplierResolution[],
 ): PricedDemandLine[] {
+  return priceDemandWithSource(lines, skus, resolutions, true);
+}
+
+export function priceDemandFromMinMax(
+  lines: DemandLine[],
+  skus: Sku[],
+  resolutions: SupplierResolution[],
+): PricedDemandLine[] {
+  return priceDemandWithSource(lines, skus, resolutions, false);
+}
+
+function priceDemandWithSource(
+  lines: DemandLine[],
+  skus: Sku[],
+  resolutions: SupplierResolution[],
+  useHistoricalPrices: boolean,
+): PricedDemandLine[] {
   const skuByCode = new Map(skus.map((sku) => [sku.code, sku]));
   const duplicateCodes = new Set<string>();
   const codes = new Set<string>();
@@ -113,6 +130,7 @@ export function priceDemand(
     resolutions.map((resolution) => [resolution.skuCode, resolution]),
   );
 
+  const referenceSource = useHistoricalPrices ? 'MIN_MAX_FALLBACK' : 'MIN_MAX';
   const priced = lines.map((line): PricedDemandLine => {
     const resolution = resolutionByCode.get(line.skuCode);
     const selectedCandidate = resolution?.candidates.find(
@@ -122,15 +140,15 @@ export function priceDemand(
       ? null
       : validPrice(skuByCode.get(line.skuCode)?.referencePrice);
 
-    // Price is supplier-specific when a supplier is resolved. Min-Max price is
-    // only a fallback; it must never hide that the supplier price is missing.
-    const supplierPrice = validPrice(selectedCandidate?.weightedUnitCost);
+    const supplierPrice = useHistoricalPrices
+      ? validPrice(selectedCandidate?.weightedUnitCost)
+      : null;
     const unitPrice = supplierPrice ?? referencePrice;
     const priceSource =
       supplierPrice != null
         ? ('SUPPLIER_HISTORY' as const)
         : unitPrice != null
-          ? ('MIN_MAX_FALLBACK' as const)
+          ? referenceSource
           : ('MISSING' as const);
 
     return {

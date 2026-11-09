@@ -1,815 +1,219 @@
-import { moneySum } from '../../domain/money';
-import { VirtualTable } from '../../components/VirtualTable';
-import { productColumns } from '../../components/productColumns';
-import { QuantitySummary } from '../../components/QuantitySummary';
-import { PurchasingDataAlert } from '../../components/PurchasingDataAlert';
-import type { Sku } from '../../domain/types';
 import { useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
-import { derive } from '../../app/selectors';
-import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
-import { isSupplierInPool, SUPPLIER_POOL } from '../../domain/supplierPool';
-import { ThresholdControls } from '../../components/ThresholdControls';
+import { PurchasingDataAlert } from '../../components/PurchasingDataAlert';
+import { Button, EmptyState } from '../../components/ui';
 import {
-  Alert,
-  Button,
-  EmptyState,
-  Input,
-  MetricCard,
-  Select,
-  SearchInput,
-} from '../../components/ui';
+  applySupplierAssignmentChange,
+  type SupplierAssignment,
+  type SupplierAssignmentCommand,
+} from '../../domain/supplierAssignments';
+import { SUPPLIER_POOL } from '../../domain/supplierPool';
+import { BulkSupplierDialog, ProductSupplierDialog } from './SupplierAssignmentDialogs';
 import {
-  buildAutoSupplierOverrides,
-  getSupplierDecisionPool,
-  type SupplierAutoScope,
-  type SupplierAutoStrategy,
-} from '../../domain/supplierAutomation';
-import type {
-  Order,
-  SupplierOverride,
-  SupplierResolution,
-} from '../../domain/types';
-import { fmtQty, money } from '../demand/DemandPage';
+  SupplierProducts,
+  defaultProductFilters,
+  type ProductFilters,
+  type SupplierRole,
+} from './SupplierProducts';
+import { SupplierRoster } from './SupplierRoster';
+import './SuppliersPage.css';
 
-interface SupplierSummary {
-  supplier: string;
-  skuCount: number;
-  branchCount: number;
-  belowMinSkuCount: number;
-  totalQty: number;
-  totalAmount: number | null;
-  missingPriceLineCount: number;
-  belowThresholdOrderCount: number;
-  orderCount: number;
-  orders: Order[];
+type AssignmentDialog = { skuCode: string } | { skuCodes: string[] };
+interface SupplierSelection {
+  snapshotId: string;
+  skuCodes: string[];
 }
 
 export function SuppliersPage() {
-  const { state, set, commit } = useStore();
-  const derived = useDerivedState(state);
-  const [query, setQuery] = usePreference('suppliers:query', '');
-  const [amountFrom, setAmountFrom] = usePreference('suppliers:amountFrom', '');
-  const [showBelowThreshold, setShowBelowThreshold] = usePreference(
-    'suppliers:belowThreshold',
-    false,
-  );
-  const [decisionsOpen, setDecisionsOpen] = usePreference(
-    'suppliers:decisionsOpen',
-    true,
-  );
-  const [selectedCodes, setSelectedCodes] = usePreference<string[]>(
-    'suppliers:selectedCodes',
-    [],
-  );
-  const selectedSkuCodes = useMemo(
-    () => new Set(selectedCodes),
-    [selectedCodes],
-  );
-  const setSelectedSkuCodes = (codes: Set<string>) =>
-    setSelectedCodes([...codes]);
-  const [autoStrategy] = usePreference<SupplierAutoStrategy>(
-    'suppliers:autoStrategy',
-    'MIN_PRICE',
-  );
-  const [autoScope, setAutoScope] = usePreference<SupplierAutoScope>(
-    'suppliers:autoScope',
-    'ALL',
-  );
-  const [overwriteManual, setOverwriteManual] = usePreference(
-    'suppliers:overwriteManual',
-    false,
-  );
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [manualBusyCode, setManualBusyCode] = useState<string | null>(null);
-  const supplierOperation = useRef(false);
-
-  const operationPool = getSupplierDecisionPool(
-    derived.resolutions,
-    derived.purchaseDemand,
-  );
-  const problems = operationPool.filter(
-    (resolution) => resolution.status !== 'MANUAL_SELECTED',
-  );
-  const problemSkuCodes = new Set(problems.map((problem) => problem.skuCode));
-  const problemDemand = derived.purchaseDemand.filter(
-    (line) => problemSkuCodes.has(line.skuCode) && line.purchaseQty > 0,
-  );
-  const problemAmount = problemDemand.some(
-    (line) => line.purchaseAmount == null,
-  )
-    ? null
-    : moneySum(problemDemand.map((line) => line.purchaseAmount ?? 0));
-
-  const autoOverrides = useMemo(
-    () =>
-      buildAutoSupplierOverrides({
-        resolutions: operationPool,
-        currentOverrides: state.overrides,
-        selectedSkuCodes,
-        scope: autoScope,
-        strategy: autoStrategy,
-        overwriteManual,
-      }),
-    [
-      operationPool,
-      state.overrides,
-      selectedSkuCodes,
-      autoScope,
-      autoStrategy,
-      overwriteManual,
-    ],
-  );
-
-  const summaries = buildSupplierSummaries(
-    derived.projection.orders,
-    derived.purchaseDemand,
-  );
-  const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
-  const minimumAmount = amountFrom === '' ? null : Number(amountFrom);
-
-  const visibleSummaries = summaries.filter((summary) => {
-    if (
-      normalizedQuery &&
-      !summary.supplier.toLocaleLowerCase('ru-RU').includes(normalizedQuery)
-    ) {
-      return false;
-    }
-
-    if (
-      minimumAmount != null &&
-      (summary.totalAmount == null || summary.totalAmount < minimumAmount)
-    ) {
-      return false;
-    }
-
-    const hasNonThresholdOrder = summary.orders.some(
-      (order) => !order.belowThreshold || hasHardBlocker(order),
-    );
-    if (!showBelowThreshold && !hasNonThresholdOrder) {
-      return false;
-    }
-
-    return true;
-  });
-
-  async function choose(
-    resolution: SupplierResolution,
-    supplier: string,
-  ): Promise<void> {
-    if (supplierOperation.current) return;
-    supplierOperation.current = true;
-    setManualBusyCode(resolution.skuCode);
-    const choosingWithoutHistory = resolution.candidates.length === 0;
-    try {
-      const patch = (s: typeof state) => {
-        const current = derive(s).resolutions.find(
-          (item) => item.skuCode === resolution.skuCode,
-        );
-        if (
-          !current ||
-          !isSupplierInPool(supplier) ||
-          (!current.candidates.some((item) => item.supplier === supplier) &&
-            !(choosingWithoutHistory && current.candidates.length === 0))
-        ) {
-          throw new Error('Supplier is no longer available');
-        }
-        const override: SupplierOverride = {
-          skuCode: resolution.skuCode,
-          supplier,
-          source: 'MANUAL',
-          ...(current.candidates.length === 0
-            ? { allowWithoutHistory: true }
-            : {}),
-          updatedAt: new Date().toISOString(),
-        };
-        return {
-          overrides: mergeOverrides(s.overrides, [override]),
-          toast: `Поставщик ${supplier} сохранён для ${resolution.skuCode}.`,
-        };
-      };
-      if (commit) await commit(patch);
-      else set(patch(state));
-    } catch {
-      set({
-        toast:
-          'Не удалось сохранить выбор поставщика. Предыдущий выбор сохранён.',
-      });
-    } finally {
-      supplierOperation.current = false;
-      setManualBusyCode(null);
-    }
-  }
-
-  async function applyAutomation(): Promise<void> {
-    if (!autoOverrides.length || supplierOperation.current) return;
-    supplierOperation.current = true;
-    setBulkBusy(true);
-    try {
-      const patch = (s: typeof state) => {
-        // Earlier queued writes may have changed manual choices, prices or demand.
-        // The preview is advisory; permission to overwrite is checked at commit.
-        const current = derive(s);
-        const fresh = buildAutoSupplierOverrides({
-          resolutions: getSupplierDecisionPool(
-            current.resolutions,
-            current.purchaseDemand,
-          ),
-          currentOverrides: s.overrides,
-          selectedSkuCodes,
-          scope: autoScope,
-          strategy: autoStrategy,
-          overwriteManual,
-        });
-        return fresh.length
-          ? {
-              overrides: mergeOverrides(s.overrides, fresh),
-              toast: `Автоматически назначено: ${fresh.length}.`,
-            }
-          : { toast: 'Подходящих позиций для автовыбора не осталось.' };
-      };
-      if (commit) await commit(patch);
-      else set(patch(state));
-      setSelectedSkuCodes(new Set());
-    } catch {
-      set({
-        toast:
-          'Не удалось сохранить массовый выбор поставщиков. Повторите действие.',
-      });
-    } finally {
-      supplierOperation.current = false;
-      setBulkBusy(false);
-    }
-  }
-
+  const { state } = useStore();
   return (
-    <main>
+    <main className="suppliers-page">
       <header>
-        <p className="eyebrow">Рабочая потребность</p>
+        <p className="eyebrow">Закупка</p>
         <h1>Поставщики</h1>
-        <p>
-          Кому, на какую сумму и в какие подразделения сейчас требуется заказ.
-        </p>
-        <p className="supplier-pool-note">
-          Рабочий пул: {SUPPLIER_POOL.length} поставщика. Остальные скрыты из
-          выбора и заказов; исходная история закупок сохранена.
-        </p>
+        <p>Назначайте основного и дополнительных поставщиков из рабочего списка. Заказ формируется у основного.</p>
       </header>
-      <PurchasingDataAlert issues={derived.projection.dataIssues} />
-
-      <ThresholdControls
-        settings={state.settings}
-        onChange={async (settings) => {
-          const patch = { settings };
-          if (commit) await commit(patch);
-          else set(patch);
-        }}
-        showBelowThreshold={showBelowThreshold}
-        onShowBelowThresholdChange={setShowBelowThreshold}
-      />
-
-      <div className="metrics metrics-three">
-        <MetricCard
-          label="Поставщиков с потребностью"
-          icon="people"
-          tone="accent"
-          value={summaries.length}
-        />
-        <MetricCard
-          label="Требуют выбора"
-          icon="warning"
-          tone="warning"
-          value={problems.length}
-        />
-        <MetricCard
-          label="Нераспределённых строк"
-          icon="list"
-          tone="neutral"
-          value={derived.projection.unassigned.length}
-        />
-      </div>
-
-      {operationPool.length > 0 && (
-        <SupplierDecisions
-          skus={state.minMax?.skus ?? []}
-          problemCount={problems.length}
-          operationPool={operationPool}
-          problemAmount={problemAmount}
-          open={decisionsOpen}
-          onOpenChange={setDecisionsOpen}
-          selectedSkuCodes={selectedSkuCodes}
-          onSelectedSkuCodesChange={setSelectedSkuCodes}
-          scope={autoScope}
-          onScopeChange={setAutoScope}
-          overwriteManual={overwriteManual}
-          onOverwriteManualChange={setOverwriteManual}
-          previewCount={autoOverrides.length}
-          bulkBusy={bulkBusy}
-          manualBusyCode={manualBusyCode}
-          onApplyAutomation={applyAutomation}
-          onChoose={choose}
-        />
-      )}
-
-      <section
-        className="filters compact-filters"
-        aria-label="Фильтры поставщиков"
-      >
-        <label>
-          Поиск поставщика
-          <SearchInput
-            value={query}
-            onValueChange={setQuery}
-            placeholder="Название поставщика"
-          />
-        </label>
-        <label>
-          Потребность от, ₽
-          <Input
-            type="number"
-            min="0"
-            value={amountFrom}
-            onChange={(event) => setAmountFrom(event.target.value)}
-          />
-        </label>
-        <span>
-          Найдено: <strong>{visibleSummaries.length}</strong>
-        </span>
-        {(query || amountFrom) && (
-          <button
-            className="link"
-            onClick={() => {
-              setQuery('');
-              setAmountFrom('');
-            }}
-          >
-            Сбросить фильтры
-          </button>
-        )}
-      </section>
-
-      {visibleSummaries.length > 0 ? (
-        <section className="panel supplier-table-panel">
-          <div className="section-heading">
-            <div>
-              <h2>Потребность по поставщикам</h2>
-              <p>
-                Сумма помечается неизвестной, если хотя бы у одной позиции нет
-                цены.
-              </p>
-            </div>
-          </div>
-
-          <div className="table-wrap supplier-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Поставщик</th>
-                  <th className="num">SKU</th>
-                  <th className="num">Подразделений</th>
-                  <th className="num">SKU ниже MIN</th>
-                  <th className="num">Количество</th>
-                  <th className="num">Сумма</th>
-                  <th>Статус порога</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleSummaries.map((summary) => (
-                  <SupplierRow key={summary.supplier} summary={summary} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+      {state.supplierAssignments === undefined ? (
+        <EmptyState>Загрузите отчёты, чтобы открыть каталог и связи поставщиков.</EmptyState>
       ) : (
-        <EmptyState>
-          Нет поставщиков, соответствующих текущему порогу и фильтрам.
-        </EmptyState>
+        <SupplierWorkspace key={state.workspaceId} assignments={state.supplierAssignments} />
       )}
     </main>
   );
 }
 
-function SupplierDecisions({
-  skus,
-  problemCount,
-  operationPool,
-  problemAmount,
-  open,
-  onOpenChange,
-  selectedSkuCodes,
-  onSelectedSkuCodesChange,
-  scope,
-  onScopeChange,
-  overwriteManual,
-  onOverwriteManualChange,
-  previewCount,
-  bulkBusy,
-  manualBusyCode,
-  onApplyAutomation,
-  onChoose,
+function SupplierWorkspace({
+  assignments,
 }: {
-  skus: Sku[];
-  problemCount: number;
-  operationPool: SupplierResolution[];
-  problemAmount: number | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  selectedSkuCodes: Set<string>;
-  onSelectedSkuCodesChange: (selected: Set<string>) => void;
-  scope: SupplierAutoScope;
-  onScopeChange: (scope: SupplierAutoScope) => void;
-  overwriteManual: boolean;
-  onOverwriteManualChange: (overwrite: boolean) => void;
-  previewCount: number;
-  bulkBusy: boolean;
-  manualBusyCode: string | null;
-  onApplyAutomation: () => void;
-  onChoose: (resolution: SupplierResolution, supplier: string) => void;
+  assignments: SupplierAssignment[];
 }) {
-  const supplierBusy = bulkBusy || manualBusyCode !== null;
-  const [productQuery, setProductQuery] = useState('');
-  const skuMap = new Map(skus.map((s) => [s.code, s]));
-  const visibleResolutions = operationPool.filter(
-    (r) =>
-      [
-        r.skuCode,
-        skuMap.get(r.skuCode)?.article ?? '',
-        skuMap.get(r.skuCode)?.name ?? '',
-      ]
-        .join(' ')
-        .toLocaleLowerCase('ru')
-        .includes(productQuery.trim().toLocaleLowerCase('ru')),
+  const { state, set, commit } = useStore();
+  const derived = useDerivedState(state);
+  const [view, setView] = useState<'products' | 'suppliers'>('products');
+  const [filters, setFilters] = usePreference<ProductFilters>(
+    'suppliers:productFilters',
+    defaultProductFilters,
   );
-  const allSelected =
-    visibleResolutions.length > 0 &&
-    visibleResolutions.every((resolution) =>
-      selectedSkuCodes.has(resolution.skuCode),
-    );
+  const [selection, setSelection] = usePreference<SupplierSelection | null>(
+    'suppliers:selectedCodes',
+    null,
+  );
+  const [dialog, setDialog] = useState<AssignmentDialog | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const savingRef = useRef(false);
+  const productTab = useRef<HTMLButtonElement>(null);
+  const products = state.minMax?.skus;
+  const productsByCode = useMemo(
+    () => new Map(products?.map((sku) => [sku.code, sku])),
+    [products],
+  );
+  const assignmentsByCode = useMemo(
+    () => new Map(assignments.map((assignment) => [assignment.skuCode, assignment])),
+    [assignments],
+  );
+  const selectedCodes = useMemo(
+    () => selection?.snapshotId === state.snapshotId
+      ? selection.skuCodes.filter((skuCode) => productsByCode.has(skuCode))
+      : [],
+    [productsByCode, selection, state.snapshotId],
+  );
+  const demandCodes = useMemo(
+    () => new Set(derived.purchaseDemand.filter((line) => line.purchaseQty > 0).map((line) => line.skuCode)),
+    [derived.purchaseDemand],
+  );
+  const product = dialog && 'skuCode' in dialog ? productsByCode.get(dialog.skuCode) : undefined;
 
-  function toggleOne(skuCode: string, checked: boolean): void {
-    const next = new Set(selectedSkuCodes);
-    if (checked) {
-      next.add(skuCode);
-    } else {
-      next.delete(skuCode);
-    }
-    onSelectedSkuCodesChange(next);
+  function select(skuCodes: string[]) {
+    setSelection({ snapshotId: state.snapshotId, skuCodes });
   }
 
-  function toggleAll(checked: boolean): void {
-    const next = new Set(selectedSkuCodes);
-    for (const resolution of visibleResolutions)
-      if (checked) next.add(resolution.skuCode);
-      else next.delete(resolution.skuCode);
-    onSelectedSkuCodesChange(next);
+  function openDialog(next: AssignmentDialog) {
+    setError('');
+    setDialog(next);
+  }
+
+  function closeDialog() {
+    if (savingRef.current) return;
+    setDialog(null);
+  }
+
+  async function save(command: SupplierAssignmentCommand, success: string) {
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setError('');
+    try {
+      const codes = 'skuCodes' in command ? command.skuCodes : [command.skuCode];
+      const patch = (current: typeof state) => {
+        if (
+          !current.supplierAssignments ||
+          current.workspaceId !== state.workspaceId ||
+          current.snapshotId !== state.snapshotId
+        ) {
+          throw new Error('The current catalog has changed');
+        }
+        if (
+          command.kind === 'set-primary' &&
+          current.supplierAssignments !== assignments
+        ) {
+          const affected = new Set(codes);
+          const currentPrimaries = new Map(current.supplierAssignments
+            .filter((assignment) => affected.has(assignment.skuCode))
+            .map((assignment) => [assignment.skuCode, assignment.primary]));
+          if (codes.some((code) => (
+            (assignmentsByCode.get(code)?.primary ?? null) !== (currentPrimaries.get(code) ?? null)
+          ))) {
+            throw new Error('The primary supplier has changed');
+          }
+        }
+        return {
+          supplierAssignments: applySupplierAssignmentChange(current.supplierAssignments, command),
+          toast: success,
+        };
+      };
+      if (commit) await commit(patch);
+      else set(patch(state));
+      return true;
+    } catch {
+      setError('Не удалось сохранить связи поставщиков. Повторите действие.');
+      return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  function showProducts(supplier: string, role: SupplierRole) {
+    setFilters({ ...defaultProductFilters, supplier, role });
+    setView('products');
+    productTab.current?.focus({ preventScroll: true });
   }
 
   return (
-    <section
-      className="panel supplier-decisions-panel"
-      aria-busy={supplierBusy}
-    >
-      <div className="decision-panel-head">
-        <div>
-          {problemCount > 0 ? (
-            <>
-              <h2>
-                Требуют решения · {problemCount} позиций ·{' '}
-                {problemAmount == null ? 'сумма неизвестна' : money(problemAmount)}
-              </h2>
-              <p>
-                Для нераспределённых позиций нужно выбрать поставщика.
-                Сохранённые ручные назначения остаются в списке.
-              </p>
-            </>
-          ) : (
-            <>
-              <h2>Ручные назначения · {operationPool.length}</h2>
-              <p>Здесь можно изменить сохранённые ручные назначения.</p>
-            </>
-          )}
-        </div>
-        <button
-          className="link decision-collapse"
-          aria-expanded={open}
-          onClick={() => onOpenChange(!open)}
-        >
-          {open ? 'Свернуть' : 'Развернуть'}{' '}
-          {problemCount > 0 ? '«Требуют решения»' : 'ручные назначения'}
+    <>
+      <PurchasingDataAlert issues={derived.projection.dataIssues} />
+      <div className="workspace-tabs supplier-views" role="group" aria-label="Представления поставщиков">
+        <button ref={productTab} aria-pressed={view === 'products'} onClick={() => setView('products')}>
+          Товары
+        </button>
+        <button aria-pressed={view === 'suppliers'} onClick={() => setView('suppliers')}>
+          По поставщикам
         </button>
       </div>
-
-      {open && (
-        <>
-          <p className="supplier-auto-note">
-            Автовыбор использует только валидные исторические цены. Позиции без
-            подходящей цены останутся на ручное решение.
-          </p>
-
-          <div className="supplier-auto-toolbar">
-            <div className="supplier-auto-strategy">
-              <span>Автовыбор</span>
-              <strong>Минимальная цена</strong>
-            </div>
-            <label className="checkbox-control overwrite-manual-control">
-              <input
-                type="checkbox"
-                checked={overwriteManual}
-                disabled={supplierBusy}
-                onChange={(event) =>
-                  onOverwriteManualChange(event.target.checked)
-                }
-              />
-              Перезаписать ручные назначения
-            </label>
-            <label>
-              Область применения
-              <Select
-                aria-label="Область применения"
-                value={scope}
-                disabled={supplierBusy}
-                onChange={(event) =>
-                  onScopeChange(event.target.value as SupplierAutoScope)
-                }
-              >
-                <option value="ALL">Все позиции</option>
-                <option value="SELECTED">Только отмеченные</option>
-                <option value="EXCEPT_SELECTED">Все кроме отмеченных</option>
-              </Select>
-            </label>
-            <div className="auto-preview" role="status">
-              Будет назначено: <strong>{previewCount}</strong>
-            </div>
-            <Button
-              disabled={previewCount === 0 || supplierBusy}
-              onClick={onApplyAutomation}
-            >
-              {bulkBusy ? 'Сохраняем…' : 'Применить автовыбор'}
-            </Button>
-          </div>
-
-          <div className="decision-select-all">
-            <label className="checkbox-control">
-              <input
-                type="checkbox"
-                aria-label="Выбрать все позиции"
-                checked={allSelected}
-                disabled={supplierBusy || !visibleResolutions.length}
-                onChange={(event) => toggleAll(event.target.checked)}
-              />
-              Отметить все по поиску
-            </label>
-            <small>Отмечено: {selectedSkuCodes.size}</small>
-            <small>По поиску: {visibleResolutions.length}</small>
-          </div>
-
-          <label>
-            Поиск товара
-            <SearchInput
-              aria-label="Поиск товара для выбора поставщика"
-              value={productQuery}
-              onValueChange={setProductQuery}
-            />
-          </label>
-          <div className="decision-list">
-            <VirtualTable
-              rows={visibleResolutions}
-              getRowKey={(r) => r.skuCode}
-              rowClassName="decision"
-              columns={[
-                {
-                  key: 'check',
-                  header: '',
-                  width: '36px',
-                  render: (resolution) => (
-                    <label className="decision-check">
-                      <input
-                        type="checkbox"
-                        aria-label={`Выбрать ${resolution.skuCode}`}
-                        checked={selectedSkuCodes.has(resolution.skuCode)}
-                        disabled={supplierBusy}
-                        onChange={(e) =>
-                          toggleOne(resolution.skuCode, e.target.checked)
-                        }
-                      />
-                    </label>
-                  ),
-                },
-                ...productColumns<SupplierResolution>(
-                  (r) => ({
-                    code: r.skuCode,
-                    article: skuMap.get(r.skuCode)?.article ?? null,
-                    name: skuMap.get(r.skuCode)?.name ?? r.skuCode,
-                  }),
-                  {
-                    code: { width: '130px' },
-                    article: { width: '110px' },
-                    name: {
-                      width: 'minmax(200px,1fr)',
-                      render: (resolution) => (
-                        <>
-                          <strong>
-                            {skuMap.get(resolution.skuCode)?.name ??
-                              resolution.skuCode}
-                          </strong>
-                          <p>
-                            {resolution.status === 'MANUAL_SELECTED'
-                              ? 'Поставщик назначен вручную. Можно изменить выбор.'
-                              : resolution.status === 'STALE_OVERRIDE'
-                              ? 'Сохранённый поставщик отсутствует в свежем отчёте или не входит в рабочий пул.'
-                              : resolution.candidates.length === 0
-                                ? 'Нет истории закупок в рабочем пуле. Выберите поставщика из списка. Цена берётся из MIN/MAX.'
-                                : 'Несколько исторических поставщиков — можно выбрать вручную или массово.'}
-                          </p>
-                        </>
-                      ),
-                    },
-                  },
-                ),
-                {
-                  key: 'supplier',
-                  header: 'Поставщик',
-                  width: 'minmax(280px,1.3fr)',
-                  render: (resolution) => (
-                    <div className="decision-supplier">
-                      <Select
-                        aria-label={`Поставщик ${resolution.skuCode}`}
-                        value=""
-                        disabled={supplierBusy}
-                        onChange={(event) =>
-                          onChoose(resolution, event.target.value)
-                        }
-                      >
-                        <option value="" disabled>
-                          {resolution.selectedSupplier
-                            ? `Назначен: ${resolution.selectedSupplier}`
-                            : 'Выберите поставщика…'}
-                        </option>
-                        {resolution.candidates.length === 0 &&
-                          SUPPLIER_POOL.map((supplier) => (
-                            <option key={supplier} value={supplier}>
-                              {supplier}
-                            </option>
-                          ))}
-                        {resolution.candidates.map((candidate) => (
-                          <option
-                            key={candidate.supplier}
-                            value={candidate.supplier}
-                          >
-                            {candidate.supplier}
-                            {candidate.supplier ===
-                            resolution.recommendedSupplier
-                              ? ' — рекомендуемый'
-                              : ''}
-                            {' · '}
-                            {fmtQty(candidate.purchaseQty)} ед. ·{' '}
-                            {money(candidate.purchaseAmount)} ·{' '}
-                            {candidate.weightedUnitCost == null
-                              ? 'нет цены'
-                              : money(candidate.weightedUnitCost)}
-                          </option>
-                        ))}
-                      </Select>
-                      {manualBusyCode === resolution.skuCode && (
-                        <small role="status">Сохраняем выбор…</small>
-                      )}
-                    </div>
-                  ),
-                },
-              ]}
-            />
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-function SupplierRow({ summary }: { summary: SupplierSummary }) {
-  return (
-    <tr>
-      <td>
-        <details>
-          <summary>
-            <strong>{summary.supplier}</strong>
-          </summary>
-          <div className="supplier-details">
-            {summary.orders.map((order) => (
-              <div key={order.id}>
-                <strong>{order.branch}</strong> ·{' '}
-                {order.lines.filter((line) => line.orderQty > 0).length} SKU ·{' '}
-                {order.totalAmount == null
-                  ? 'Сумма неизвестна'
-                  : money(order.totalAmount)}
-              </div>
-            ))}
-          </div>
-        </details>
-      </td>
-      <td className="num">{summary.skuCount}</td>
-      <td className="num">{summary.branchCount}</td>
-      <td className="num">{summary.belowMinSkuCount}</td>
-      <td className="num">
-        <QuantitySummary
-          rows={summary.orders.flatMap((order) =>
-            order.lines.map((line) => ({
-              skuCode: line.skuCode,
-              qty: line.orderQty,
-              unit: line.unit,
-            })),
-          )}
+      <div className="supplier-view-panels">
+        <SupplierProducts
+          active={view === 'products'}
+          products={products ?? []}
+          assignmentsByCode={assignmentsByCode}
+          demandCodes={demandCodes}
+          filters={filters}
+          onFiltersChange={setFilters}
+          selectedCodes={selectedCodes}
+          onSelect={select}
+          onOpenProduct={(skuCode) => openDialog({ skuCode })}
+          onOpenBulk={() => openDialog({ skuCodes: selectedCodes })}
         />
-      </td>
-      <td className="num">
-        {summary.totalAmount == null ? (
-          <span className="danger-text">
-            Сумма неизвестна
-            <small>Без цены: {summary.missingPriceLineCount}</small>
-          </span>
-        ) : (
-          money(summary.totalAmount)
+        {view === 'suppliers' && (
+          <SupplierRoster
+            catalogAssignments={assignmentsByCode}
+            productsByCode={productsByCode}
+            orders={derived.projection.orders}
+            suppliers={SUPPLIER_POOL}
+            onShowProducts={showProducts}
+          />
         )}
-      </td>
-      <td>
-        {summary.belowThresholdOrderCount > 0 ? (
-          <span className="threshold-warning">
-            Ниже порога: {summary.belowThresholdOrderCount}/{summary.orderCount}
-          </span>
-        ) : (
-          <span className="success">Порог пройден</span>
-        )}
-      </td>
-    </tr>
+      </div>
+      {product && (
+        <ProductSupplierDialog
+          product={product}
+          assignment={assignmentsByCode.get(product.code)}
+          saving={saving}
+          error={error}
+          onDismissError={() => setError('')}
+          onSave={save}
+          onClose={closeDialog}
+        />
+      )}
+      {dialog && 'skuCodes' in dialog && (
+        <BulkSupplierDialog
+          skuCodes={dialog.skuCodes}
+          assignmentsByCode={assignmentsByCode}
+          saving={saving}
+          error={error}
+          onSave={async (command, success) => {
+            const saved = await save(command, success);
+            if (saved) {
+              select([]);
+              closeDialog();
+            }
+            return saved;
+          }}
+          onClose={closeDialog}
+        />
+      )}
+    </>
   );
-}
-
-function buildSupplierSummaries(
-  orders: Order[],
-  demand: PurchaseDemandLine[],
-): SupplierSummary[] {
-  const suppliers = [...new Set(orders.map((order) => order.supplier))];
-
-  return suppliers
-    .map((supplier) => {
-      const supplierOrders = orders.filter(
-        (order) => order.supplier === supplier,
-      );
-      const positiveLines = supplierOrders.flatMap((order) =>
-        order.lines.filter((line) => line.orderQty > 0),
-      );
-      const missingPriceLineCount = positiveLines.filter(
-        (line) => line.amount == null,
-      ).length;
-      const belowMinSku = new Set(
-        demand
-          .filter(
-            (line) =>
-              line.selectedSupplier === supplier &&
-              line.purchaseQty > 0 &&
-              line.purchaseStatus === 'BELOW_MIN',
-          )
-          .map((line) => line.skuCode),
-      );
-
-      return {
-        supplier,
-        skuCount: new Set(positiveLines.map((line) => line.skuCode)).size,
-        branchCount: new Set(supplierOrders.map((order) => order.branch)).size,
-        belowMinSkuCount: belowMinSku.size,
-        totalQty: positiveLines.reduce((sum, line) => sum + line.orderQty, 0),
-        totalAmount:
-          missingPriceLineCount > 0
-            ? null
-            : moneySum(positiveLines.map((line) => line.amount ?? 0)),
-        missingPriceLineCount,
-        belowThresholdOrderCount: supplierOrders.filter(
-          (order) => order.belowThreshold,
-        ).length,
-        orderCount: supplierOrders.length,
-        orders: supplierOrders,
-      };
-    })
-    .sort(
-      (left, right) =>
-        right.totalQty - left.totalQty ||
-        left.supplier.localeCompare(right.supplier, 'ru'),
-    );
-}
-
-function hasHardBlocker(order: Order) {
-  return order.blockers.some((blocker) => blocker !== 'Ниже минимальной суммы');
-}
-
-function mergeOverrides(
-  current: SupplierOverride[],
-  replacements: SupplierOverride[],
-): SupplierOverride[] {
-  const replacementCodes = new Set(replacements.map((item) => item.skuCode));
-  return [
-    ...current.filter((item) => !replacementCodes.has(item.skuCode)),
-    ...replacements,
-  ];
 }

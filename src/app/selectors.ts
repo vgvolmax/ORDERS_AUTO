@@ -11,13 +11,12 @@ import type {
   RebalanceProposal,
   SkuQuantityPolicy,
 } from '../domain/rebalancing/types';
-import { calculateDemand, priceDemand } from '../domain/demand';
+import { calculateDemand, priceDemandFromMinMax } from '../domain/demand';
 import { getManualEditCount } from '../domain/orderWorkflow';
 import { buildOrderProjection } from '../domain/orders';
 import { changedOrderIds } from '../domain/rebalanceWorkflow';
 import { collectPurchasingIssues } from '../domain/purchasingIssues';
-import { resolveSuppliers } from '../domain/suppliers';
-import { isSupplierInPool } from '../domain/supplierPool';
+import { resolveSupplierAssignments } from '../domain/supplierAssignments';
 import type {
   Order,
   OrderProjection,
@@ -83,7 +82,7 @@ function purchasingInputs(state: AppState) {
     state.suppliers,
     state.minMaxIssues,
     state.supplierIssues,
-    state.overrides,
+    state.supplierAssignments,
     state.settings,
     state.snapshotId,
     state.rebalance.registry,
@@ -100,13 +99,13 @@ function samePurchasingInputs(previous: AppState, next: AppState): boolean {
 }
 
 function buildPurchasingBasis(state: AppState): PurchasingBasis | null {
-  if (!state.minMax || !state.suppliers) return null;
-  const resolutions = resolveSuppliers(
-    state.suppliers.history.filter((row) => isSupplierInPool(row.supplier)),
-    state.overrides,
+  if (!state.minMax || !state.supplierAssignments) return null;
+  const resolutions = resolveSupplierAssignments(
+    state.supplierAssignments,
     state.minMax.skus.map((sku) => sku.code),
+    state.suppliers?.history ?? [],
   );
-  const demand = priceDemand(
+  const demand = priceDemandFromMinMax(
     calculateDemand(state.minMax),
     state.minMax.skus,
     resolutions,

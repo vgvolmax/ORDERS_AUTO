@@ -167,6 +167,8 @@ export function buildOrderProjection(
 
   const supplierLines = new Map<string, Order['lines']>();
   for (const order of orders) {
+    // An unpriced order cannot be exported or contribute to the supplier minimum.
+    if (order.totalAmount === null) continue;
     const lines = supplierLines.get(order.supplier) ?? [];
     lines.push(...order.lines.filter((line) => line.orderQty > 0));
     supplierLines.set(order.supplier, lines);
@@ -175,24 +177,23 @@ export function buildOrderProjection(
   const belowSupplier = new Map(
     [...supplierLines].map(([supplier, lines]) => [
       supplier,
-      lines.every((line) => line.unitPrice !== null) &&
-        moneyProductsLessThan(
-          lines.map((line) => [line.orderQty, line.unitPrice!] as const),
-          settings.minimumOrderAmount,
-        ),
+      moneyProductsLessThan(
+        lines.map((line) => [line.orderQty, line.unitPrice!] as const),
+        settings.minimumOrderAmount,
+      ),
     ]),
   );
   for (const order of orders) {
     order.belowThreshold =
-      settings.thresholdMode === 'SUPPLIER_TOTAL'
+      order.totalAmount !== null &&
+      (settings.thresholdMode === 'SUPPLIER_TOTAL'
         ? (belowSupplier.get(order.supplier) ?? false)
-        : order.totalAmount !== null &&
-          moneyProductsLessThan(
+        : moneyProductsLessThan(
             order.lines
               .filter((line) => line.orderQty > 0)
               .map((line) => [line.orderQty, line.unitPrice!] as const),
             settings.minimumOrderAmount,
-          );
+          ));
 
     if (order.belowThreshold) {
       order.blockers.push('Ниже минимальной суммы');

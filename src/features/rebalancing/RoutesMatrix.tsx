@@ -164,11 +164,11 @@ export function RoutesMatrix({
         title={branch.active ? 'Участвует в новом расчёте' : 'Включить участие'}
         onChange={(event) =>
           onRegistryChange(
-            registry.map((item) =>
-              item.id === branch.id
-                ? { ...item, active: event.target.checked }
-                : item,
-            ),
+            registry.map((item) => {
+              if (item.id !== branch.id) return item;
+              const { suspendedByImport: _suspended, ...chosen } = item;
+              return { ...chosen, active: event.target.checked };
+            }),
           )
         }
       />

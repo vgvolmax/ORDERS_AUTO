@@ -1,7 +1,7 @@
 import { fireEvent, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { derive } from '../../src/app/selectors';
-import { buildAutoSupplierOverrides } from '../../src/domain/supplierAutomation';
+import { applySupplierAssignmentChange } from '../../src/domain/supplierAssignments';
 import { emptyDemandFilters } from '../../src/components/FiltersBar';
 import { DemandPage } from '../../src/features/demand/DemandPage';
 import { ImportPage } from '../../src/features/import/ImportPage';
@@ -48,50 +48,54 @@ const otherAllowed = 'ООО "Алмаз"';
 const hidden = 'ООО "Скрытый поставщик"';
 
 function poolState(names = [allowed, otherAllowed, hidden]) {
-  const state = baseState();
-  state.suppliers = {
-    suppliers: names,
-    history: names.map((supplier, index) => ({
-      supplier,
-      skuCode: 'SKU1',
-      skuName: 'Товар 1',
-      unit: 'шт',
-      purchaseQty: 100 + index,
-      purchaseAmount: (100 + index) * Math.max(1, 100 - index * 40),
-      weightedUnitCost: Math.max(1, 100 - index * 40),
-    })),
-  };
-  return state;
+  return baseState({
+    suppliers: {
+      suppliers: names,
+      history: names.map((supplier, index) => ({
+        supplier,
+        skuCode: 'SKU1',
+        skuName: 'Товар 1',
+        unit: 'шт',
+        purchaseQty: 100 + index,
+        purchaseAmount: (100 + index) * Math.max(1, 100 - index * 40),
+        weightedUnitCost: Math.max(1, 100 - index * 40),
+      })),
+    },
+  });
 }
 
 describe('approved supplier pool', () => {
-  it('offers all 32 suppliers without history and prices the explicit choice from MIN/MAX', async () => {
-    const state = poolState([]);
+  it('offers all 32 suppliers regardless of history and prices the explicit choice from MIN/MAX', () => {
+    const state = poolState();
+    state.suppliers!.history[0]!.weightedUnitCost = 85;
     const set = vi.fn();
     renderWithStore(<SuppliersPage />, state, set);
-    const select = screen.getByRole('combobox', { name: 'Поставщик SKU1' });
-    expect(within(select).getAllByRole('option').map((option) => (option as HTMLOptionElement).value))
-      .toEqual(['', ...approved]);
-    expect(screen.getByRole('button', { name: 'Применить автовыбор' })).toBeDisabled();
-    fireEvent.change(select, { target: { value: allowed } });
+    fireEvent.click(screen.getByRole('button', { name: 'Связи SKU1' }));
+    const dialog = screen.getByRole('dialog');
+    const select = within(dialog).getByLabelText('Основной поставщик');
+    expect(
+      within(select).getAllByRole('option').map((option) => (option as HTMLOptionElement).value),
+    ).toEqual(['', ...approved]);
+    const absentFromHistory = 'ООО "Ютара"';
+    fireEvent.change(select, { target: { value: absentFromHistory } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сделать основным' }));
     const patch = set.mock.calls[0]![0];
-    expect(patch.overrides[0]).toMatchObject({ supplier: allowed, source: 'MANUAL', allowWithoutHistory: true });
+    expect(patch.supplierAssignments).toEqual([
+      { skuCode: 'SKU1', primary: absentFromHistory, additional: [allowed, otherAllowed] },
+    ]);
     const result = derive({ ...state, ...patch });
-    expect(result.resolutions[0]).toMatchObject({ selectedSupplier: allowed, status: 'MANUAL_SELECTED', candidates: [] });
     expect(result.projection.unassigned).toEqual([]);
-    expect(result.projection.orders).toHaveLength(2);
     expect(result.projection.orders.map((order) => order.totalAmount)).toEqual([700, 400]);
     for (const order of result.projection.orders) {
       expect(order.status).toBe('READY');
-      expect(order.lines[0]).toMatchObject({ supplier: allowed, unitPrice: 100, priceSource: 'MIN_MAX_FALLBACK' });
+      expect(order.lines[0]).toMatchObject({ supplier: absentFromHistory, unitPrice: 100, priceSource: 'MIN_MAX' });
     }
-    expect(state.suppliers!.history).toEqual([]);
+    expect(state.suppliers!.history.map((row) => row.supplier)).toEqual([allowed, otherAllowed, hidden]);
   });
 
-  it.each([null, 0])('keeps existing fallback semantics when MIN/MAX price is %s', (price) => {
-    const state = poolState([]);
+  it.each([null, 0])('distinguishes missing and zero MIN/MAX price even with history: %s', (price) => {
+    const state = poolState([allowed]);
     state.minMax!.skus[0]!.referencePrice = price;
-    state.overrides = [{ skuCode: 'SKU1', supplier: allowed, source: 'MANUAL', allowWithoutHistory: true, updatedAt: '2026-11-03' }];
     const result = derive(state);
     expect(result.projection.unassigned).toEqual([]);
     expect(result.projection.orders).toHaveLength(2);
@@ -99,53 +103,9 @@ describe('approved supplier pool', () => {
     expect(result.projection.orders[0]!.lines[0]!.unitPrice).toBe(price);
   });
 
-  it.each(['MANUAL', 'AUTO'] as const)('never authorizes an out-of-pool %s assignment without history', (source) => {
+  it('offers an assigned supplier in demand filters even when absent from the imported report', () => {
     const state = poolState([]);
-    state.overrides = [{ skuCode: 'SKU1', supplier: hidden, source, allowWithoutHistory: true, updatedAt: '2026-11-03' }];
-    expect(derive(state).resolutions[0]!.status).toBe('STALE_OVERRIDE');
-    expect(derive(state).projection.orders).toEqual([]);
-  });
-
-  it('keeps disappeared historical and automated selections stale until explicitly confirmed', () => {
-    for (const override of [
-      { supplier: allowed },
-      { supplier: allowed, source: 'MANUAL' as const },
-      { supplier: allowed, source: 'AUTO' as const, allowWithoutHistory: true },
-    ]) {
-      const state = poolState([]);
-      state.overrides = [{ ...override, skuCode: 'SKU1', updatedAt: '2026-11-03' }];
-      expect(derive(state).resolutions[0]!.status).toBe('STALE_OVERRIDE');
-    }
-  });
-
-  it('uses supplier history when it later becomes available for the explicit pool assignment', () => {
-    const importedName = 'ООО «ТЕРЕМ»';
-    const state = poolState([importedName]);
-    state.suppliers!.history[0]!.weightedUnitCost = 85;
-    state.overrides = [{ skuCode: 'SKU1', supplier: allowed, source: 'MANUAL', allowWithoutHistory: true, updatedAt: '2026-11-03' }];
-    expect(derive(state).demand[0]).toMatchObject({ selectedSupplier: importedName, unitPrice: 85, priceSource: 'SUPPLIER_HISTORY' });
-  });
-
-  it('keeps one order per branch when the pool choice matches the imported name of another SKU', () => {
-    const importedName = 'ООО «ТЕРЕМ»';
-    const state = poolState([importedName]);
-    state.suppliers!.history[0]!.skuCode = 'SKU2';
-    state.minMax!.skus.push({ ...state.minMax!.skus[0]!, code: 'SKU2' });
-    state.minMax!.branchStocks.push({ ...state.minMax!.branchStocks[0]!, skuCode: 'SKU2' });
-    state.overrides = [{ skuCode: 'SKU1', supplier: allowed, source: 'MANUAL', allowWithoutHistory: true, updatedAt: '2026-11-03' }];
-    const result = derive(state);
-    expect(result.projection.orders).toHaveLength(2);
-    const lenina = result.projection.orders.find((order) => order.branch === 'Ленина')!;
-    expect(lenina.supplier).toBe(importedName);
-    expect(lenina.lines.map((line) => [line.skuCode, line.priceSource])).toEqual([
-      ['SKU1', 'MIN_MAX_FALLBACK'],
-      ['SKU2', 'SUPPLIER_HISTORY'],
-    ]);
-  });
-
-  it('offers the manually assigned supplier in demand filters even when absent from the imported report', () => {
-    const state = poolState([]);
-    state.overrides = [{ skuCode: 'SKU1', supplier: allowed, source: 'MANUAL', allowWithoutHistory: true, updatedAt: '2026-11-03' }];
+    state.supplierAssignments = [{ skuCode: 'SKU1', primary: allowed, additional: [] }];
     renderWithStore(<DemandPage />, state);
     const filter = screen.getByRole('combobox', { name: 'Поставщик' });
     expect(within(filter).getByRole('option', { name: allowed })).toBeInTheDocument();
@@ -153,146 +113,69 @@ describe('approved supplier pool', () => {
     expect(screen.getByText('Товар 1')).toBeInTheDocument();
   });
 
-  it.each(['ООО «ТЕРЕМ»', ''])(
-    'keeps demand visible when the saved supplier filter option changes to %s',
-    (importedName) => {
-      const state = poolState(importedName ? [importedName] : []);
-      state.overrides = [{
-        skuCode: 'SKU1',
-        supplier: importedName ? allowed : otherAllowed,
-        source: 'MANUAL',
-        allowWithoutHistory: true,
-        updatedAt: '2026-11-03',
-      }];
-      state.uiPreferences['demand:all:filters'] = { ...emptyDemandFilters, supplier: allowed };
-      renderWithStore(<DemandPage />, state);
-      expect(screen.getByRole('combobox', { name: 'Поставщик' })).toHaveValue(importedName);
-      expect(screen.getByText('Товар 1')).toBeInTheDocument();
-    },
-  );
+  it.each([
+    ['ООО «ТЕРЕМ»', allowed, allowed],
+    ['', otherAllowed, ''],
+  ])('keeps demand visible with canonical or unavailable saved supplier filter %s', (importedName, primary, expected) => {
+    const state = poolState(importedName ? [importedName] : []);
+    state.supplierAssignments = [{ skuCode: 'SKU1', primary, additional: [] }];
+    state.uiPreferences['demand:all:filters'] = { ...emptyDemandFilters, supplier: 'ООО «ТЕРЕМ»' };
+    renderWithStore(<DemandPage />, state);
+    expect(screen.getByRole('combobox', { name: 'Поставщик' })).toHaveValue(expected);
+    expect(screen.getByText('Товар 1')).toBeInTheDocument();
+  });
 
-  it('keeps exactly the 32 approved suppliers and preserves imported history', () => {
+  it('keeps exactly the 32 approved suppliers as additional when more than one was present', () => {
     const state = poolState([...approved, hidden]);
     const before = structuredClone(state);
+    expect(state.supplierAssignments).toEqual([
+      { skuCode: 'SKU1', primary: null, additional: approved },
+    ]);
     const result = derive(state);
-    expect(
-      new Set(result.resolutions[0]!.candidates.map((c) => c.supplier)),
-    ).toEqual(new Set(approved));
-    expect(result.resolutions[0]!.status).toBe('MANUAL_REQUIRED');
+    expect(result.resolutions[0]).toMatchObject({ status: 'MANUAL_REQUIRED', recommendedSupplier: null });
+    expect(result.projection.orders).toEqual([]);
     expect(state).toEqual(before);
   });
 
   it.each([
-    '  ооо\u00a0«ТЕРЕМ»  ',
-    'ООО"Терем"',
-    'ООО ИНЖЕНЕРНЫЙ ЦЕНТР АПРЕЛЬ',
-    'ип   жовтый сергей юрьевич',
-  ])('allows presentation-only name variation: %s', (supplier) => {
+    ['  ооо «ТЕРЕМ»  ', allowed],
+    ['ООО"Терем"', allowed],
+    ['ООО ИНЖЕНЕРНЫЙ ЦЕНТР АПРЕЛЬ', 'ООО "ИНЖЕНЕРНЫЙ ЦЕНТР "АПРЕЛЬ"'],
+    ['ип   жовтый сергей юрьевич', 'Ип Жовтый Сергей Юрьевич'],
+  ])('uses the fixed pool name for presentation-only name variation: %s', (supplier, canonical) => {
     expect(derive(poolState([supplier])).resolutions[0]).toMatchObject({
-      status: 'AUTO_SINGLE',
-      selectedSupplier: supplier,
+      selectedSupplier: canonical,
     });
   });
 
-  it.each([hidden, 'ООО "Терем Плюс"', 'ИП Терем'])(
-    'does not admit a different supplier: %s',
-    (supplier) => {
-      const result = derive(poolState([supplier]));
-      expect(result.resolutions[0]).toMatchObject({
-        candidates: [],
-        recommendedSupplier: null,
-        selectedSupplier: null,
-        status: 'UNRESOLVED',
-      });
-      expect(result.projection.orders).toEqual([]);
-      expect(result.projection.unassigned).toHaveLength(2);
-      expect(
-        result.purchaseDemand.reduce((sum, line) => sum + line.purchaseQty, 0),
-      ).toBe(11);
-    },
-  );
-
-  it('excludes hidden suppliers from recommendations, minimum-price automation, pricing and orders', () => {
-    const state = poolState();
-    const resolutions = derive(state).resolutions;
-    expect(resolutions[0]!.recommendedSupplier).toBe(otherAllowed);
-    const overrides = buildAutoSupplierOverrides({
-      resolutions,
-      currentOverrides: [],
-      selectedSkuCodes: [],
-      scope: 'ALL',
-      strategy: 'MIN_PRICE',
-      overwriteManual: false,
+  it.each([hidden, 'ООО "Терем Плюс"', 'ИП Терем'])('does not admit a different supplier: %s', (supplier) => {
+    const state = poolState([supplier]);
+    const result = derive(state);
+    expect(result.resolutions[0]).toMatchObject({
+      candidates: [],
+      recommendedSupplier: null,
+      selectedSupplier: null,
+      status: 'UNRESOLVED',
     });
-    expect(overrides).toHaveLength(1);
-    expect(overrides[0]!.supplier).toBe(otherAllowed);
-    const next = derive({ ...state, overrides });
-    expect(next.projection.orders.map((order) => order.supplier)).toEqual([
-      otherAllowed,
-      otherAllowed,
-    ]);
-    expect(
-      next.projection.orders.every((order) =>
-        order.lines.every((line) => line.unitPrice === 60),
-      ),
-    ).toBe(true);
+    expect(result.projection.orders).toEqual([]);
+    expect(result.projection.unassigned).toHaveLength(2);
+    expect(result.purchaseDemand.reduce((sum, line) => sum + line.purchaseQty, 0)).toBe(11);
+    expect(applySupplierAssignmentChange(state.supplierAssignments!, {
+      kind: 'set-primary', skuCodes: ['SKU1'], supplier,
+    })).toEqual([]);
   });
 
-  it.each(['MANUAL', 'AUTO'] as const)(
-    'blocks an old %s choice outside the pool without silently replacing it',
-    (source) => {
-      const state = poolState([allowed, hidden]);
-      state.overrides = [
-        { skuCode: 'SKU1', supplier: hidden, source, updatedAt: '2026-10-01' },
-      ];
-      const result = derive(state);
-      expect(result.resolutions[0]).toMatchObject({
-        status: 'STALE_OVERRIDE',
-        selectedSupplier: null,
-      });
-      expect(result.projection.orders).toEqual([]);
-      expect(state.overrides[0]!.supplier).toBe(hidden);
-      renderWithStore(<SuppliersPage />, state);
-      const select = screen.getByRole('combobox', { name: 'Поставщик SKU1' });
-      expect(
-        within(select)
-          .getAllByRole('option')
-          .map((option) => (option as HTMLOptionElement).value),
-      ).toEqual(['', allowed]);
-    },
-  );
-
-  it('offers only allowed manual candidates and writes the chosen imported supplier name', () => {
-    const set = vi.fn();
-    renderWithStore(<SuppliersPage />, poolState(), set);
-    const select = screen.getByRole('combobox', { name: 'Поставщик SKU1' });
-    expect(
-      within(select).queryByRole('option', { name: new RegExp(hidden) }),
-    ).not.toBeInTheDocument();
-    fireEvent.change(select, { target: { value: allowed } });
-    expect(set).toHaveBeenCalledWith(
-      expect.objectContaining({
-        overrides: [expect.objectContaining({ supplier: allowed })],
-      }),
-    );
-  });
-
-  it('uses the same pool for import readiness, including a report containing only hidden suppliers', () => {
+  it('uses the same pool for import readiness when the report contains only hidden suppliers', () => {
     renderWithStore(<ImportPage />, poolState([hidden]));
-    expect(screen.getByText(/нет поставщика:/i)).toHaveTextContent('1');
+    expect(screen.getByText(/без основного поставщика/i)).toHaveTextContent('1');
   });
 
   it('hides excluded filter options and ignores a saved hidden supplier filter without losing demand', () => {
     const state = poolState([allowed, hidden]);
-    state.uiPreferences['demand:all:filters'] = {
-      ...emptyDemandFilters,
-      supplier: hidden,
-    };
+    state.uiPreferences['demand:all:filters'] = { ...emptyDemandFilters, supplier: hidden };
     renderWithStore(<DemandPage />, state);
     const filter = screen.getByRole('combobox', { name: 'Поставщик' });
-    expect(
-      within(filter).queryByRole('option', { name: hidden }),
-    ).not.toBeInTheDocument();
+    expect(within(filter).queryByRole('option', { name: hidden })).not.toBeInTheDocument();
     expect(filter).toHaveValue('');
     expect(screen.getByText('Товар 1')).toBeInTheDocument();
   });

@@ -54,7 +54,10 @@ export function downloadAcceptedTransfersCsv(
   );
 }
 
-export async function downloadReadyOrdersZip(orders: Order[]): Promise<void> {
+export async function downloadReadyOrdersZip(
+  orders: Order[],
+  beforeDownload?: () => Promise<void>,
+): Promise<void> {
   const zip = new JSZip();
   const date = new Date();
 
@@ -64,5 +67,7 @@ export async function downloadReadyOrdersZip(orders: Order[]): Promise<void> {
     zip.file(orderCsvFilename(order, date), orderToCsv(order));
   }
 
-  save(await zip.generateAsync({ type: 'blob' }), ordersZipFilename(date));
+  const blob = await zip.generateAsync({ type: 'blob' });
+  await beforeDownload?.();
+  save(blob, ordersZipFilename(date));
 }

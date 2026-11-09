@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
-import { calculateDemand } from '../../domain/demand';
-import { resolveSuppliers } from '../../domain/suppliers';
-import { isSupplierInPool } from '../../domain/supplierPool';
+import { derive } from '../../app/selectors';
+import { RebalanceError } from '../../domain/rebalancing/types';
+import { isSupplierInPool, supplierKey } from '../../domain/supplierPool';
 import type { ValidationIssue } from '../../domain/types';
 import { parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
@@ -12,41 +12,56 @@ import { ImportIssues } from './ImportIssues';
 export function ImportPage() {
   const { state, set, commit } = useStore();
   const reads = useRef({ min: 0, sup: 0 });
+  const pendingReads = useRef(new Set<'min' | 'sup'>());
   const [failures, setFailures] = useState({ min: '', sup: '' });
+  const configured = state.supplierAssignments !== undefined;
+  const ready = Boolean(state.minMax && configured);
   const anyLoading = state.minMaxLoading || state.supplierLoading;
-  const supplierPoolCount =
-    state.suppliers?.suppliers.filter(isSupplierInPool).length ?? 0;
+  const supplierPoolCount = new Set(
+    state.suppliers?.suppliers.filter(isSupplierInPool).map(supplierKey),
+  ).size;
+
+  // Cleanup belongs to the session that mounted this import page.
+  useEffect(() => {
+    const active = pendingReads.current;
+    const tokens = reads.current;
+    return () => {
+      if (!active.size) return;
+      for (const kind of active) tokens[kind]++;
+      set({
+        ...(active.has('min') ? { minMaxLoading: false } : {}),
+        ...(active.has('sup') ? { supplierLoading: false } : {}),
+      });
+      active.clear();
+    };
+  }, []);
 
   const supplierResolutionSummary = useMemo(() => {
-    if (!state.minMax || !state.suppliers) {
-      return null;
+    if (!ready) return null;
+    try {
+      const { projection } = derive(state);
+      const unassigned = new Map(
+        projection.unassigned.map(({ demand, supplierResolution }) => [
+          demand.skuCode,
+          supplierResolution.candidates.length,
+        ]),
+      );
+      return {
+        unassigned: unassigned.size,
+        withAdditional: [...unassigned.values()].filter((count) => count > 0)
+          .length,
+      };
+    } catch (error) {
+      // Keep import available so the operator can replace unusable source data.
+      if (error instanceof RebalanceError) return null;
+      throw error;
     }
-
-    const neededSkuCodes = new Set(
-      calculateDemand(state.minMax)
-        .filter((line) => line.deficitQty > 0)
-        .map((line) => line.skuCode),
-    );
-    const resolutions = resolveSuppliers(
-      state.suppliers.history.filter((row) => isSupplierInPool(row.supplier)),
-      state.overrides,
-      [...neededSkuCodes],
-    ).filter((resolution) => neededSkuCodes.has(resolution.skuCode));
-
-    return {
-      multiple: resolutions.filter((item) => item.status === 'MANUAL_REQUIRED')
-        .length,
-      withoutSupplier: resolutions.filter(
-        (item) => item.status === 'UNRESOLVED',
-      ).length,
-      stale: resolutions.filter((item) => item.status === 'STALE_OVERRIDE')
-        .length,
-    };
-  }, [state.minMax, state.suppliers, state.overrides]);
+  }, [ready, state]);
 
   async function load(file: File, kind: 'min' | 'sup') {
     const token = ++reads.current[kind],
       epoch = state.importEpoch;
+    pendingReads.current.add(kind);
     set(kind === 'min' ? { minMaxLoading: true } : { supplierLoading: true });
     setFailures((previous) => ({ ...previous, [kind]: '' }));
     try {
@@ -79,7 +94,9 @@ export function ImportPage() {
         lastModified: file.lastModified,
       };
       const update = (current: typeof state) =>
-        reads.current[kind] !== token || current.importEpoch !== epoch
+        reads.current[kind] !== token ||
+        current.importEpoch !== epoch ||
+        (kind === 'sup' && current.supplierAssignments !== undefined)
           ? {}
           : {
               ...(kind === 'min'
@@ -100,8 +117,6 @@ export function ImportPage() {
                 [kind === 'min' ? 'minMax' : 'suppliers']: ref,
               },
               pendingFiles: [{ ...ref, bytes }],
-              reviewedOrderIds: [],
-              exportedOrderIds: [],
               toast: 'Отчёт успешно распознан и сохранён.',
             };
       if (commit) await commit(update);
@@ -114,12 +129,14 @@ export function ImportPage() {
             'Не удалось прочитать или сохранить файл. Предыдущий отчёт сохранён. Повторите выбор файла.',
         }));
     } finally {
-      if (reads.current[kind] === token)
+      if (reads.current[kind] === token) {
+        pendingReads.current.delete(kind);
         set(
           kind === 'min'
             ? { minMaxLoading: false }
             : { supplierLoading: false },
         );
+      }
     }
   }
 
@@ -129,28 +146,36 @@ export function ImportPage() {
         <p className="eyebrow">Рабочий сеанс</p>
         <h1>Импорт отчётов 1С</h1>
         <p>
-          Загрузите два отчёта. Они обрабатываются только в браузере и никуда не
-          отправляются.
+          {configured
+            ? 'Для следующей недели загрузите только отчёт MIN/MAX.'
+            : 'Для начала загрузите отчёты MIN/MAX и поставщиков в любом порядке.'}{' '}
+          Файлы обрабатываются только в браузере.
         </p>
       </header>
       <details className="import-help">
         <summary>Какие отчёты загрузить</summary>
         <p>
           MIN/MAX — отчёт с кодом, артикулом, наименованием, остатками и
-          нормативами по подразделениям. Поставщики — история закупок с кодом
-          товара, контрагентом, количеством и стоимостью. Товары сопоставляются
-          по полному коду 1С.
+          нормативами по подразделениям и закупочной ценой. При первом запуске
+          отчёт поставщиков связывает товары с контрагентами по полному коду 1С.
         </p>
       </details>
 
       {anyLoading && <Alert>Обработка отчёта…</Alert>}
       {failures.min && <Alert tone="danger">MIN/MAX: {failures.min}</Alert>}
       {failures.sup && <Alert tone="danger">Поставщики: {failures.sup}</Alert>}
-      {(state.minMax || state.suppliers) && (
+      {configured && (
         <p>
-          Замена отчёта создаёт новый сеанс без принятых перемещений и ручных
-          количеств. Предыдущая работа остаётся в истории.
+          После успешной загрузки текущий сеанс останется в истории. Новый
+          сеанс сохранит назначения поставщиков, маршруты и условия.
+          Принятые перемещения, ручные количества и отметки заказов сбросятся.
         </p>
+      )}
+      {!configured && state.suppliers && (
+        <p>Осталось загрузить отчёт MIN/MAX.</p>
+      )}
+      {!configured && state.minMax && (
+        <p>Осталось загрузить отчёт поставщиков.</p>
       )}
 
       <div className="upload-grid">
@@ -174,11 +199,10 @@ export function ImportPage() {
           fileName={state.supplierFileName}
           ready={Boolean(state.suppliers)}
           busy={state.supplierLoading}
+          locked={configured}
           summary={
             state.suppliers
-              ? `${supplierPoolCount} поставщиков в рабочем пуле · скрыто: ${
-                  state.suppliers.suppliers.length - supplierPoolCount
-                } · ${state.suppliers.history.length} связок в исходном отчёте`
+              ? `${supplierPoolCount} поставщиков в рабочем пуле · ${state.suppliers.history.length} связок в исходном отчёте`
               : null
           }
           issues={state.supplierIssues}
@@ -191,34 +215,30 @@ export function ImportPage() {
           <h2>Готовность к формированию заказов</h2>
           <div className="resolution-grid">
             <span>
-              Несколько поставщиков:{' '}
-              <strong>{supplierResolutionSummary.multiple}</strong>
+              Без основного поставщика{' '}
+              <strong>{supplierResolutionSummary.unassigned}</strong>
             </span>
             <span>
-              Нет поставщика:{' '}
-              <strong>{supplierResolutionSummary.withoutSupplier}</strong>
-            </span>
-            <span>
-              Устаревший выбор:{' '}
-              <strong>{supplierResolutionSummary.stale}</strong>
+              Из них с дополнительными{' '}
+              <strong>{supplierResolutionSummary.withAdditional}</strong>
             </span>
           </div>
           <p>
-            Эти позиции не потеряются: приложение оставит их в блоке «Требуют
-            решения» до выбора поставщика.
+            Назначьте им основного поставщика в разделе «Поставщики», чтобы
+            добавить потребность в заказы.
           </p>
         </section>
       )}
 
       <Button
-        disabled={!state.minMax || !state.suppliers || anyLoading}
+        disabled={!ready || anyLoading}
         onClick={() => set({ page: 'all', toast: 'Потребность рассчитана.' })}
       >
         Перейти к потребности
       </Button>
-      {state.minMax && state.suppliers && !anyLoading && (
+      {ready && !anyLoading && (
         <p className="import-ready" role="status">
-          Оба отчёта загружены. Можно перейти к работе с потребностью.
+          Отчёт MIN/MAX сохранён. Можно перейти к работе с потребностью.
         </p>
       )}
     </main>
@@ -231,6 +251,7 @@ function FileCard({
   fileName,
   ready,
   busy,
+  locked = false,
   summary,
   issues,
   onFile,
@@ -240,6 +261,7 @@ function FileCard({
   fileName: string | null;
   ready: boolean;
   busy: boolean;
+  locked?: boolean;
   summary: string | null;
   issues: ValidationIssue[];
   onFile: (file: File) => void;
@@ -259,34 +281,38 @@ function FileCard({
       <p>{accept.replaceAll(',', ' / ')} · отчёт из 1С</p>
       {fileName && <div className="file-name">{fileName}</div>}
 
-      <label className="button secondary">
-        {busy ? 'Обработка…' : fileName ? 'Заменить файл' : 'Выбрать файл'}
-        <input
-          className="sr-only"
-          aria-label={`Выбрать файл ${title}`}
-          type="file"
-          accept={accept}
-          disabled={busy}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) {
-              onFile(file);
-              event.target.value = '';
-            }
-          }}
-        />
-      </label>
+      {!locked && (
+        <label className="button secondary">
+          {busy ? 'Обработка…' : fileName ? 'Заменить файл' : 'Выбрать файл'}
+          <input
+            className="sr-only"
+            aria-label={`Выбрать файл ${title}`}
+            type="file"
+            accept={accept}
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                onFile(file);
+                event.target.value = '';
+              }
+            }}
+          />
+        </label>
+      )}
 
       <strong
         className={ready ? 'success' : errors.length ? 'danger-text' : ''}
       >
-        {busy
-          ? 'Обработка файла…'
-          : ready
-            ? 'Успешно распознан'
-            : errors.length
-              ? 'Файл требует исправления'
-              : 'Файл не загружен'}
+        {locked
+          ? 'Использован при первичной настройке'
+          : busy
+            ? 'Обработка файла…'
+            : ready
+              ? 'Успешно распознан'
+              : errors.length
+                ? 'Файл требует исправления'
+                : 'Файл не загружен'}
       </strong>
       {summary && <small>{summary}</small>}
       {(warnings.length > 0 || errors.length > 0) && (

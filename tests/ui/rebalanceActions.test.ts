@@ -5,6 +5,7 @@ import {
   createProposal,
   prepareAcceptedChange,
 } from '../../src/app/rebalanceActions';
+import { seedSupplierAssignments } from '../../src/domain/supplierAssignments';
 import { derive } from '../../src/app/selectors';
 import { snapshot, config } from '../fixtures/rebalanceFixtures';
 function state() {
@@ -43,6 +44,7 @@ function state() {
       },
     ],
   };
+  s.supplierAssignments = seedSupplierAssignments(s.suppliers.history);
   s.rebalance = {
     ...s.rebalance,
     registry: data.branches,

@@ -85,6 +85,27 @@ describe('route matrix', () => {
     ).toBeDisabled();
   });
 
+  it('replaces automatic suspension with an explicit participation choice', () => {
+    const onRegistryChange = vi.fn();
+    render(
+      <RoutesMatrix
+        registry={[
+          ...branches.slice(0, 2),
+          { ...branches[2]!, suspendedByImport: true },
+        ]}
+        value={{ mode: 'ALL_ALLOWED', pairs: [] }}
+        onChange={vi.fn()}
+        onRegistryChange={onRegistryChange}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole('checkbox', { name: 'Участие Склад В' })[0]!);
+    expect(onRegistryChange.mock.calls[0]?.[0][2]).toEqual({
+      ...branches[2],
+      active: true,
+    });
+  });
+
   it.each(['строка', 'столбец'])(
     'configures only receives relative to selected branch from %s including off-page counterparts',
     (axis) => {

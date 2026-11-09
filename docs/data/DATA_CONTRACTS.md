@@ -64,10 +64,10 @@ export interface SupplierHistory {
 
 export interface SupplierCandidate extends SupplierHistory {}
 
-export interface SupplierOverride {
+export interface SupplierAssignment {
   skuCode: string;
-  supplier: string;
-  updatedAt: string;
+  primary: string | null;
+  additional: string[];
 }
 
 export type SupplierResolutionStatus =
@@ -85,7 +85,7 @@ export interface SupplierResolution {
   recommendedSupplier: string | null;
 }
 
-export type PriceSource = 'SUPPLIER_HISTORY' | 'MIN_MAX_FALLBACK' | 'MISSING';
+export type PriceSource = 'MIN_MAX' | 'MISSING';
 
 export interface DemandLine {
   skuCode: string;
@@ -163,7 +163,7 @@ export interface Order {
 
 ## 4. Supplier parsing contract
 
-Парсер и сохранённый `SupplierDataset` содержат полный исходный список, включая поставщиков вне рабочего пула. Ограничение32 поставщиков по `SPEC.md` применяется при построении рабочей проекции; оно не меняет parsing, SKU keys, названия в истории/назначениях и storage DTO.
+Парсер и сохранённый `SupplierDataset` содержат полный исходный список, включая поставщиков вне рабочего пула. Ограничение32 поставщиков по `SPEC.md` применяется при построении рабочей проекции; он применяется при заполнении связей. Исходные названия сохраняются в отчёте, а связи используют канонические имена рабочего пула.
 
 Парсер должен сначала найти header row по alias-наборам, а не фиксированному номеру строки.
 
@@ -281,12 +281,18 @@ RebalanceWorkspace.tab дополнен accepted. Optional acceptedFilters:{quer
 Выбор принятых строк к отмене — временные transferId, отдельно от persisted proposal selectedLineIds/sourceLineId и от выбора направлений реестра. Новых полей workspace/IndexedDB не вводится. Команда массовой отмены передаёт deduplicated transferIds в существующий prepareAcceptedChange(kind=revoke), ревизия/снимок/сеанс проверяются существующим механизмом. Ошибка записи не меняет ledger/потребность, подтверждение и выбор сохраняются для повтора.
 
 
-### Ручное назначение без истории ·03.11.2026
-
-SupplierOverride содержит optional allowWithoutHistory:boolean. Значение true фиксируется только при явном ручном выборе компании из рабочего пула для SKU без доступных исторических кандидатов. resolveSuppliers разрешает такой выбор при source!=AUTO и isSupplierInPool; candidates остаются реальной историей. Для явного назначения из пула выбирается эквивалентное имя кандидата текущего SKU, затем известное имя компании в отчёте, иначе имя из пула. Старые overrides без признака сохраняют прежнюю проверку исчезнувшего кандидата. Workspace schemaVersion1 и IndexedDBv2 не меняются: optional поле сохраняется существующим whole-state DTO и legacy supplierOverrides store. Источник цены определяется существующим priceDemand, без синтетических SupplierHistory.
-
 ### Исключение по остатку ·06.11.2026
 
 RebalanceConfig хранит необязательное `stockAmountException: { enabled: boolean, multiplier: 2 | 3 }`. Отсутствующее значение эквивалентно выключенному режиму ×2. При выключенном режиме отпечаток прежних условий сохраняется. Для принятых строк, допущенных по остатку, необязательное `amountExemptByStock: true` фиксирует право пропустить проверку суммы и предупреждения при последующей отмене или восстановлении сеанса. Поля сохраняются существующим DTO без миграции.
 
 Совместный подбор доноров по SKU использует версию `full-sku-joint-donor-plan-v7`. Старые предложения требуют пересчёта. Принятые строки читаются по сохранённым условиям и остаются доступны для отмены. Если детерминированный бюджет поиска исчерпан, `RebalanceIssue` с кодом `TRANSFER_SEARCH_LIMIT` указывает SKU, для которого оптимальность не проверена до конца. Формат данных сеанса сохраняется.
+
+## Постоянные связи поставщиков · 09.11.2026
+
+Рабочий снимок хранит `supplierAssignments?: SupplierAssignment[]`, где строка имеет поля `skuCode: string`, `primary: string | null` и `additional: string[]`. Отсутствие коллекции означает, что стартовое сопоставление ещё не выполнено. Пустая коллекция означает, что первичный отчёт принят, но в нём нет связей с рабочим пулом. Значение `primary: null` хранит отсутствие основного поставщика.
+
+Связи записываются в той же транзакции, что и рабочий снимок. Обновление MIN/MAX наследует их целиком. История сеансов сохраняет снимок связей для каждого периода. Контракт рассчитан на первичную настройку по отчёту поставщиков.
+
+### Участие подразделений при обновлении MIN/MAX
+
+Подразделение, которое участвовало в перемещениях и отсутствует в новом MIN/MAX, получает `active: false` и `suspendedByImport: true`. При возврате в отчёт участие восстанавливается с тем же ID и маршрутами. Явная смена участия убирает признак временного отключения.

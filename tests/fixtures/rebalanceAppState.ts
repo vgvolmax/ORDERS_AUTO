@@ -1,3 +1,4 @@
+import { seedSupplierAssignments } from '../../src/domain/supplierAssignments';
 import { createInitialState } from '../../src/app/initialState';
 export function rebalanceAppState() {
   const state = createInitialState({ page: 'rebalancing' });
@@ -35,6 +36,7 @@ export function rebalanceAppState() {
       },
     ],
   };
+  state.supplierAssignments = seedSupplierAssignments(state.suppliers.history);
   state.rebalance.registry = branches.map((name, i) => ({
     id: `b${i}`,
     name,

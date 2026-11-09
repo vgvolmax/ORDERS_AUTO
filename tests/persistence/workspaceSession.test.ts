@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { baseState } from '../ui/renderWithStore';
+import { seedSupplierAssignments } from '../../src/domain/supplierAssignments';
 import { derive } from '../../src/app/selectors';
 import { createInitialState } from '../../src/app/initialState';
 import { createWorkspaceSession } from '../../src/app/workspaceSession';
@@ -104,6 +105,7 @@ describe('persist then publish workspace commands', () => {
       skuCode: 'SKU2',
       supplier: otherSupplier,
     });
+    initial.supplierAssignments = seedSupplierAssignments(initial.suppliers!.history);
     const before = derive(initial);
     const other = before.projection.orders.find(
       (order) => order.supplier === otherSupplier,
@@ -169,6 +171,7 @@ describe('persist then publish workspace commands', () => {
       { ...first, skuCode: 'A' },
       { ...first, skuCode: 'A\0B', supplier: otherSupplier },
     ];
+    initial.supplierAssignments = seedSupplierAssignments(initial.suppliers!.history);
     const ids = derive(initial).projection.orders.map((order) => order.id);
     initial.reviewedOrderIds = ids;
     initial.exportedOrderIds = ids;

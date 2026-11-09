@@ -78,7 +78,7 @@ export function WorkspaceSidebar({
             onClick={onImport}
           >
             <BrandIcon name="upload" />{' '}
-            {branches ? 'Загрузить новые отчёты' : 'Импорт отчётов'}
+            {branches ? 'Обновить MIN/MAX' : 'Импорт отчётов'}
           </button>
           <button
             type="button"

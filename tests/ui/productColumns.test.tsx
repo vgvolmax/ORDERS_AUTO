@@ -59,15 +59,13 @@ it('identifies the product with full code, article and name when selecting its s
   state.minMax!.skus[0]!.article = 'ART-123';
   state.minMax!.skus[0]!.name = 'Полное имя товара';
   renderWithStore(<SuppliersPage />, state);
-  const panel = screen
-    .getByRole('heading', { name: /Требуют решения ·/ })
-    .closest('section')!;
+  const panel = screen.getByRole('table');
   expect(within(panel).getByText('ART-123')).toBeVisible();
   expect(within(panel).getByText('Полное имя товара')).toBeVisible();
   expect(
     within(panel)
       .getAllByRole('columnheader')
-      .filter((h) => h.textContent)
+      .filter((h) => h.textContent !== 'Выбор')
       .slice(0, 3)
       .map((h) => h.textContent),
   ).toEqual(['Код', 'Артикул', 'Наименование']);
@@ -89,18 +87,18 @@ it('preserves supplier selections hidden by product search when selecting or cle
   renderWithStore(<SuppliersPage />, state);
   fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать SKU1' }));
   fireEvent.change(
-    screen.getByLabelText('Поиск товара для выбора поставщика'),
+    screen.getByLabelText('Поиск товара'),
     { target: { value: 'ART-TWO' } },
   );
   fireEvent.click(
     screen.getByRole('checkbox', { name: 'Выбрать все позиции' }),
   );
-  expect(screen.getByText('Отмечено: 2')).toBeVisible();
+  expect(screen.getByRole('status')).toHaveTextContent('Отмечено: 2');
   fireEvent.click(
     screen.getByRole('checkbox', { name: 'Выбрать все позиции' }),
   );
   fireEvent.change(
-    screen.getByLabelText('Поиск товара для выбора поставщика'),
+    screen.getByLabelText('Поиск товара'),
     { target: { value: '' } },
   );
   expect(screen.getByRole('checkbox', { name: 'Выбрать SKU1' })).toBeChecked();

@@ -51,18 +51,19 @@ function deferredFile(bytes: ArrayBuffer, name: string) {
     reject: () => reject(new Error('read failed')),
   };
 }
-async function seed() {
-  await workspaces.saveWorkspace(
-    workspaceFromState(
-      baseState({
-        workspaceRevision: 0,
-        page: 'import',
-        minMaxFileName: 'original.xlsx',
-        supplierFileName: 'supplier.xlsx',
-      }),
-    ),
-    -1,
-  );
+async function seed(reportIndex: number) {
+  const initial = baseState({
+    workspaceRevision: 0,
+    page: 'import',
+    minMaxFileName: 'original.xlsx',
+    supplierFileName: 'supplier.xlsx',
+  });
+  if (reportIndex === 1) {
+    initial.minMax = null;
+    initial.minMaxFileName = null;
+    delete initial.supplierAssignments;
+  }
+  await workspaces.saveWorkspace(workspaceFromState(initial), -1);
   render(<App />);
   return screen.findAllByLabelText(/выбрать файл/i);
 }
@@ -73,17 +74,17 @@ async function reopen() {
     await screen.findByRole('button', { name: 'Открыть сохранённый сеанс' }),
   );
   const inputs = await screen.findAllByLabelText(/выбрать файл/i);
-  await waitFor(() => expect(inputs[0]).not.toBeDisabled());
   return inputs;
 }
 
 it.each(reports)(
   'ignores an obsolete $key read after reopening and importing a newer report',
   async ({ index, key, build }) => {
-    const inputs = await seed();
+    const inputs = await seed(index);
     const late = deferredFile(build(), 'old-slow.xlsx');
     fireEvent.change(inputs[index]!, { target: { files: [late.file] } });
     const freshInputs = await reopen();
+    await waitFor(() => expect(freshInputs[index]).toBeEnabled());
     fireEvent.change(freshInputs[index]!, {
       target: { files: [new File([build()], 'newer.xlsx')] },
     });
@@ -107,10 +108,11 @@ it.each(
 )(
   'does not let an obsolete $key $outcome clear the replacement session loading state',
   async ({ index, build, outcome }) => {
-    const inputs = await seed();
+    const inputs = await seed(index);
     const late = deferredFile(build(), 'old-slow.xlsx');
     fireEvent.change(inputs[index]!, { target: { files: [late.file] } });
     const freshInputs = await reopen();
+    await waitFor(() => expect(freshInputs[index]).toBeEnabled());
     const fresh = deferredFile(build(), 'newer.xlsx');
     fireEvent.change(freshInputs[index]!, { target: { files: [fresh.file] } });
     try {

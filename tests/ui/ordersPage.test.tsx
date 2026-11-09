@@ -6,7 +6,9 @@ import {
   within,
 } from '@testing-library/react';
 import { useRef, useState } from 'react';
-import { createWorkspaceSession } from '../../src/app/workspaceSession';
+import { createWorkspaceSession, workspaceFromState } from '../../src/app/workspaceSession';
+import { saveWorkspace } from '../../src/persistence/workspaces';
+import { IDBFactory } from 'fake-indexeddb';
 import type { StatePatch } from '../../src/app/appStore';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrdersPage } from '../../src/features/orders/OrdersPage';
@@ -53,6 +55,7 @@ vi.mock('../../src/export/supplierWorkbook', () => ({
 
 describe('OrdersPage', () => {
   beforeEach(() => {
+    mocks.save.mockClear();
     mocks.downloadReadyOrdersZip.mockReset();
     mocks.downloadReadyOrdersZip.mockResolvedValue(undefined);
     mocks.buildSupplierWorkbook.mockReset();
@@ -148,6 +151,36 @@ describe('OrdersPage', () => {
           'Не удалось сформировать Excel для ИП Баранов Роман Борисович. Повторите выгрузку.',
       }),
     );
+  });
+
+  it('does not download a workbook once another tab replaces the revision during generation', async () => {
+    const previousIndexedDB = globalThis.indexedDB;
+    globalThis.indexedDB = new IDBFactory();
+    try {
+      const state = baseState({ workspaceRevision: 0 });
+      await saveWorkspace(workspaceFromState(state), -1);
+      let finish!: (buffer: ArrayBuffer) => void;
+      mocks.buildSupplierWorkbook.mockImplementationOnce(
+        () => new Promise<ArrayBuffer>((resolve) => { finish = resolve; }),
+      );
+      const commit = vi.fn().mockResolvedValue(undefined);
+      render(
+        <StoreContext.Provider value={{ state, set: () => undefined, commit }}>
+          <OrdersPage />
+        </StoreContext.Provider>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: /excel все/i }));
+      await saveWorkspace(workspaceFromState({ ...state, workspaceRevision: 1 }), 0);
+      finish(new ArrayBuffer(8));
+
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent('сеанс изменился'),
+      );
+      expect(mocks.save).not.toHaveBeenCalled();
+      expect(commit).not.toHaveBeenCalled();
+    } finally {
+      globalThis.indexedDB = previousIndexedDB;
+    }
   });
 
   it('keeps global all/reviewed exports independent from supplier search', async () => {

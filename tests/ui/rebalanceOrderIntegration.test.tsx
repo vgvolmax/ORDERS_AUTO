@@ -54,7 +54,9 @@ it('fully covered SKU leaves supplier problems, and remains accessible among all
   state.suppliers!.history = [];
   state.suppliers!.suppliers = [];
   const view = renderWithStore(<SuppliersPage />, state);
-  expect(screen.queryByText('Код SKU1')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Связи SKU1' })).toBeVisible();
+  fireEvent.click(screen.getByLabelText('Есть потребность'));
+  expect(screen.queryByRole('button', { name: 'Связи SKU1' })).not.toBeInTheDocument();
   view.unmount();
   renderWithStore(<DemandPage />, state);
   fireEvent.click(
