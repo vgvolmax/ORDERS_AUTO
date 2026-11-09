@@ -11,12 +11,14 @@ import {
   loadActiveWorkspace,
   loadWorkspace,
   loadWorkspaceFile,
+  saveWorkspace,
 } from '../../src/persistence/workspaces';
 import { App } from '../../src/app/App';
 import { ImportPage } from '../../src/features/import/ImportPage';
 import { createProposal, prepareAcceptedChange } from '../../src/app/rebalanceActions';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
-import { renderWithStore } from './renderWithStore';
+import { workspaceFromState } from '../../src/app/workspaceSession';
+import { baseState, renderWithStore } from './renderWithStore';
 import {
   buildMinMaxFixture,
   buildSupplierFixture,
@@ -88,6 +90,39 @@ describe('import workflow', () => {
     expect(
       screen.getByRole('button', { name: /перейти к потребности/i }),
     ).toBeEnabled();
+  });
+
+  it('continues a saved import with both reports and no supplier assignments', async () => {
+    const initial = baseState({
+      page: 'import',
+      workspaceRevision: 0,
+      minMaxFileName: 'Min-Max.xlsx',
+      supplierFileName: 'Поставщики.xls',
+    });
+    delete initial.supplierAssignments;
+    await saveWorkspace(workspaceFromState(initial), -1);
+    render(<App />);
+
+    const next = await screen.findByRole('button', { name: 'Перейти к потребности' });
+    expect(next).toBeEnabled();
+    expect(screen.queryByText(/Осталось загрузить/)).not.toBeInTheDocument();
+    fireEvent.click(next);
+
+    await waitFor(async () => {
+      const saved = await loadActiveWorkspace();
+      expect(saved?.workspaceId).toBe(initial.workspaceId);
+      expect(saved?.data).toMatchObject({
+        page: 'all',
+        minMaxFileName: 'Min-Max.xlsx',
+        supplierFileName: 'Поставщики.xls',
+        supplierAssignments: [{
+          skuCode: 'SKU1',
+          primary: 'ИП Баранов Роман Борисович',
+          additional: [],
+        }],
+      });
+    });
+    expect(screen.getByRole('button', { name: /^Заказы$/ })).toBeEnabled();
   });
 
   it('keeps each report busy until its own read finishes', async () => {

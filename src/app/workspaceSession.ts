@@ -134,7 +134,9 @@ export function createWorkspaceSession({
           next.supplierAssignments === undefined &&
           next.minMax &&
           next.suppliers &&
-          (minMaxChanged || next.suppliers !== previous.suppliers)
+          (minMaxChanged ||
+            next.suppliers !== previous.suppliers ||
+            update.page === 'all')
         )
           next.supplierAssignments = seedSupplierAssignments(
             next.suppliers.history,
