@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import {
@@ -21,21 +22,13 @@ import { baseState } from './renderWithStore';
 const manualSupplier = 'ООО "Терем"';
 const cheapSupplier = 'ООО "Алмаз"';
 
-function ambiguousState() {
-  const state = baseState();
-  state.suppliers = {
-    suppliers: [manualSupplier, cheapSupplier],
-    history: [manualSupplier, cheapSupplier].map((supplier, index) => ({
-      ...state.suppliers!.history[0]!,
-      supplier,
-      weightedUnitCost: 100 - index * 40,
-      purchaseAmount: 1000 - index * 400,
-    })),
-  };
-  return state;
+function assignedState() {
+  return baseState({
+    supplierAssignments: [{ skuCode: 'SKU1', primary: manualSupplier, additional: [] }],
+  });
 }
 
-function renderDurable(initial = ambiguousState()) {
+function renderDurable(initial = assignedState()) {
   let release!: () => void;
   let reject!: (error: Error) => void;
   const firstSave = new Promise<void>((resolve, fail) => {
@@ -53,6 +46,8 @@ function renderDurable(initial = ambiguousState()) {
         initial,
         publish,
         save: async (workspace) => {
+          // Ignore view preferences so the first delayed write is a supplier change.
+          if (workspace.data.supplierAssignments === ref.current?.getState().supplierAssignments) return;
           if (++attempts === 1) await firstSave;
           saved.push(structuredClone(workspace));
         },
@@ -88,223 +83,73 @@ function renderDurable(initial = ambiguousState()) {
   };
 }
 
-it('saves a pool supplier without history, restores the fallback price, and recovers from a failed save', async () => {
-  const initial = baseState({ suppliers: { suppliers: [], history: [] } });
-  const harness = renderDurable(initial);
-  const choose = () => fireEvent.change(screen.getByRole('combobox', { name: 'Поставщик SKU1' }), {
-    target: { value: manualSupplier },
-  });
-  choose();
+it('changes the primary after durable save, retains the old primary as additional and can remove either link', async () => {
+  const harness = renderDurable();
+  fireEvent.click(screen.getByRole('button', { name: 'Связи SKU1' }));
+  const dialog = screen.getByRole('dialog');
+  const select = within(dialog).getByLabelText('Основной поставщик');
+  const apply = within(dialog).getByRole('button', { name: 'Сделать основным' });
+  fireEvent.change(select, { target: { value: cheapSupplier } });
+  fireEvent.click(apply);
   await waitFor(() => expect(harness.attempts).toBe(1));
-  expect(screen.getByRole('combobox', { name: 'Поставщик SKU1' })).toBeDisabled();
-  expect(derive(harness.session.getState()).projection.orders).toEqual([]);
-  await act(async () => harness.reject(new Error('quota')));
-  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Поставщик SKU1' })).toBeEnabled());
-  expect(harness.session.getState().overrides).toEqual([]);
-  expect(harness.session.getState().toast).toMatch(/Не удалось сохранить/);
-  choose();
-  await waitFor(() => expect(harness.saved).toHaveLength(1));
-  const restored = stateFromWorkspace(harness.saved[0]!);
-  expect(restored.overrides[0]).toMatchObject({ source: 'MANUAL', allowWithoutHistory: true, supplier: manualSupplier });
-  const result = derive(restored);
-  expect(result.projection.unassigned).toEqual([]);
-  expect(result.projection.orders.map((order) => order.totalAmount)).toEqual([700, 400]);
-  expect(restored.suppliers!.history).toEqual([]);
+  expect(select).toBeDisabled();
+  expect(harness.session.getState().supplierAssignments?.[0]?.primary).toBe(manualSupplier);
 
-  // Choosing the last unresolved SKU must leave its assignment editable.
-  const savedChoice = screen.getByRole('combobox', { name: 'Поставщик SKU1' });
-  expect(savedChoice).toHaveDisplayValue(`Назначен: ${manualSupplier}`);
-  fireEvent.change(savedChoice, { target: { value: cheapSupplier } });
-  await waitFor(() => expect(harness.saved).toHaveLength(2));
+  await act(async () => harness.reject(new Error('quota')));
+  await waitFor(() => expect(apply).toBeEnabled());
+  expect(within(dialog).getByRole('alert')).toHaveTextContent('Не удалось сохранить');
+  expect(select).toHaveValue(cheapSupplier);
+  fireEvent.click(apply);
+  await waitFor(() => expect(harness.saved).toHaveLength(1));
+  expect(stateFromWorkspace(harness.saved[0]!).supplierAssignments).toEqual([
+    { skuCode: 'SKU1', primary: cheapSupplier, additional: [manualSupplier] },
+  ]);
   expect(derive(harness.session.getState()).projection.orders.map((order) => order.supplier))
     .toEqual([cheapSupplier, cheapSupplier]);
-});
 
-it('does not silently convert a disappeared historical choice into permission to select without history', async () => {
-  const harness = renderDurable();
-  act(() => { void harness.session.commit({ suppliers: { suppliers: [], history: [] } }); });
-  await waitFor(() => expect(harness.attempts).toBe(1));
-  fireEvent.change(screen.getByRole('combobox', { name: 'Поставщик SKU1' }), {
-    target: { value: manualSupplier },
-  });
-  await act(async () => harness.release());
-  await waitFor(() => expect(harness.session.getState().toast).toMatch(/Не удалось сохранить/));
-  expect(harness.session.getState().overrides).toEqual([]);
+  const extraSelect = within(dialog).getByLabelText('Дополнительный поставщик');
+  const thirdSupplier = 'ООО "Термаснаб"';
+  fireEvent.change(extraSelect, { target: { value: thirdSupplier } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Добавить' }));
+  await waitFor(() => expect(harness.saved).toHaveLength(2));
+  fireEvent.click(within(dialog).getByRole('button', { name: `Удалить ${manualSupplier}` }));
+  await waitFor(() => expect(harness.saved).toHaveLength(3));
+  expect(derive(harness.session.getState()).projection.orders.map((order) => order.supplier))
+    .toEqual([cheapSupplier, cheapSupplier]);
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Снять основного' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Снять основного поставщика' })).getByRole('button', { name: 'Снять' }));
+  await waitFor(() => expect(harness.saved).toHaveLength(4));
+  expect(stateFromWorkspace(harness.saved[3]!).supplierAssignments).toEqual([
+    { skuCode: 'SKU1', primary: null, additional: [thirdSupplier] },
+  ]);
   expect(derive(harness.session.getState()).projection.orders).toEqual([]);
 });
 
-it.each([false, true])(
-  'locks conflicting controls during a historical supplier save and keeps the row editable; stale choice=%s',
-  async (staleChoice) => {
-    const initial = ambiguousState();
-    if (staleChoice) {
-      initial.overrides = [
-        {
-          skuCode: 'SKU1',
-          supplier: 'Поставщик из старого отчёта',
-          source: 'MANUAL',
-          updatedAt: '2026-10-22',
-        },
-      ];
-    }
-    const harness = renderDurable(initial);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Поставщик SKU1' }), {
-      target: { value: manualSupplier },
-    });
-    await waitFor(() => expect(harness.attempts).toBe(1));
-    expect(
-      screen.getByRole('combobox', { name: 'Поставщик SKU1' }),
-    ).toBeDisabled();
-    const auto = screen.getByRole('button', { name: 'Применить автовыбор' });
-    expect(auto).toBeDisabled();
-    expect(
-      screen.getByRole('checkbox', { name: 'Перезаписать ручные назначения' }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole('combobox', { name: 'Область применения' }),
-    ).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: 'Выбрать SKU1' })).toBeDisabled();
-    expect(screen.getByText('Сохраняем выбор…')).toBeVisible();
-    fireEvent.click(auto);
-    await act(async () => harness.release());
-    await waitFor(() =>
-      expect(harness.session.getState().overrides[0]).toMatchObject({
-        supplier: manualSupplier,
-        source: 'MANUAL',
-      }),
-    );
-    expect(
-      harness.saved.filter((w) =>
-        w.data.overrides.some((o) => o.source === 'AUTO'),
-      ),
-    ).toHaveLength(0);
-    expect(
-      derive(harness.session.getState()).projection.orders.every(
-        (order) => order.lines[0]!.unitPrice === 100,
-      ),
-    ).toBe(true);
-    expect(
-      screen.getByRole('combobox', { name: 'Поставщик SKU1' }),
-    ).toHaveDisplayValue(`Назначен: ${manualSupplier}`);
-  },
-);
-
-it.each([false, true])(
-  'revalidates a queued manual choice at commit; explicit overwrite=%s',
-  async (overwriteManual) => {
-    const initial = ambiguousState();
-    initial.uiPreferences['suppliers:overwriteManual'] = overwriteManual;
-    const harness = renderDurable(initial);
-    // The page still shows the previous committed snapshot while this preceding command saves.
-    let preceding!: Promise<void>;
-    act(() => {
-      preceding = harness.session.commit({
-        overrides: [
-          {
-            skuCode: 'SKU1',
-            supplier: manualSupplier,
-            source: 'MANUAL',
-            updatedAt: '2026-10-22',
-          },
-        ],
-      });
-    });
-    await waitFor(() => expect(harness.attempts).toBe(1));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Применить автовыбор' }),
-    );
-    await act(async () => {
-      harness.release();
-      await preceding;
-    });
-    await waitFor(() => expect(harness.saved.length).toBeGreaterThanOrEqual(2));
-    expect(harness.session.getState().overrides[0]).toMatchObject({
-      supplier: overwriteManual ? cheapSupplier : manualSupplier,
-      source: overwriteManual ? 'AUTO' : 'MANUAL',
-    });
-  },
-);
-
-it('uses current historical prices when an earlier queued report replacement finishes', async () => {
-  const initial = ambiguousState();
-  const harness = renderDurable(initial);
-  const suppliers = {
-    ...initial.suppliers!,
-    history: initial.suppliers!.history.map((row) =>
-      row.supplier === cheapSupplier
-        ? { ...row, weightedUnitCost: 120, purchaseAmount: 1200 }
-        : row,
-    ),
-  };
-  act(() => {
-    void harness.session.commit({ suppliers });
-  });
+it('previews only explicit bulk choices and retains the selection and supplier after a save failure', async () => {
+  const state = assignedState();
+  state.minMax!.skus.push({ ...state.minMax!.skus[0]!, code: 'SKU2' });
+  const harness = renderDurable(state);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать SKU1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Назначить основного выбранным' }));
+  const dialog = screen.getByRole('dialog', { name: 'Назначить основного выбранным' });
+  const select = within(dialog).getByLabelText('Основной поставщик');
+  const apply = within(dialog).getByRole('button', { name: 'Назначить' });
+  fireEvent.change(select, { target: { value: cheapSupplier } });
+  expect(dialog).toHaveTextContent('Выбрано товаров: 1');
+  expect(dialog).toHaveTextContent('Будет заменено основных: 1');
+  fireEvent.click(apply);
   await waitFor(() => expect(harness.attempts).toBe(1));
-  fireEvent.click(screen.getByRole('button', { name: 'Применить автовыбор' }));
-  await act(async () => harness.release());
-  await waitFor(() => expect(harness.saved.length).toBeGreaterThanOrEqual(2));
-  expect(harness.session.getState().overrides[0]).toMatchObject({
-    supplier: manualSupplier,
-    source: 'AUTO',
-  });
+  expect(apply).toBeDisabled();
+  await act(async () => harness.reject(new Error('quota')));
+  await waitFor(() => expect(apply).toBeEnabled());
+  expect(select).toHaveValue(cheapSupplier);
+  expect(within(dialog).getByRole('alert')).toBeVisible();
+  expect(harness.session.getState().supplierAssignments).toEqual(state.supplierAssignments);
+  fireEvent.click(apply);
+  await waitFor(() => expect(harness.saved).toHaveLength(1));
+  expect(harness.session.getState().supplierAssignments).toEqual([
+    { skuCode: 'SKU1', primary: cheapSupplier, additional: [manualSupplier] },
+  ]);
+  expect(screen.getByRole('checkbox', { name: 'Выбрать SKU1' })).not.toBeChecked();
 });
-
-it('does not assign a supplier to demand that disappeared before the queued automation executes', async () => {
-  const initial = ambiguousState();
-  const harness = renderDurable(initial);
-  act(() => {
-    void harness.session.commit({
-      minMax: {
-        ...initial.minMax!,
-        branchStocks: initial.minMax!.branchStocks.map((row) => ({
-          ...row,
-          stock: row.max!,
-        })),
-      },
-    });
-  });
-  await waitFor(() => expect(harness.attempts).toBe(1));
-  fireEvent.click(screen.getByRole('button', { name: 'Применить автовыбор' }));
-  await act(async () => harness.release());
-  await waitFor(() => expect(harness.saved.length).toBeGreaterThanOrEqual(2));
-  expect(harness.session.getState().overrides).toEqual([]);
-  expect(derive(harness.session.getState()).projection.orders).toEqual([]);
-});
-
-it.each(['manual', 'auto'] as const)(
-  'recovers from a failed %s save without changing the previous choice or selection, then retries',
-  async (operation) => {
-    const initial = ambiguousState();
-    initial.uiPreferences['suppliers:selectedCodes'] = ['SKU1'];
-    const harness = renderDurable(initial);
-    const run = () =>
-      operation === 'manual'
-        ? fireEvent.change(
-            screen.getByRole('combobox', { name: 'Поставщик SKU1' }),
-            { target: { value: manualSupplier } },
-          )
-        : fireEvent.click(
-            screen.getByRole('button', { name: 'Применить автовыбор' }),
-          );
-    run();
-    await waitFor(() => expect(harness.attempts).toBe(1));
-    await act(async () => harness.reject(new Error('quota')));
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Применить автовыбор' }),
-      ).toBeEnabled(),
-    );
-    expect(harness.session.getState().overrides).toEqual([]);
-    expect(
-      screen.getByRole('checkbox', { name: 'Выбрать SKU1' }),
-    ).toBeChecked();
-    expect(harness.saved).toEqual([]);
-    expect(harness.session.getState().toast).toMatch(/Не удалось сохранить/);
-    run();
-    await waitFor(() =>
-      expect(harness.session.getState().overrides[0]?.supplier).toBe(
-        operation === 'manual' ? manualSupplier : cheapSupplier,
-      ),
-    );
-  },
-);

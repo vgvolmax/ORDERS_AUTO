@@ -13,7 +13,6 @@ export function createInitialState(patch: Partial<AppState> = {}): AppState {
     supplierFileName: null,
     minMaxIssues: [],
     supplierIssues: [],
-    overrides: [],
     edits: [],
     settings: { minimumOrderAmount: 0, thresholdMode: 'SUPPLIER_TOTAL' },
     reviewedOrderIds: [],

@@ -2,10 +2,10 @@ import type {
   MinMaxDataset,
   SupplierDataset,
   ValidationIssue,
-  SupplierOverride,
   OrderQtyEdit,
   OrderSettings,
 } from './types';
+import type { SupplierAssignment } from './supplierAssignments';
 import type {
   BranchRegistry,
   SkuQuantityPolicy,
@@ -53,7 +53,8 @@ export interface WorkspaceData {
   supplierFileName: string | null;
   minMaxIssues: ValidationIssue[];
   supplierIssues: ValidationIssue[];
-  overrides: SupplierOverride[];
+  /** Undefined until both startup reports are accepted; an empty array is initialized. */
+  supplierAssignments?: SupplierAssignment[];
   edits: OrderQtyEdit[];
   settings: OrderSettings;
   reviewedOrderIds: string[];

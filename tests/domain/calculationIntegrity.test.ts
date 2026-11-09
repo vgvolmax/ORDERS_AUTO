@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseMinMaxWorkbook } from '../../src/import/minMaxParser';
 import { parseSupplierWorkbook } from '../../src/import/supplierParser';
 import { createInitialState } from '../../src/app/initialState';
+import { seedSupplierAssignments } from '../../src/domain/supplierAssignments';
 import { derive } from '../../src/app/selectors';
 import { buildWorkbook } from '../fixtures/workbookBuilders';
 import {
@@ -69,6 +70,7 @@ function imported(
   const state = createInitialState({
     minMax: min.data,
     suppliers: sup.data,
+    supplierAssignments: seedSupplierAssignments(sup.data.history),
     minMaxIssues: min.issues,
     supplierIssues: sup.issues,
   });
@@ -79,7 +81,7 @@ function imported(
 describe('calculation audit regressions: import → purchasing → orders', () => {
   it('keeps fractional physical need exact at the monetary threshold', () => {
     const x = imported(
-      [sku(), branch('Ленина', 0.1, 0.3)],
+      [sku('SKU1', 1), branch('Ленина', 0.1, 0.3)],
       [history('SKU1', 1, 1)],
       { minimumOrderAmount: 0.2 },
     );
@@ -101,7 +103,7 @@ describe('calculation audit regressions: import → purchasing → orders', () =
       });
       expect(x.result.purchaseDemand[0]).toMatchObject({
         unitPrice: 100,
-        priceSource: 'MIN_MAX_FALLBACK',
+        priceSource: 'MIN_MAX',
       });
     },
   );
@@ -124,10 +126,10 @@ describe('calculation audit regressions: import → purchasing → orders', () =
     expect(x.result.projection.orders[0]!.totalAmount).toBe(1000);
   });
 
-  it('blocks missing supplier amount when there is no fallback', () => {
+  it('blocks a missing MIN/MAX price even when the initial report has a price', () => {
     const x = imported(
       [sku('SKU1', null), branch()],
-      [history('SKU1', 10, null)],
+      [history('SKU1', 10, 1000)],
     );
     expect(x.result.projection.orders[0]).toMatchObject({
       status: 'BLOCKED',
@@ -138,13 +140,13 @@ describe('calculation audit regressions: import → purchasing → orders', () =
     );
   });
 
-  it('keeps explicitly known zero cost valid', () => {
-    const x = imported([sku(), branch()], [history('SKU1', 10, 0)]);
+  it('keeps explicitly known zero MIN/MAX cost valid', () => {
+    const x = imported([sku('SKU1', 0), branch()], [history('SKU1', 10, 1000)]);
     expect(x.result.projection.orders[0]).toMatchObject({
       status: 'READY',
       totalAmount: 0,
     });
-    expect(x.result.purchaseDemand[0]!.priceSource).toBe('SUPPLIER_HISTORY');
+    expect(x.result.purchaseDemand[0]!.priceSource).toBe('MIN_MAX');
   });
 
   it('preserves signed returns in a complete supplier history', () => {
@@ -161,7 +163,7 @@ describe('calculation audit regressions: import → purchasing → orders', () =
 
   it('does not accumulate binary errors in weighted supplier price', () => {
     const x = imported(
-      [sku(), branch('Ленина', 0, 2)],
+      [sku('SKU1', 15.15), branch('Ленина', 0, 2)],
       [history('SKU1', 1, 10.1), history('SKU1', 1, 20.2)],
       { minimumOrderAmount: 30.3 },
     );
@@ -305,9 +307,9 @@ describe('calculation audit regressions: import → purchasing → orders', () =
     (thresholdMode) => {
       const x = imported(
         [
-          sku('SKU1'),
+          sku('SKU1', 10.1),
           branch('Ленина', 0, 1),
-          sku('SKU2'),
+          sku('SKU2', 20.2),
           branch(
             thresholdMode === 'SUPPLIER_TOTAL' ? 'Ступино' : 'Ленина',
             0,
@@ -327,8 +329,8 @@ describe('calculation audit regressions: import → purchasing → orders', () =
 
   it('does not accept a genuinely lower sub-cent amount by rounding or epsilon', () => {
     const x = imported(
-      [sku(), branch('Ленина', 0, 1)],
-      [history('SKU1', 1, 30.299999999)],
+      [sku('SKU1', 30.299999999), branch('Ленина', 0, 1)],
+      [history('SKU1', 1, 100)],
       { minimumOrderAmount: 30.3 },
     );
     expect(x.result.projection.orders[0]!.belowThreshold).toBe(true);
@@ -337,9 +339,9 @@ describe('calculation audit regressions: import → purchasing → orders', () =
   it('uses exact edited products and exports the same decimal totals', async () => {
     const x = imported(
       [
-        sku('SKU1'),
+        sku('SKU1', 0.1),
         branch('Ленина', 0, 1),
-        sku('SKU2'),
+        sku('SKU2', 0.2),
         branch('Ленина', 0, 1),
       ],
       [history('SKU1', 1, 0.1), history('SKU2', 1, 0.2)],

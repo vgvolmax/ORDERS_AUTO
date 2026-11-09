@@ -3,7 +3,8 @@ import {
   reconcileOrderQtyEdits,
   reusePurchasingProjection,
 } from './selectors';
-import { buildAcceptedTransferStatePatch } from '../domain/rebalanceWorkflow';
+import { changedOrderIds } from '../domain/rebalanceWorkflow';
+import { seedSupplierAssignments } from '../domain/supplierAssignments';
 import type { AppState, StatePatch } from './appStore';
 import type { StoredWorkspace, WorkspaceFile } from '../domain/workspace';
 import { createInitialState, reconcileRegistry } from './initialState';
@@ -15,7 +16,7 @@ export function workspaceFromState(state: AppState): StoredWorkspace {
     supplierFileName,
     minMaxIssues,
     supplierIssues,
-    overrides,
+    supplierAssignments,
     edits,
     settings,
     reviewedOrderIds,
@@ -39,7 +40,7 @@ export function workspaceFromState(state: AppState): StoredWorkspace {
       supplierFileName,
       minMaxIssues,
       supplierIssues,
-      overrides,
+      ...(supplierAssignments === undefined ? {} : { supplierAssignments }),
       edits,
       settings,
       reviewedOrderIds,
@@ -113,15 +114,40 @@ export function createWorkspaceSession({
         const update = typeof patch === 'function' ? patch(state) : patch;
         if (!Object.keys(update).length) return;
         const previous = state;
+        if (
+          previous.supplierAssignments !== undefined &&
+          update.suppliers !== undefined
+        ) {
+          return;
+        }
         let next = {
           ...state,
           ...update,
           workspaceRevision: state.workspaceRevision + 1,
         };
+        const minMaxChanged = next.minMax !== previous.minMax;
         const replaced =
-          (update.minMax !== undefined && update.minMax !== state.minMax) ||
-          (update.suppliers !== undefined &&
-            update.suppliers !== state.suppliers);
+          minMaxChanged &&
+          previous.minMax !== null &&
+          previous.supplierAssignments !== undefined;
+        if (
+          next.supplierAssignments === undefined &&
+          next.minMax &&
+          next.suppliers &&
+          (minMaxChanged || next.suppliers !== previous.suppliers)
+        )
+          next.supplierAssignments = seedSupplierAssignments(
+            next.suppliers.history,
+          );
+        if (minMaxChanged)
+          next.rebalance = {
+            ...next.rebalance,
+            registry: reconcileRegistry(
+              next.rebalance.registry,
+              next.minMax?.branches ?? [],
+              id,
+            ),
+          };
         if (replaced)
           next = {
             ...next,
@@ -134,11 +160,6 @@ export function createWorkspaceSession({
             exportedOrderIds: [],
             rebalance: {
               ...next.rebalance,
-              registry: reconcileRegistry(
-                next.rebalance.registry,
-                next.minMax?.branches ?? [],
-                id,
-              ),
               accepted: [],
               acceptedRevision: 0,
               proposal: null,
@@ -147,10 +168,12 @@ export function createWorkspaceSession({
             },
           };
         if (
-          !replaced &&
-          (update.edits || update.overrides || update.settings)
+          !minMaxChanged &&
+          (previous.edits !== next.edits ||
+            previous.settings !== next.settings ||
+            previous.supplierAssignments !== next.supplierAssignments)
         ) {
-          const scoped = update.edits
+          const scoped = previous.edits !== next.edits
             ? reconcileOrderQtyEdits(previous, next)
             : null;
           if (scoped) {
@@ -158,22 +181,23 @@ export function createWorkspaceSession({
           } else {
             const before = derive(previous);
             const after = derive(next);
-            const workflow = buildAcceptedTransferStatePatch({
-              previousDemand: before.purchaseDemand,
-              nextDemand: after.purchaseDemand,
-              previousProjection: before.projection,
-              resolutions: after.resolutions,
-              settings: next.settings,
-              edits: next.edits,
-              reviewedOrderIds: next.reviewedOrderIds,
-              exportedOrderIds: next.exportedOrderIds,
-            });
-            next = {
-              ...next,
-              edits: workflow.edits,
-              reviewedOrderIds: workflow.reviewedOrderIds,
-              exportedOrderIds: workflow.exportedOrderIds,
-            };
+            const affected = changedOrderIds(
+              before.projection.orders,
+              after.projection.orders,
+            );
+            if (affected.size) {
+              const reconciled = {
+                ...next,
+                reviewedOrderIds: next.reviewedOrderIds.filter(
+                  (id) => !affected.has(id),
+                ),
+                exportedOrderIds: next.exportedOrderIds.filter(
+                  (id) => !affected.has(id),
+                ),
+              };
+              reusePurchasingProjection(next, reconciled);
+              next = reconciled;
+            }
           }
         }
         reusePurchasingProjection(previous, next);
@@ -192,6 +216,7 @@ export function createWorkspaceSession({
           ...next,
           pendingFiles: [],
           storageError: null,
+          page: update.page ?? state.page,
           toast: update.toast === undefined ? state.toast : update.toast,
           minMaxLoading: update.minMaxLoading ?? state.minMaxLoading,
           supplierLoading: update.supplierLoading ?? state.supplierLoading,

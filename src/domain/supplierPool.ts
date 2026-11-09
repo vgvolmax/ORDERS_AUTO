@@ -39,8 +39,14 @@ export function supplierKey(supplier: string): string {
   return supplier.toLocaleLowerCase('ru-RU').replace(/[\s"'«»„“”‘’]/gu, '');
 }
 
-const approvedKeys = new Set(SUPPLIER_POOL.map(supplierKey));
+const approvedNames = new Map(
+  SUPPLIER_POOL.map((supplier) => [supplierKey(supplier), supplier]),
+);
+
+export function canonicalSupplierName(supplier: string): string | undefined {
+  return approvedNames.get(supplierKey(supplier));
+}
 
 export function isSupplierInPool(supplier: string): boolean {
-  return approvedKeys.has(supplierKey(supplier));
+  return canonicalSupplierName(supplier) !== undefined;
 }

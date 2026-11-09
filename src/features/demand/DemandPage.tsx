@@ -9,7 +9,7 @@ import { money, fmtQty } from '../../format/numbers';
 export { money, fmtQty } from '../../format/numbers';
 import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
 import type { PurchaseDemandLine } from '../../domain/purchaseDemand';
-import { isSupplierInPool, supplierKey } from '../../domain/supplierPool';
+import { canonicalSupplierName } from '../../domain/supplierPool';
 import { useStore } from '../../app/appStore';
 import {
   emptyDemandFilters,
@@ -69,20 +69,21 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     null,
   );
 
-  const supplierOptions = useMemo(
-    () =>
-      [...new Set([
-        ...(state.suppliers?.suppliers ?? []),
-        ...derived.resolutions.flatMap((resolution) =>
-          resolution.selectedSupplier ? [resolution.selectedSupplier] : [],
-        ),
-      ])].filter(isSupplierInPool),
-    [state.suppliers, derived.resolutions],
-  );
+  const supplierOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const name of state.suppliers?.suppliers ?? []) {
+      const canonical = canonicalSupplierName(name);
+      if (canonical) names.add(canonical);
+    }
+    for (const { selectedSupplier } of derived.resolutions) {
+      if (selectedSupplier) names.add(selectedSupplier);
+    }
+    return [...names];
+  }, [state.suppliers, derived.resolutions]);
   let supplier = savedFilters.supplier;
   if (supplier && supplier !== '__UNASSIGNED__' && !supplierOptions.includes(supplier)) {
-    const savedKey = supplierKey(supplier);
-    supplier = supplierOptions.find((name) => supplierKey(name) === savedKey) ?? '';
+    const canonical = canonicalSupplierName(supplier);
+    supplier = canonical && supplierOptions.includes(canonical) ? canonical : '';
   }
   const filters = supplier === savedFilters.supplier
     ? savedFilters
@@ -755,6 +756,6 @@ export function priceSourceLabel(
   source: PricedDemandLine['priceSource'],
 ): string {
   if (source === 'SUPPLIER_HISTORY') return 'История закупок';
-  if (source === 'MIN_MAX_FALLBACK') return 'Цена MIN/MAX';
+  if (source === 'MIN_MAX' || source === 'MIN_MAX_FALLBACK') return 'Цена MIN/MAX';
   return 'Нет цены';
 }

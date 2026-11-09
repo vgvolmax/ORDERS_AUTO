@@ -113,11 +113,11 @@ describe('accepted transfer purchasing invalidation', () => {
     const before = changed(state(), 3),
       after = {
         ...before,
-        suppliers: {
-          ...before.suppliers!,
-          history: before.suppliers!.history.map((row) => ({
-            ...row,
-            weightedUnitCost: 120,
+        minMax: {
+          ...before.minMax!,
+          skus: before.minMax!.skus.map((sku) => ({
+            ...sku,
+            referencePrice: 120,
           })),
         },
       };

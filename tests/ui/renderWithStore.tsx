@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { render } from '@testing-library/react';
+import { seedSupplierAssignments } from '../../src/domain/supplierAssignments';
 import { createInitialState } from '../../src/app/initialState';
 import {
   StoreContext,
@@ -18,7 +19,7 @@ export function renderWithStore(
 }
 
 export function baseState(overrides: Partial<AppState> = {}): AppState {
-  return {
+  const state: AppState = {
     ...createInitialState(),
     minMax: {
       skus: [
@@ -54,7 +55,6 @@ export function baseState(overrides: Partial<AppState> = {}): AppState {
     supplierFileName: null,
     minMaxIssues: [],
     supplierIssues: [],
-    overrides: [],
     edits: [],
     settings: { minimumOrderAmount: 0, thresholdMode: 'SUPPLIER_TOTAL' },
     reviewedOrderIds: [],
@@ -65,4 +65,8 @@ export function baseState(overrides: Partial<AppState> = {}): AppState {
     supplierLoading: false,
     ...overrides,
   };
+  if (!Object.hasOwn(overrides, 'supplierAssignments') && state.suppliers) {
+    state.supplierAssignments = seedSupplierAssignments(state.suppliers.history);
+  }
+  return state;
 }

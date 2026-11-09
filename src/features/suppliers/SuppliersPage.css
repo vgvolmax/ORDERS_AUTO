@@ -1,0 +1,110 @@
+.suppliers-page .supplier-views {
+  grid-template-columns: repeat(2, minmax(135px, 175px));
+  margin: 0 0 12px;
+}
+
+.suppliers-page .supplier-views button[aria-pressed="true"] {
+  border-color: var(--blue);
+  background: var(--button-primary);
+  color: #fff;
+}
+
+.suppliers-page .supplier-views button[aria-pressed="true"]:hover:enabled:not(:active) {
+  background: var(--button-hover);
+  color: #fff;
+}
+
+.suppliers-page .supplier-product-filters {
+  align-items: end;
+}
+
+.suppliers-page .supplier-product-filters > label {
+  flex: 1 1 135px;
+  min-width: 0;
+}
+
+.suppliers-page .supplier-product-filters > label:first-child {
+  flex-basis: 235px;
+}
+
+.suppliers-page .supplier-product-filters > .checkbox-control {
+  flex: 0 0 auto;
+  min-height: 35px;
+}
+
+.supplier-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 8px 0;
+}
+
+.supplier-bulk-bar > :last-child {
+  margin-inline-start: auto;
+}
+
+.supplier-dialog-content {
+  display: grid;
+  gap: 14px;
+  overflow-wrap: anywhere;
+}
+
+.supplier-dialog-content h3,
+.supplier-dialog-content p {
+  margin: 0 0 6px;
+}
+
+.supplier-dialog-content > section {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.supplier-dialog-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.supplier-dialog-field {
+  display: grid;
+  flex: 1 1 225px;
+  min-width: 0;
+  gap: 4px;
+}
+
+.supplier-dialog-field > .input {
+  width: 100%;
+  min-width: 0;
+}
+
+.supplier-extra-list {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.supplier-extra-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.supplier-view-panels {
+  position: relative;
+}
+
+/* Keep the virtual rows measurable and the scroll position intact across views. */
+.supplier-products-view[hidden] {
+  display: block;
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0;
+  overflow: clip;
+  visibility: hidden;
+}

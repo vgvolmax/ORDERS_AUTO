@@ -40,15 +40,7 @@ it('restores an excluded choice as unresolved and persists an explicit allowed r
     ...state.suppliers!.history[0]!,
     supplier: hidden,
   });
-  state.overrides = [
-    {
-      skuCode: 'SKU1',
-      supplier: hidden,
-      source: 'MANUAL',
-      updatedAt: '2026-10-01',
-    },
-  ];
-  state.reviewedOrderIds = state.exportedOrderIds = [`Ленина\0${hidden}`];
+  state.supplierAssignments = [];
   await saveWorkspace(workspaceFromState(state), -1);
   render(<App />);
   await screen.findByRole('heading', { name: 'Заказы' });
@@ -59,15 +51,23 @@ it('restores an excluded choice as unresolved and persists an explicit allowed r
     screen.getByRole('button', { name: 'Скачать все (0)' }),
   ).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Поставщики' }));
-  const choice = await screen.findByRole('combobox', {
-    name: 'Поставщик SKU1',
+  fireEvent.click(await screen.findByRole('button', { name: 'Связи SKU1' }));
+  const dialog = screen.getByRole('dialog', { name: 'Связи товара' });
+  const choice = within(dialog).getByRole('combobox', {
+    name: 'Основной поставщик',
   });
-  expect(within(choice).getAllByRole('option')).toHaveLength(2);
-  expect(screen.getByText(/не входит в рабочий пул/)).toBeVisible();
+  expect(within(choice).getAllByRole('option')).toHaveLength(33);
+  expect(within(choice).queryByRole('option', { name: hidden })).toBeNull();
   fireEvent.change(choice, { target: { value: allowed } });
-  await waitFor(() => expect(choice).toHaveDisplayValue(`Назначен: ${allowed}`));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Сделать основным' }));
+  await waitFor(() =>
+    expect(within(dialog).getByRole('region', { name: 'Текущий основной поставщик' }))
+      .toHaveTextContent(allowed),
+  );
   const saved = (await loadActiveWorkspace())!.data;
-  expect(saved.overrides[0]!.supplier).toBe(allowed);
+  expect(saved.supplierAssignments).toEqual([
+    { skuCode: 'SKU1', primary: allowed, additional: [] },
+  ]);
   expect(saved.suppliers!.history.some((row) => row.supplier === hidden)).toBe(
     true,
   );

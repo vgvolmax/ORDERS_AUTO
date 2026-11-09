@@ -2,13 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { DemandPage } from '../features/demand/DemandPage';
 import { WorkspaceHistoryPage } from '../features/workspaces/WorkspaceHistoryPage';
 import { RebalancingPage } from '../features/rebalancing/RebalancingPage';
-import { Dialog } from '../components/Dialog';
-import { Button } from '../components/ui';
 import { ImportPage } from '../features/import/ImportPage';
 import { OrdersPage } from '../features/orders/OrdersPage';
 import { SuppliersPage } from '../features/suppliers/SuppliersPage';
-import { getSupplierOverrides } from '../persistence/supplierOverrides';
-import { getSettings } from '../persistence/settings';
 import { StoreContext, type AppState, type StatePatch } from './appStore';
 import { createInitialState } from './initialState';
 import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
@@ -22,7 +18,6 @@ export function App() {
   const [initializing, setInitializing] = useState(true);
   const [pending, setPending] = useState(0);
   const [retry, setRetry] = useState(0);
-  const [newImportOpen, setNewImportOpen] = useState(false);
   const session = useRef<ReturnType<typeof createWorkspaceSession> | null>(
     null,
   );
@@ -104,10 +99,7 @@ export function App() {
         const active = await loadActiveWorkspace();
         const initial = active
           ? stateFromWorkspace(active)
-          : createInitialState({
-              overrides: await getSupplierOverrides(),
-              settings: await getSettings(),
-            });
+          : createInitialState();
         if (!cancelled) {
           initial.importEpoch = importEpoch;
           const nextSession: ReturnType<typeof createWorkspaceSession> =
@@ -168,30 +160,12 @@ export function App() {
         </button>
       </main>
     );
-  const imported = Boolean(state.minMax && state.suppliers);
-  const resetImports = () => {
-    set((s) => ({
-      importEpoch: s.importEpoch + 1,
-      minMaxLoading: false,
-      supplierLoading: false,
-      minMax: null,
-      suppliers: null,
-      minMaxFileName: null,
-      supplierFileName: null,
-      minMaxIssues: [],
-      supplierIssues: [],
-      rawImports: { minMax: null, suppliers: null },
-      page: 'import',
-    }));
-  };
-
   const navigation = {
     page: state.page,
-    branches: imported ? state.minMax!.branches : undefined,
+    branches: state.supplierAssignments ? state.minMax?.branches : undefined,
     onNavigate: (page: AppState['page']) => set({ page }),
     onImport: () => {
-      if (imported) setNewImportOpen(true);
-      else if (state.page !== 'import') set({ page: 'import' });
+      if (state.page !== 'import') owner?.transient({ page: 'import' });
     },
   };
   const statusTone = pending
@@ -251,36 +225,6 @@ export function App() {
           )}
         </div>
 
-        {newImportOpen && (
-          <Dialog
-            title="Загрузить новые отчёты?"
-            onClose={() => setNewImportOpen(false)}
-            actions={
-              <>
-                <Button
-                  className="secondary"
-                  onClick={() => setNewImportOpen(false)}
-                >
-                  Отмена
-                </Button>
-                <Button
-                  onClick={() => {
-                    resetImports();
-                    setNewImportOpen(false);
-                  }}
-                >
-                  Начать новый сеанс
-                </Button>
-              </>
-            }
-          >
-            <p>
-              Текущая работа останется в истории. В новом сеансе принятые
-              перемещения, ручные количества и отметки заказов будут сброшены.
-              Настройки маршрутов и условий сохранятся.
-            </p>
-          </Dialog>
-        )}
         {state.toast && <AppToast message={state.toast} />}
       </div>
     </StoreContext.Provider>

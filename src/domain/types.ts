@@ -67,7 +67,11 @@ export interface SupplierResolution {
   recommendedSupplier: string | null;
 }
 
-export type PriceSource = 'SUPPLIER_HISTORY' | 'MIN_MAX_FALLBACK' | 'MISSING';
+export type PriceSource =
+  | 'SUPPLIER_HISTORY'
+  | 'MIN_MAX_FALLBACK'
+  | 'MIN_MAX'
+  | 'MISSING';
 
 export interface DemandLine {
   skuCode: string;
