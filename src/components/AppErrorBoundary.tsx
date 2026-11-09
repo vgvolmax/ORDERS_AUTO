@@ -23,10 +23,10 @@ export class AppErrorBoundary extends Component<Props, State> {
     if (this.state.failed) {
       return (
         <div className="startup-fallback app-failure" role="alert">
-          <strong>ORDERS_AUTO не смог продолжить работу</strong>
+          <strong>«Волмакс Буст» не смог продолжить работу</strong>
           <p>
             Перезагрузите приложение. Если ошибка повторяется, скачайте и распакуйте
-            свежую версию ORDERS_AUTO целиком, снова откройте index.html и сообщите,
+            архив ORDERS_AUTO.zip целиком, снова откройте index.html и сообщите,
             на каком действии возник сбой.
           </p>
         </div>
