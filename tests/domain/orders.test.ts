@@ -144,6 +144,47 @@ describe('buildOrderProjection', () => {
     },
   );
 
+  it.each([
+    [500, 'BLOCKED'],
+    [1000, 'READY'],
+  ] as const)(
+    'excludes a priced order blocked by source data from the supplier minimum (%i ₽, %s)',
+    (availableAmount, expectedStatus) => {
+      const projection = buildOrderProjection(
+        [
+          demand({ unitPrice: availableAmount / 10 }),
+          demand({ skuCode: 'SKU2', branch: 'Ступино', unitPrice: 60 }),
+          demand({ skuCode: 'SKU3', branch: 'Ступино', unitPrice: 60 }),
+        ],
+        [resolved, { ...resolved, skuCode: 'SKU2' }, { ...resolved, skuCode: 'SKU3' }],
+        [],
+        { minimumOrderAmount: 1000, thresholdMode: 'SUPPLIER_TOTAL' },
+        [
+          {
+            severity: 'ERROR',
+            code: 'DUPLICATE_SKU_BRANCH',
+            message: 'Повторная строка подразделения',
+            skuCode: 'SKU2',
+            branch: 'Ступино',
+          },
+        ],
+      );
+
+      expect(projection.orders[0]).toMatchObject({
+        totalAmount: availableAmount,
+        status: expectedStatus,
+        belowThreshold: expectedStatus === 'BLOCKED',
+      });
+      expect(projection.orders[1]).toMatchObject({
+        totalAmount: 1200,
+        status: 'BLOCKED',
+      });
+      expect(projection.orders[1]?.blockers).toContain(
+        'Ошибка данных MIN/MAX: SKU2 / Ступино',
+      );
+    },
+  );
+
   it('hard-blocks an order when a positive line has no price', () => {
     const projection = buildOrderProjection(
       [demand({ unitPrice: null, demandAmount: null, priceSource: 'MISSING' })],

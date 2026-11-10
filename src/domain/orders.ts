@@ -167,8 +167,8 @@ export function buildOrderProjection(
 
   const supplierLines = new Map<string, Order['lines']>();
   for (const order of orders) {
-    // An unpriced order cannot be exported or contribute to the supplier minimum.
-    if (order.totalAmount === null) continue;
+    // At this stage blockers only describe orders that cannot be exported at any threshold.
+    if (order.blockers.length > 0) continue;
     const lines = supplierLines.get(order.supplier) ?? [];
     lines.push(...order.lines.filter((line) => line.orderQty > 0));
     supplierLines.set(order.supplier, lines);

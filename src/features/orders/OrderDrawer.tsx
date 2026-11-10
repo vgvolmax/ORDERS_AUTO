@@ -10,6 +10,7 @@ import { fmtQty, money, priceSourceLabel } from '../demand/DemandPage';
 
 export function OrderDrawer({
   order,
+  exported,
   onClose,
   onEdit,
   onReviewedChange,
@@ -20,6 +21,7 @@ export function OrderDrawer({
   exportError = '',
 }: {
   order: WorkflowOrder;
+  exported: boolean;
   saving?: boolean | undefined;
   exportError?: string;
   renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
@@ -99,6 +101,7 @@ export function OrderDrawer({
                   {order.reviewed ? '✓ Заказ проверен' : 'Заказ не проверен'}
                 </span>
               </label>
+              {exported && <span className="badge OK">Выгружен</span>}
               {order.manualEditCount > 0 && (
                 <span className="manual-indicator">
                   ✋ {order.manualEditCount} изменено

@@ -419,7 +419,7 @@ export function OrdersPage({
           label="Выгружены"
           icon="download"
           tone="neutral"
-          value={orders.filter((order) => order.status === 'EXPORTED').length}
+          value={orders.filter((order) => exportedIds.has(order.id)).length}
         />
         <MetricCard
           label="Заблокированы"
@@ -593,6 +593,10 @@ export function OrdersPage({
                                   ? 'Выгружен'
                                   : 'Заблокирован'}
                             </span>
+                            {order.status === 'BLOCKED' &&
+                              exportedIds.has(order.id) && (
+                                <span className="badge OK">Выгружен</span>
+                              )}
                             {order.blockers.map((blocker) => (
                               <small key={blocker}>{blocker}</small>
                             ))}
@@ -640,6 +644,7 @@ export function OrdersPage({
       {selected && (
         <OrderDrawer
           order={selected}
+          exported={exportedIds.has(selected.id)}
           exportError={exportError}
           saving={Boolean(busy || saving)}
           renderMovement={renderOrderMovement}
@@ -663,6 +668,7 @@ export function OrdersPage({
           saving={Boolean(busy || saving)}
           renderMovement={renderOrderMovement}
           orders={selectedSupplierOrders}
+          exportedOrderIds={exportedIds}
           branchOrder={branches}
           widthPreferences={
             state.uiPreferences.supplierMatrixWidths as
