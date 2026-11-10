@@ -147,7 +147,7 @@ function buildPurchasingBasis(state: AppState): PurchasingBasis | null {
   );
   const demandBySupplier = new Map<string, PurchaseDemandLine[]>();
   for (const line of purchaseDemand) {
-    if (line.selectedSupplier === null) continue;
+    if (line.selectedSupplier === null || line.purchaseQty <= 0) continue;
     const rows = demandBySupplier.get(line.selectedSupplier) ?? [];
     rows.push(line);
     demandBySupplier.set(line.selectedSupplier, rows);

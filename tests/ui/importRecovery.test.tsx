@@ -21,7 +21,11 @@ vi.mock('../../src/persistence/workspaces', async (importOriginal) => {
   const actual = await importOriginal<
     typeof import('../../src/persistence/workspaces')
   >();
-  return { ...actual, saveWorkspace: vi.fn(actual.saveWorkspace) };
+  return {
+    ...actual,
+    saveWorkspace: vi.fn(actual.saveWorkspace),
+    saveWorkspaceView: vi.fn(actual.saveWorkspaceView),
+  };
 });
 beforeEach(async () => {
   vi.stubGlobal('indexedDB', new IDBFactory());
@@ -31,6 +35,7 @@ beforeEach(async () => {
   vi.mocked(workspaces.saveWorkspace)
     .mockReset()
     .mockImplementation(actual.saveWorkspace);
+  vi.mocked(workspaces.saveWorkspaceView).mockReset().mockImplementation(actual.saveWorkspaceView);
 });
 const reports = [
   { index: 0, key: 'minMaxFileName' as const, build: buildMinMaxFixture },
@@ -68,7 +73,7 @@ async function seed(reportIndex: number) {
   return screen.findAllByLabelText(/выбрать файл/i);
 }
 async function reopen() {
-  vi.mocked(workspaces.saveWorkspace).mockRejectedValueOnce(new Error('quota'));
+  vi.mocked(workspaces.saveWorkspaceView).mockRejectedValueOnce(new Error('quota'));
   fireEvent.click(screen.getByRole('button', { name: 'История сеансов' }));
   fireEvent.click(
     await screen.findByRole('button', { name: 'Открыть сохранённый сеанс' }),

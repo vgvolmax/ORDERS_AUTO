@@ -9,7 +9,7 @@ import { SuppliersPage } from '../features/suppliers/SuppliersPage';
 import { StoreContext, type AppState, type StatePatch } from './appStore';
 import { createInitialState } from './initialState';
 import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
-import { loadActiveWorkspace, saveWorkspace } from '../persistence/workspaces';
+import { loadActiveWorkspace, saveWorkspace, saveWorkspaceView } from '../persistence/workspaces';
 import { usePageScroll } from './usePageScroll';
 import { AppToast } from '../components/AppToast';
 import { Dialog } from '../components/Dialog';
@@ -115,6 +115,7 @@ export function App() {
             createWorkspaceSession({
               initial,
               save: saveWorkspace,
+              saveView: saveWorkspaceView,
               publish: (next) => {
                 if (session.current === nextSession) setState(next);
               },

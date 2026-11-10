@@ -42,6 +42,7 @@ export interface ImportFileRef {
   type: string;
   size: number;
   lastModified: number;
+  parserVersion?: number;
 }
 export interface WorkspaceFile extends ImportFileRef {
   bytes: ArrayBuffer;
@@ -82,3 +83,28 @@ export type WorkspaceMetadata = Pick<
   StoredWorkspace,
   'workspaceId' | 'revision' | 'snapshotId' | 'createdAt' | 'updatedAt'
 > & { minMaxFileName: string | null; supplierFileName: string | null };
+
+export const rebalanceViewKeys = ['tab', 'query', 'resultScope', 'acceptedFilters'] as const;
+
+export type WorkspaceView = Pick<WorkspaceData, 'page' | 'uiPreferences'> & {
+  rebalance: Pick<RebalanceWorkspace, (typeof rebalanceViewKeys)[number]>;
+};
+
+export function workspaceView(data: WorkspaceData): WorkspaceView {
+  const { tab, query, resultScope, acceptedFilters } = data.rebalance;
+  return { page: data.page, uiPreferences: data.uiPreferences,
+    rebalance: {
+      tab,
+      query,
+      ...(resultScope === undefined ? {} : { resultScope }),
+      ...(acceptedFilters === undefined ? {} : { acceptedFilters }),
+    },
+  };
+}
+
+export function applyWorkspaceView<T extends WorkspaceData>(data: T, view: WorkspaceView): T {
+  const rebalance = { ...data.rebalance, ...view.rebalance };
+  if (view.rebalance.resultScope === undefined) delete rebalance.resultScope;
+  if (view.rebalance.acceptedFilters === undefined) delete rebalance.acceptedFilters;
+  return { ...data, ...view, rebalance };
+}

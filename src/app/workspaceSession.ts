@@ -6,7 +6,15 @@ import {
 import { changedOrderIds } from '../domain/rebalanceWorkflow';
 import { seedSupplierAssignments } from '../domain/supplierAssignments';
 import type { AppState, StatePatch } from './appStore';
-import type { StoredWorkspace, WorkspaceFile } from '../domain/workspace';
+import {
+  applyWorkspaceView,
+  rebalanceViewKeys,
+  workspaceView,
+  type StoredWorkspace,
+  type WorkspaceFile,
+  type WorkspaceView,
+} from '../domain/workspace';
+import type { WorkspaceSaveOptions } from '../persistence/workspaces';
 import { createInitialState, reconcileRegistry } from './initialState';
 export function workspaceFromState(state: AppState): StoredWorkspace {
   const {
@@ -61,9 +69,22 @@ export function stateFromWorkspace(w: StoredWorkspace): AppState {
     workspaceCreatedAt: w.createdAt,
   });
 }
+function sameRebalanceData(previous: AppState, next: AppState): boolean {
+  return Object.entries(next.rebalance).every(([key, value]) =>
+    rebalanceViewKeys.some((viewKey) => viewKey === key) ||
+    previous.rebalance[key as keyof AppState['rebalance']] === value,
+  );
+}
+
+function hasViewChanges(previous: AppState, next: AppState): boolean {
+  return next.page !== previous.page || next.uiPreferences !== previous.uiPreferences ||
+    rebalanceViewKeys.some((key) => next.rebalance[key] !== previous.rebalance[key]);
+}
+
 export function createWorkspaceSession({
   initial,
   save,
+  saveView,
   publish,
   id = () => crypto.randomUUID(),
 }: {
@@ -72,7 +93,9 @@ export function createWorkspaceSession({
     w: StoredWorkspace,
     expected: number,
     files?: WorkspaceFile[],
+    options?: WorkspaceSaveOptions,
   ) => Promise<void>;
+  saveView?: (id: string, previous: WorkspaceView, next: WorkspaceView) => Promise<void>;
   publish: (state: AppState) => void;
   id?: () => string;
 }) {
@@ -141,6 +164,27 @@ export function createWorkspaceSession({
           next.supplierAssignments = seedSupplierAssignments(
             next.suppliers.history,
           );
+        const viewChanged = hasViewChanges(previous, next);
+        if (
+          saveView &&
+          next.supplierAssignments === previous.supplierAssignments &&
+          Object.keys(update).every((key) =>
+            key === 'page' || key === 'uiPreferences' || key === 'rebalance' || key === 'toast',
+          ) &&
+          sameRebalanceData(previous, next)
+        ) {
+          const view = workspaceView(next);
+          if (viewChanged && previous.workspaceRevision >= 0)
+            await saveView(previous.workspaceId, workspaceView(previous), view);
+          const published = {
+            ...applyWorkspaceView(state, view),
+            toast: update.toast === undefined ? state.toast : update.toast,
+          };
+          reusePurchasingProjection(state, published);
+          state = published;
+          publish(published);
+          return;
+        }
         if (minMaxChanged)
           next.rebalance = {
             ...next.rebalance,
@@ -213,6 +257,14 @@ export function createWorkspaceSession({
           stored,
           replaced ? -1 : previous.workspaceRevision,
           update.pendingFiles ?? [],
+          {
+            reuseSources: !replaced && !minMaxChanged && next.suppliers === previous.suppliers &&
+              next.minMaxIssues === previous.minMaxIssues && next.supplierIssues === previous.supplierIssues,
+            updateView: viewChanged || replaced || previous.workspaceRevision < 0,
+            ...(viewChanged && !replaced && previous.workspaceRevision >= 0
+              ? { previousView: workspaceView(previous) }
+              : {}),
+          },
         );
         const published = {
           ...next,

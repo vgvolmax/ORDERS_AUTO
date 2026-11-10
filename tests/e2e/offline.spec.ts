@@ -3268,12 +3268,30 @@ test('E2E-23 weekly MIN/MAX carries supplier links and blocks stale and unpriced
       [supplierA, '1', 'Товар 1', 10, 800, 'шт'],
     ])),
   });
-  await page.getByLabel(input).setInputFiles(minMax('week-1.xlsx', [['0001', 100], ['1', 100]]));
+  const firstWeek = minMax('week-1.xlsx', [['0001', 100], ['1', 100]]);
+  await page.getByLabel(input).setInputFiles(firstWeek);
   await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
   await assignPrimary(page, '0001', supplierB);
   await page.getByRole('button', { name: 'Заказы', exact: true }).click();
   await expect(page.getByRole('button', { name: `Все заказы ${supplierB}`, exact: true })).toContainText('2 000,00');
+
+  const browsing = await page.context().newPage();
+  await browsing.goto(entry);
+  await browsing.getByRole('navigation', { name: 'Основная навигация' })
+    .getByRole('button', { name: 'Поставщики', exact: true }).click();
+  await expect(browsing.getByRole('heading', { name: 'Поставщики', exact: true })).toBeVisible();
+  const readyZip = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Скачать все (2)', exact: true }).click();
+  expect((await readyZip).suggestedFilename()).toMatch(/\.zip$/);
+  await browsing.close();
+
+  await page.getByRole('button', { name: 'Обновить MIN/MAX', exact: true }).click();
+  await page.getByLabel(input).setInputFiles(firstWeek);
+  await expect(page.getByText(/Этот отчёт MIN\/MAX уже загружен/)).toBeVisible();
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await expect(page.locator('.order-cell').filter({ hasText: 'Выгружен' })).toHaveCount(2);
 
   const stale = await page.context().newPage();
   await stale.goto(entry);
@@ -3284,7 +3302,7 @@ test('E2E-23 weekly MIN/MAX carries supplier links and blocks stale and unpriced
   await stale.locator('.order-cell').first().click();
   const staleDownloads: string[] = [];
   stale.on('download', (download) => staleDownloads.push(download.suggestedFilename()));
-  await stale.getByRole('button', { name: 'Скачать CSV заказа', exact: true }).click();
+  await stale.getByRole('button', { name: 'Скачать CSV ещё раз', exact: true }).click();
   await expect(stale.getByRole('alert').filter({ hasText: 'Рабочий сеанс изменился' }).first()).toBeVisible();
   expect(staleDownloads).toEqual([]);
   await stale.close();
