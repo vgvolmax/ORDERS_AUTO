@@ -163,3 +163,22 @@ describe('buildSupplierWorkbook', () => {
     expect(wb.getWorksheet('Ленина')!.getCell('G9').value).toBeNull();
   });
 });
+
+it('keeps each branch sheet when names collide or Excel reserves a name', async () => {
+  const branches = ['Склад/', 'склад*', 'ОБЩИЙ ЗАКАЗ', 'History', "Склад'", "'   '"];
+  const supplierOrders = branches.map((branch, i) => ({
+    ...orders[0]!,
+    id: branch,
+    branch,
+    lines: [{ ...orders[0]!.lines[0]!, skuCode: 'SKU-' + (i + 1), branch }],
+  }));
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await buildSupplierWorkbook('Поставщик', supplierOrders));
+
+  expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+    'Общий заказ', 'Склад', 'склад (2)', 'ОБЩИЙ ЗАКАЗ (2)', 'History (2)', 'Склад (3)', 'Лист',
+  ]);
+  expect(workbook.worksheets.slice(1).map((sheet) => sheet.getCell('A9').value)).toEqual([
+    'SKU-1', 'SKU-2', 'SKU-3', 'SKU-4', 'SKU-5', 'SKU-6',
+  ]);
+});

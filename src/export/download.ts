@@ -60,11 +60,18 @@ export async function downloadReadyOrdersZip(
 ): Promise<void> {
   const zip = new JSZip();
   const date = new Date();
+  const usedNames = new Set<string>();
 
   for (const order of orders.filter(
     (item) => item.status === 'READY' || item.status === 'EXPORTED',
   )) {
-    zip.file(orderCsvFilename(order, date), orderToCsv(order));
+    let filename = orderCsvFilename(order, date);
+    const stem = filename.slice(0, -'.csv'.length);
+    for (let suffix = 2; usedNames.has(filename.toLowerCase()); suffix++) {
+      filename = `${stem} (${suffix}).csv`;
+    }
+    usedNames.add(filename.toLowerCase());
+    zip.file(filename, orderToCsv(order));
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });

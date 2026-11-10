@@ -16,6 +16,15 @@ describe('demand rules', () => {
     expect(calculateStockStatus(stock, 20, 40).status).toBe(status);
   });
 
+  it.each([
+    [0.0675, 'YELLOW'],
+    [0.06749999999999999, 'ORANGE'],
+    [0.0225, 'ORANGE'],
+    [0.022499999999999996, 'LIGHT_RED'],
+  ] as const)('compares the decimal coverage boundary for stock %s', (stock, status) => {
+    expect(calculateStockStatus(stock, null, 0.09).status).toBe(status);
+  });
+
   it('handles no norm, invalid norm and stock above MAX', () => {
     expect(calculateStockStatus(5, 2, null).status).toBe('NO_NORM');
     expect(calculateStockStatus(5, 50, 40).status).toBe('INVALID_NORM');

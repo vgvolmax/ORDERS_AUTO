@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import * as downloads from '../../src/export/download';
+import * as workspaces from '../../src/persistence/workspaces';
 import {
   StoreContext,
   type AppState,
@@ -479,7 +480,7 @@ it('shows sender-wide total and selected money while preserving hidden selection
   ).toHaveTextContent('1 500,00');
 });
 
-it('offers CSV only after acceptance and keeps accepted/purchasing state when download fails', () => {
+it('offers CSV only after acceptance and keeps accepted/purchasing state when download fails', async () => {
   let state = rebalanceAppState();
   state.rebalance.proposal = createProposal(state);
   const id = state.rebalance.proposal.transfers[0]!.sourceLineId;
@@ -495,6 +496,10 @@ it('offers CSV only after acceptance and keeps accepted/purchasing state when do
   const current = harness(state);
   const before = structuredClone(current());
   const { drawer } = openRoute();
+  const revision = vi.spyOn(workspaces, 'readActiveWorkspaceRevision').mockResolvedValue({
+    workspaceId: state.workspaceId,
+    revision: state.workspaceRevision,
+  });
   const failure = vi
     .spyOn(downloads, 'downloadTransferCsv')
     .mockImplementation(() => {
@@ -506,7 +511,7 @@ it('offers CSV only after acceptance and keeps accepted/purchasing state when do
         name: 'Скачать CSV принятых позиций (1)',
       }),
     );
-    expect(within(drawer).getByRole('alert')).toHaveTextContent(
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
       'Не удалось скачать CSV',
     );
     expect(current().rebalance.accepted).toEqual(before.rebalance.accepted);
@@ -520,6 +525,7 @@ it('offers CSV only after acceptance and keeps accepted/purchasing state when do
     ).toBeEnabled();
   } finally {
     failure.mockRestore();
+    revision.mockRestore();
   }
 });
 

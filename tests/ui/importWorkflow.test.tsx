@@ -220,3 +220,19 @@ describe('import workflow', () => {
     expect(await loadWorkspace(original.workspaceId)).toEqual(original);
   });
 });
+
+it('keeps the same working week when the identical MIN/MAX file is uploaded again', async () => {
+  vi.stubGlobal('indexedDB', new IDBFactory());
+  render(<App />);
+  const inputs = await screen.findAllByLabelText(/выбрать файл/i);
+  const bytes = buildMinMaxFixture();
+  fireEvent.change(inputs[0]!, { target: { files: [asFile(bytes, 'week.xlsx', '')] } });
+  fireEvent.change(inputs[1]!, { target: { files: [asFile(buildSupplierFixture(), 'suppliers.xlsx', '')] } });
+  const proceed = screen.getByRole('button', { name: /перейти к потребности/i });
+  await waitFor(() => expect(proceed).toBeEnabled());
+  const original = await loadActiveWorkspace();
+  fireEvent.change(inputs[0]!, { target: { files: [asFile(bytes, 'week.xlsx', '')] } });
+  await screen.findByText(/уже загружен/);
+  await waitFor(() => expect(proceed).toBeEnabled());
+  expect(await loadActiveWorkspace()).toEqual(original);
+});

@@ -144,3 +144,26 @@ it('exports uncovered residual separately from partial proposals and recipient b
   );
   expect(wb.getWorksheet('Предложения')!.rowCount).toBe(3);
 });
+
+it('exports exact decimal money for both proposals and uncovered quantities', async () => {
+  const s = rebalanceAppState();
+  s.minMax!.skus[0]!.referencePrice = 0.145;
+  s.minMax!.branchStocks[0]!.stock = 63;
+  s.minMax!.branchStocks[1]!.stock = 60;
+  s.minMax!.branchStocks[2]!.stock = 54;
+  s.minMax!.branchStocks[2]!.min = 60;
+  s.rebalance.proposal = createProposal(s);
+  const d = derive(s), wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await buildRebalancingWorkbook({
+    snapshot: d.snapshot!.snapshot,
+    config: s.rebalance.config,
+    proposal: s.rebalance.proposal,
+    accepted: [],
+    purchaseDemand: d.purchaseDemand,
+    issues: [],
+    workspaceId: s.workspaceId,
+    exportedAt: '2026-10-29T10:00:00Z',
+  }));
+  expect(wb.getWorksheet('Предложения')!.getCell('G2').value).toBe(0.435);
+  expect(wb.getWorksheet('Не распределено')!.getCell('H2').value).toBe(0.435);
+});

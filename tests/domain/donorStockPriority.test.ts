@@ -5,7 +5,7 @@ import type { RebalanceConfig, RebalanceSnapshot } from '../../src/domain/rebala
 import { config } from '../fixtures/rebalanceFixtures';
 
 function calculate(
-  rows: Array<[id: string, stock: number, max: number]>,
+  rows: Array<[id: string, stock: number, max: number, min?: number]>,
   options: Partial<RebalanceConfig> = {},
   price = 100,
 ) {
@@ -14,8 +14,8 @@ function calculate(
     snapshotId: 'donor-priority',
     branches: rows.map(([id]) => ({ id, name: id, active: true, aliases: [] })),
     skus: [{ skuCode: 'SKU', name: 'SKU', unit: 'шт', quantityStep: 1, referencePrice: price }],
-    stocks: rows.map(([branchId, stock, max]) => ({
-      skuCode: 'SKU', branchId, stock, min: max, max, sourceRow: null,
+    stocks: rows.map(([branchId, stock, max, min = max]) => ({
+      skuCode: 'SKU', branchId, stock, min, max, sourceRow: null,
     })),
   };
   return calculateRebalance(snapshot, config(options), []);
@@ -25,6 +25,42 @@ const lines = (result: ReturnType<typeof calculate>) =>
   result.transfers.map((t) => [t.fromBranchId, t.toBranchId, t.qty]);
 
 describe('donor selection by stock remaining relative to Max', () => {
+  it('prioritizes a truly covered target over rounded-down targets', () => {
+    const result = calculate(
+      [['D', 3, 1], ['R1', 0, 3, 1], ['R2', 0, 2, 1], ['R3', 0, 2, 1]],
+      { receiverPct: 50 },
+    );
+    expect(lines(result)).toEqual([['D', 'R1', 2]]);
+    expect(result.uncoveredNeed.map((row) => [row.branchId, row.toTarget]))
+      .toEqual([['R2', 1.5], ['R3', 1.5]]);
+  });
+
+  it('attributes missing whole steps to the shortage, even when a fraction is left', () => {
+    const result = calculate(
+      [['D', 2, 1], ['R', 0, 101, 100]],
+      { receiverPct: 50 },
+    );
+    expect(result.skippedSkus).toEqual([expect.objectContaining({
+      neededQty: 100.5,
+      deliverableQty: 1,
+      missingQty: 99.5,
+      reason: 'INSUFFICIENT_SURPLUS',
+    })]);
+  });
+
+  it('attributes missing transferable steps to routes when supply is sufficient', () => {
+    const result = calculate(
+      [['D1', 2, 1], ['D2', 6, 1], ['R', 0, 3, 2]],
+      { receiverPct: 50, routeConfig: { mode: 'SELECTIVE', pairs: [
+        { branchAId: 'D1', branchBId: 'R', direction: 'A_TO_B' },
+      ] } },
+    );
+    expect(result.skippedSkus).toEqual([expect.objectContaining({
+      missingQty: 1.5,
+      reason: 'ROUTE_LIMIT',
+    })]);
+  });
+
   it('uses the best relative reserve among donors able to supply the entire need', () => {
     const result = calculate([
       ['A-Раменское', 50, 30],
@@ -193,7 +229,9 @@ describe('donor selection by stock remaining relative to Max', () => {
       { id: 'A', capacity: 8, stock: 108, max: 100, minimumUnits: 4 },
       { id: 'B', capacity: 6, stock: 106, max: 100, minimumUnits: 4 },
     ];
-    const receivers = [{ id: 'R', targetNeed: 10, minNeed: 10, minDeficit: 10 }];
+    const receivers = [{
+      id: 'R', targetNeed: 10, minNeed: 10, minDeficit: 10, hasStepRemainder: false,
+    }];
     const physical = [
       { from: 'A', to: 'R', units: 8 },
       { from: 'B', to: 'R', units: 2 },

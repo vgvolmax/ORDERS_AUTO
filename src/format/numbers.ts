@@ -1,16 +1,18 @@
+const moneyFormat = new Intl.NumberFormat('ru-RU', {
+  style: 'currency',
+  currency: 'RUB',
+  maximumFractionDigits: 2,
+});
+const quantityFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 12 });
+const tinyQuantityFormat = new Intl.NumberFormat('ru-RU', {
+  notation: 'scientific',
+  maximumSignificantDigits: 15,
+});
+
 export function money(value: number): string {
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    maximumFractionDigits: 2,
-  }).format(value);
+  return moneyFormat.format(value);
 }
 
 export function fmtQty(value: number): string {
-  return new Intl.NumberFormat('ru-RU', {
-    maximumFractionDigits: 12,
-    ...(value !== 0 && Math.abs(value) < 1e-9
-      ? { notation: 'scientific' as const, maximumSignificantDigits: 15 }
-      : {}),
-  }).format(value);
+  return (value !== 0 && Math.abs(value) < 1e-9 ? tinyQuantityFormat : quantityFormat).format(value);
 }

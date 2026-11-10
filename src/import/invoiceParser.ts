@@ -20,6 +20,8 @@ interface ParsedInvoice {
   warnings: string[];
 }
 
+class AmbiguousInvoiceHeaderError extends Error {}
+
 const FIXED_HEADER: Header = {
   code: -1, article: 8, name: 12, quantity: 40, unit: 46, price: 47, amount: 67,
 };
@@ -52,24 +54,45 @@ function findHeader(cells: Cells): Header | null {
 
   const code = find((label) => CODE_HEADERS.has(label));
   const article = find((label) => label.startsWith('артикул'));
-  const quantity = find((label) => /^(колич|колво)|^(кол|qty|quantity)$/.test(label));
+  if (code < 0 && article < 0) return null;
+
+  const quantityHeader = (label: string): boolean => /^(колич|колво)|^(кол|qty|quantity)$/.test(label);
+  const quantityRank = (label: string): number => {
+    if (/^(?:количество|колво|кол|qty|quantity)$/.test(label)) return 0;
+    return /упак|короб|палет|поддон|количествомест|колвомест/.test(label) ? 2 : 1;
+  };
   const priceHeader = (label: string): boolean => label.startsWith('цена');
   const amountHeader = (label: string): boolean => {
     const suffix = label.replace(/^(?:сумма|стоимость|стоим|итого|всего)/, '');
     return suffix !== label && !/^(?:итого|всего|втч|втомчисле)*(?:ндс|налог|скид)/.test(suffix);
   };
-  const net = (label: string): boolean => /без(ндс|налога)/.test(label);
+  const net = (label: string): boolean => /без(?:учета)?(?:ндс|налога)/.test(label);
+  const gross = (label: string): boolean => /с(?:учетом|включением)?(?:ндс|налогом)|включаяндс/.test(label);
   const beforeDiscount = (label: string): boolean => /(?:без|до)скид/.test(label);
-  const rank = (label: string): number => {
+  const moneyRank = (label: string): number => {
     const discount = /соскид|послескид|учетомскид/.test(label) ? 0 : beforeDiscount(label) ? 2 : 1;
-    return (net(label) ? 6 : 0) + discount * 2 + (label.includes('сндс') ? 0 : 1);
+    return (net(label) ? 6 : 0) + discount * 2 + (gross(label) ? 0 : 1);
   };
-  const preferred = (predicate: (label: string) => boolean, after = -1) =>
-    entries.filter(([, label]) => predicate(label)).sort(([a, left], [b, right]) =>
-      rank(left) - rank(right) || Number(b > after) - Number(a > after))[0];
+  const preferred = (predicate: (label: string) => boolean, rank: (label: string) => number) => {
+    const candidates = entries.filter(([, label]) => predicate(label));
+    const bestRank = Math.min(...candidates.map(([, label]) => rank(label)));
+    return candidates.filter(([, label]) => rank(label) === bestRank);
+  };
+  const quantities = preferred(quantityHeader, quantityRank);
+  const prices = preferred(priceHeader, moneyRank);
+  const amounts = preferred(amountHeader, moneyRank);
+  if (!quantities.length || (!prices.length && !amounts.length)) return null;
 
-  let priceEntry = preferred(priceHeader);
-  let amountEntry = preferred(amountHeader, priceEntry?.[0]);
+  const selected = (candidates: typeof entries, field: string) => {
+    if (candidates.length > 1) {
+      const columns = candidates.map(([column]) => XLSX.utils.encode_col(column)).join(', ');
+      throw new AmbiguousInvoiceHeaderError(`Не удалось однозначно определить поле «${field}» в счёте. Проверьте колонки ${columns} и оставьте одну подходящую колонку.`);
+    }
+    return candidates[0];
+  };
+  const quantity = selected(quantities, 'Количество')![0];
+  let priceEntry = prices[0];
+  let amountEntry = amounts[0];
   if (priceEntry && amountEntry) {
     const priceLabel = priceEntry[1];
     const amountLabel = amountEntry[1];
@@ -83,9 +106,8 @@ function findHeader(cells: Cells): Header | null {
       else amountEntry = undefined;
     }
   }
-  const price = priceEntry?.[0] ?? -1;
-  const amount = amountEntry?.[0] ?? -1;
-  if ((code < 0 && article < 0) || quantity < 0 || (price < 0 && amount < 0)) return null;
+  const price = priceEntry ? selected(prices, 'Цена')![0] : -1;
+  const amount = amountEntry ? selected(amounts, 'Сумма')![0] : -1;
 
   return {
     code,
@@ -204,7 +226,18 @@ export function parseInvoiceWorkbook(bytes: ArrayBuffer): ParsedInvoice {
     const rows = sheetRows(sheet);
     if (index === 0) firstRows = rows;
 
-    const header = rows.map(([, cells]) => findHeader(cells)).find((candidate) => candidate !== null);
+    let header: Header | null = null;
+    for (const [rowIndex, cells] of rows) {
+      try {
+        header = findHeader(cells);
+      } catch (error) {
+        if (!(error instanceof AmbiguousInvoiceHeaderError)) throw error;
+        const hasOtherRows = rows.some(([index, rowCells]) =>
+          index !== rowIndex && [...rowCells.values()].some((cell) => normalizeText(cell.v)));
+        if (hasOtherRows) throw error;
+      }
+      if (header) break;
+    }
     if (!header) continue;
     const result = parseRows(rows, header, false);
     if (result.items.length > 0) return result;

@@ -10,7 +10,7 @@ import type {
   ValidationIssue,
   ValidationIssueCode,
 } from '../domain/types';
-import { readFirstSheetRows } from './workbook';
+import { readFirstSheet } from './workbook';
 
 interface MinMaxColumns {
   code: number;
@@ -32,7 +32,7 @@ export function parseMinMaxWorkbook(
   savedBranchNames: readonly string[] = [],
 ): ParseResult<MinMaxDataset> {
   try {
-    const rows = readFirstSheetRows(input);
+    const { rows, readCode, keepNumericErrors } = readFirstSheet(input);
     const header = findHeader(rows);
     if (!header) {
       return fatal(
@@ -41,10 +41,25 @@ export function parseMinMaxWorkbook(
       );
     }
 
+    keepNumericErrors(header.rowIndex + 1, [
+      header.columns.stock,
+      header.columns.min,
+      header.columns.max,
+    ]);
     const data: MinMaxDataset = { skus: [], branchStocks: [], branches: [] };
     const issues: ValidationIssue[] = [];
     const seenSkuBranch = new Set<string>();
     const seenSku = new Set<string>();
+    const branchNameByKey = new Map<string, string>();
+    function branchName(value: unknown): string {
+      const name = normalizeText(value);
+      const key = normalizeKey(name);
+      const canonical = branchNameByKey.get(key);
+      if (canonical !== undefined) return canonical;
+      branchNameByKey.set(key, name);
+      data.branches.push(name);
+      return name;
+    }
     // Resolve identities before reading blocks: a malformed row can precede
     // the only valid occurrence of its branch, or be known only by a saved alias.
     const knownBranches = new Set(savedBranchNames.map(normalizeKey));
@@ -54,7 +69,7 @@ export function parseMinMaxWorkbook(
 
     for (let index = header.rowIndex + 1; index < rows.length; ) {
       const parentRow = rows[index]!;
-      const code = normalizeText(parentRow[header.columns.code]);
+      const code = readCode(index, header.columns.code);
       if (!code) {
         index += 1;
         continue;
@@ -87,7 +102,8 @@ export function parseMinMaxWorkbook(
       // They are intentionally ignored rather than becoming fake SKU records.
       if (branchRows.length > 0 || malformedRows.length > 0) {
         for (const child of malformedRows) {
-          const branch = normalizeText(child.row[header.columns.name]);
+          // Preserve recognized branches even when no physical stock could be read.
+          const branch = branchName(child.row[header.columns.name]);
           issues.push({
             severity: 'ERROR',
             code: 'INVALID_BRANCH_VALUES',
@@ -96,14 +112,6 @@ export function parseMinMaxWorkbook(
             row: child.rowNumber,
             message: `Некорректные числовые данные остатка или MIN/MAX: ${code} / ${branch}`,
           });
-          // The branch was present in this import. Do not disable it during
-          // registry reconciliation or invent a zero-valued physical stock.
-          if (
-            !data.branches.some(
-              (name) => normalizeKey(name) === normalizeKey(branch),
-            )
-          )
-            data.branches.push(branch);
         }
 
         const sku = {
@@ -156,7 +164,7 @@ export function parseMinMaxWorkbook(
 
         let branchTotal = 0;
         for (const { row, rowNumber } of branchRows) {
-          const branch = normalizeText(row[header.columns.name]);
+          const branch = branchName(row[header.columns.name]);
           const normalizedBranch = normalizeKey(branch);
           const uniqueKey = `${code}\0${normalizedBranch}`;
           const stock = parseStockNumber(row[header.columns.stock]);
@@ -189,14 +197,6 @@ export function parseMinMaxWorkbook(
 
           data.branchStocks.push({ skuCode: code, branch, stock, min, max });
           branchTotal += stock;
-
-          if (
-            !data.branches.some(
-              (item) => normalizeKey(item) === normalizedBranch,
-            )
-          ) {
-            data.branches.push(branch);
-          }
         }
 
         if (

@@ -3268,12 +3268,30 @@ test('E2E-23 weekly MIN/MAX carries supplier links and blocks stale and unpriced
       [supplierA, '1', 'Товар 1', 10, 800, 'шт'],
     ])),
   });
-  await page.getByLabel(input).setInputFiles(minMax('week-1.xlsx', [['0001', 100], ['1', 100]]));
+  const firstWeek = minMax('week-1.xlsx', [['0001', 100], ['1', 100]]);
+  await page.getByLabel(input).setInputFiles(firstWeek);
   await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
   await page.getByRole('button', { name: 'Поставщики', exact: true }).click();
   await assignPrimary(page, '0001', supplierB);
   await page.getByRole('button', { name: 'Заказы', exact: true }).click();
   await expect(page.getByRole('button', { name: `Все заказы ${supplierB}`, exact: true })).toContainText('2 000,00');
+
+  const browsing = await page.context().newPage();
+  await browsing.goto(entry);
+  await browsing.getByRole('navigation', { name: 'Основная навигация' })
+    .getByRole('button', { name: 'Поставщики', exact: true }).click();
+  await expect(browsing.getByRole('heading', { name: 'Поставщики', exact: true })).toBeVisible();
+  const readyZip = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Скачать все (2)', exact: true }).click();
+  expect((await readyZip).suggestedFilename()).toMatch(/\.zip$/);
+  await browsing.close();
+
+  await page.getByRole('button', { name: 'Обновить MIN/MAX', exact: true }).click();
+  await page.getByLabel(input).setInputFiles(firstWeek);
+  await expect(page.getByText(/Этот отчёт MIN\/MAX уже загружен/)).toBeVisible();
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await expect(page.locator('.order-cell').filter({ hasText: 'Выгружен' })).toHaveCount(2);
 
   const stale = await page.context().newPage();
   await stale.goto(entry);
@@ -3284,7 +3302,7 @@ test('E2E-23 weekly MIN/MAX carries supplier links and blocks stale and unpriced
   await stale.locator('.order-cell').first().click();
   const staleDownloads: string[] = [];
   stale.on('download', (download) => staleDownloads.push(download.suggestedFilename()));
-  await stale.getByRole('button', { name: 'Скачать CSV заказа', exact: true }).click();
+  await stale.getByRole('button', { name: 'Скачать CSV ещё раз', exact: true }).click();
   await expect(stale.getByRole('alert').filter({ hasText: 'Рабочий сеанс изменился' }).first()).toBeVisible();
   expect(staleDownloads).toEqual([]);
   await stale.close();
@@ -3398,4 +3416,50 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ступино` })).toBeVisible();
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
+});
+
+test('E2E-25 virtualizes a long order and saves a quantity at the end of the list', async ({ page }) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const skus = Array.from({ length: 150 }, (_, i) => 'L-' + String(i + 1).padStart(3, '0'));
+  const supplier = 'ИП Баранов Роман Борисович';
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles({
+    name: 'long-order.xlsx', mimeType,
+    buffer: Buffer.from(buildWorkbook([
+      ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+      ...skus.flatMap((sku) => [
+        [sku, sku, 'Товар ' + sku, null, null, null, 10],
+        [null, null, 'Ленина', 0, 2, 10, null],
+      ]),
+    ])),
+  });
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles({
+    name: 'long-order-suppliers.xlsx', mimeType,
+    buffer: Buffer.from(buildWorkbook([
+      ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+      ...skus.map((sku) => [supplier, sku, 'Товар ' + sku, 1, 10, 'шт']),
+    ])),
+  });
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+
+  const openOrder = async () => {
+    await page.locator('.order-cell').first().click();
+    const drawer = page.getByRole('dialog', { name: 'Состав заказа' });
+    await expect(drawer.getByRole('table')).toHaveAttribute('aria-rowcount', '151');
+    expect(await drawer.getByRole('spinbutton').count()).toBeLessThan(60);
+    await drawer.getByLabel('Прокрутка таблицы').evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    return drawer.getByRole('spinbutton', { name: 'Количество L-150', exact: true });
+  };
+
+  const quantity = await openOrder();
+  await quantity.fill('6');
+  await expect(quantity).toHaveAttribute('aria-busy', 'false');
+  await page.reload();
+  const restoredQuantity = await openOrder();
+  await expect(restoredQuantity).toHaveValue('6');
 });

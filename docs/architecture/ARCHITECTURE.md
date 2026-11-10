@@ -179,7 +179,7 @@ src/domain/rebalancing/index.ts — публичный вход чистого �
 
 ## Реализация PR2
 
-`app/workspaceSession.ts` сериализует команды и публикует состояние после успешного сохранения. `persistence/workspaces.ts` сохраняет whole-state DTO (`domain/workspace.ts`) и ссылки на исходные файлы одной CAS-транзакцией IndexedDB v2; старые stores v1 остаются для миграции. Новый импорт сохраняет прежний workspace и создаёт новый snapshot без переноса accepted/edits. Восстановление истории создаёт копию с прежним snapshotId и сохранёнными решениями.
+`app/workspaceSession.ts` сериализует команды и публикует состояние после успешного сохранения. В IndexedDB v3 `persistence/workspaces.ts` сохраняет деловую ревизию, ссылки на исходные файлы и изменившиеся данные отчётов одной CAS-транзакцией. Разобранные отчёты лежат в `workspaceSources` и не перезаписываются при изменении заказа. При чтении адаптер собирает прежний DTO `domain/workspace.ts`. Навигация и фильтры хранятся в `workspaceViews`. Изменения настроек объединяются по полям и не повышают деловую ревизию. Новый отчёт сохраняет прежний workspace и создаёт новый snapshot без переноса accepted/edits. Восстановление истории создаёт копию с прежним snapshotId и сохранёнными решениями.
 
 `app/rebalanceActions.ts` связывает команды домена с общей purchase projection и адресной инвалидацией `domain/rebalanceWorkflow.ts`. `selectors` выдаёт originalDemand/purchaseDemand; Demand/Suppliers/Orders используют одну текущую основу. `movementSummary` агрегирует только принятые IDs с явными единицами; React пояснение не меняет бизнес-состояние. Allocation запускается только явной командой расчёта. Экспорт markers проверяет соответствие фактически выгруженному CSV payload и тому же снимку перед фиксацией.
 

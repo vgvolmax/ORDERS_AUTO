@@ -48,6 +48,7 @@ interface ResizeSession {
 export function SupplierOrdersDrawer({
   supplier,
   orders,
+  exportedOrderIds,
   branchOrder,
   onClose,
   onEdit,
@@ -65,6 +66,7 @@ export function SupplierOrdersDrawer({
   onWidthsChange?: ((value: Record<string, number>) => void) | undefined;
   renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   orders: WorkflowOrder[];
+  exportedOrderIds?: ReadonlySet<string>;
   branchOrder: string[];
   onClose: () => void;
   onReconcile?: (() => void) | undefined;
@@ -374,6 +376,12 @@ export function SupplierOrdersDrawer({
                             </small>
                           )}
                         </div>
+                        {exportedOrderIds?.has(order.id) && (
+                          <span className="badge OK">Выгружен</span>
+                        )}
+                        {order.belowThreshold && !blocker && (
+                          <small className="warning-text">Ниже порога</small>
+                        )}
                         {blocker && (
                           <small className="danger-text supplier-branch-blocker">
                             Есть блокирующая ошибка

@@ -9,7 +9,9 @@ import {
   loadActiveWorkspace,
   listWorkspaces,
   loadWorkspaceFile,
+  saveWorkspaceView,
 } from '../../src/persistence/workspaces';
+import { workspaceView } from '../../src/domain/workspace';
 import { db } from '../../src/persistence/db';
 import { getSettings } from '../../src/persistence/settings';
 import { getSupplierOverrides } from '../../src/persistence/supplierOverrides';
@@ -83,7 +85,7 @@ describe('complete durable purchasing workspace', () => {
     await saveWorkspace(fixture(), -1);
     expect((await getSettings()).minimumOrderAmount).toBe(123);
     expect((await getSupplierOverrides())[0]!.supplier).toBe('S');
-    expect((await db()).version).toBe(2);
+    expect((await db()).version).toBe(3);
   });
   it('round trips all state and raw bytes separately and keeps old imports in history', async () => {
     const first = fixture();
@@ -183,4 +185,66 @@ describe('complete durable purchasing workspace', () => {
     expect(await loadActiveWorkspace()).toEqual(first);
     expect(await loadWorkspaceFile('bad')).toBeNull();
   });
+});
+
+it('keeps report data out of records rewritten for quantity changes', async () => {
+  const first = workspaceFromState({
+    ...rebalanceAppState(), workspaceId: 'report', workspaceRevision: 0,
+  });
+  await saveWorkspace(first, -1);
+  const database = await db();
+  const record = (await database.get('workspaces', 'report'))!;
+  expect(record.data.minMax).toBeNull();
+  expect(record.data.suppliers).toBeNull();
+  const edited = {
+    ...first,
+    revision: 1,
+    data: {
+      ...first.data,
+      edits: [{ skuCode: 'SKU1', branch: 'Получатель', qty: 3 }],
+    },
+  };
+  const writes = vi.spyOn(IDBObjectStore.prototype, 'put');
+  try {
+    await saveWorkspace(edited, 0, [], { reuseSources: true });
+    expect(writes.mock.contexts).not.toContainEqual(
+      expect.objectContaining({ name: 'workspaceSources' }),
+    );
+    expect(await loadActiveWorkspace()).toEqual(edited);
+  } finally {
+    writes.mockRestore();
+    database.close();
+  }
+});
+
+it('merges unrelated view changes from two tabs and rejects changes after a workspace switch', async () => {
+  const original = fixture();
+  const filters = { query: '', fromBranchId: '', toBranchId: '' };
+  original.data.rebalance.acceptedFilters = filters;
+  await saveWorkspace(original, -1);
+  const view = workspaceView(original.data);
+  await saveWorkspaceView(original.workspaceId, view, {
+    ...view,
+    uiPreferences: { ...view.uiPreferences, 'orders:query': 'Поставщик' },
+    rebalance: { ...view.rebalance, acceptedFilters: { ...filters, fromBranchId: 'b1' } },
+  });
+  await saveWorkspaceView(original.workspaceId, view, {
+    ...view,
+    page: 'suppliers',
+    rebalance: { ...view.rebalance, acceptedFilters: { ...filters, query: 'SKU' } },
+  });
+  expect(await loadActiveWorkspace()).toMatchObject({
+    revision: 0,
+    data: {
+      page: 'suppliers',
+      uiPreferences: { 'orders:query': 'Поставщик' },
+      rebalance: { acceptedFilters: { ...filters, fromBranchId: 'b1', query: 'SKU' } },
+    },
+  });
+  const replacement = fixture('next');
+  replacement.previousActive = { workspaceId: original.workspaceId, revision: 0 };
+  await saveWorkspace(replacement, -1);
+  await expect(saveWorkspaceView(original.workspaceId, view, { ...view, page: 'all' }))
+    .rejects.toThrow('WORKSPACE_CONFLICT');
+  expect(await loadWorkspace(original.workspaceId)).toMatchObject({ data: { page: 'suppliers' } });
 });

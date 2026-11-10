@@ -22,12 +22,13 @@ import {
   sumQuantities,
 } from './numbers';
 import { buildRouteIndex } from './routes';
-import { allocateFlow, type FlowReceiver } from './flow';
+import { allocateFlow } from './flow';
 import {
   eligibleDonorRoutes,
   MAX_STATES_PER_CALCULATION,
   prioritizeDonorStock,
   type StockDonor,
+  type StockReceiver,
 } from './donorStockPriority';
 import { acceptedEconomicDiagnostics } from './economics';
 import {
@@ -43,7 +44,7 @@ import {
   type SkippedRebalanceSku,
 } from './types';
 
-export const ALGORITHM_VERSION = 'partial-sku-joint-donor-plan-v8';
+export const ALGORITHM_VERSION = 'partial-sku-joint-donor-plan-v9';
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const transferKey = (skuCode: string, from: string, to: string) =>
   JSON.stringify([skuCode, from, to]);
@@ -149,7 +150,7 @@ export function calculateRebalance(
     neededByRecipient: Map<string, number>;
     capacityQty: number;
     physicalQty: number;
-    stepLimited: boolean;
+    transferableQty: number;
     amountConstrained: boolean;
     searchLimited: boolean;
   }>();
@@ -162,9 +163,8 @@ export function calculateRebalance(
       ? minimumTransferUnits(step, sku.referencePrice, amountFilter.threshold)
       : 1;
     const donors: StockDonor[] = [],
-      receivers: FlowReceiver[] = [];
+      receivers: StockReceiver[] = [];
     const neededByRecipient = new Map<string, number>();
-    let stepLimited = false;
     // Keep data errors separate from capacity skips; never certify an omitted known row as covered.
     if (
       validated.issues.some(
@@ -209,15 +209,15 @@ export function calculateRebalance(
         targetByKey.set(key, target);
         const neededQty = Math.max(0, subtractQuantity(target, stock));
         eligibleRecipientKeys.push(key);
-        if (neededQty > 0) {
-          neededByRecipient.set(row.branchId, neededQty);
-          if (!isStepQuantity(neededQty, step)) stepLimited = true;
-        }
+        if (neededQty > 0) neededByRecipient.set(row.branchId, neededQty);
         const targetNeed = stepUnits(neededQty, step);
         const minDeficit = Math.max(0, subtractQuantity(row.min!, stock));
         const minNeed = Math.min(targetNeed, stepUnits(minDeficit, step));
         if (targetNeed > 0)
-          receivers.push({ id: row.branchId, minNeed, minDeficit, targetNeed });
+          receivers.push({
+            id: row.branchId, minNeed, minDeficit, targetNeed,
+            hasStepRemainder: !isStepQuantity(neededQty, step),
+          });
         else
           emit(
             'TARGET_OR_STEP_LIMIT',
@@ -272,7 +272,9 @@ export function calculateRebalance(
       neededByRecipient,
       capacityQty: sumQuantities(donors.map((d) => quantityFromUnits(d.capacity, step))),
       physicalQty: sumQuantities(physicalFlow.map((t) => quantityFromUnits(t.units, step))),
-      stepLimited,
+      transferableQty: sumQuantities(
+        receivers.map((receiver) => quantityFromUnits(receiver.targetNeed, step)),
+      ),
       amountConstrained: excludedReceivers.size > 0,
       searchLimited: allocation.limited,
     });
@@ -394,13 +396,13 @@ export function calculateRebalance(
       neededQty,
       deliverableQty,
       missingQty: subtractQuantity(neededQty, deliverableQty),
-      reason: coverage.stepLimited
+      reason: deliverableQty >= coverage.transferableQty
         ? 'QUANTITY_STEP'
         : amountLimited
           ? 'AMOUNT_THRESHOLD'
           : coverage.searchLimited
             ? 'SEARCH_LIMIT'
-            : coverage.capacityQty < neededQty
+            : coverage.capacityQty < coverage.transferableQty
               ? 'INSUFFICIENT_SURPLUS'
               : 'ROUTE_LIMIT',
       recipients,

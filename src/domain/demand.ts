@@ -8,7 +8,7 @@ import type {
 } from './types';
 import { normalizeKey } from './normalize';
 import { moneyProduct, moneySum } from './money';
-import { subtractQuantity } from './rebalancing/numbers';
+import { addDecimal, decimal, decimalNumber } from './decimal';
 
 export interface StockCalculation {
   status: StockStatus;
@@ -29,11 +29,14 @@ export function calculateStockStatus(
     return { status: 'INVALID_NORM', deficitQty: 0, deficitPct: null };
   }
 
-  const deficitQty = Math.max(0, subtractQuantity(max, stock));
   if (stock >= max) {
     return { status: 'OK', deficitQty: 0, deficitPct: 0 };
   }
 
+  const exactMax = decimal(max);
+  const exactStock = decimal(stock);
+  const exactDeficit = addDecimal(exactMax, { n: -exactStock.n, d: exactStock.d });
+  const deficitQty = decimalNumber(exactDeficit);
   const deficitPct = deficitQty / max;
 
   // MIN is a hard operational threshold. It intentionally overrides the
@@ -42,10 +45,13 @@ export function calculateStockStatus(
     return { status: 'BELOW_MIN', deficitQty, deficitPct };
   }
 
-  if (deficitPct <= 0.25) {
+  // Compare the underlying decimal values before the displayed ratio is rounded.
+  const deficitQuarters = 4n * exactDeficit.n * exactMax.d;
+  const scaledMax = exactMax.n * exactDeficit.d;
+  if (deficitQuarters <= scaledMax) {
     return { status: 'YELLOW', deficitQty, deficitPct };
   }
-  if (deficitPct <= 0.75) {
+  if (deficitQuarters <= 3n * scaledMax) {
     return { status: 'ORANGE', deficitQty, deficitPct };
   }
 

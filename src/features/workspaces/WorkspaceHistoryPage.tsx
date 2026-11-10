@@ -24,7 +24,7 @@ export function WorkspaceHistoryPage() {
     let cancelled = false;
     void listWorkspaces()
       .then((list) => {
-        if (!cancelled) setRows(list);
+        if (!cancelled) setRows(list.filter((row) => row.minMaxFileName || row.supplierFileName));
       })
       .catch(() => {
         if (!cancelled)
@@ -68,13 +68,17 @@ export function WorkspaceHistoryPage() {
       setBusy(false);
     }
   }
+  const originals = new Map<string, string>();
+  for (const row of [...rows].reverse()) {
+    if (!originals.has(row.snapshotId)) originals.set(row.snapshotId, row.workspaceId);
+  }
   return (
     <main>
       <header>
         <p className="eyebrow">Сохранённая работа</p>
         <h1>История сеансов</h1>
         <p>
-          Каждая замена отчёта создаёт новый снимок. Старые данные и решения
+          Новый отчёт MIN/MAX открывает отдельный рабочий сеанс. Старые данные и решения
           сохраняются на этом компьютере. Восстановление открывает копию
           сохранённого сеанса.
         </p>
@@ -82,6 +86,8 @@ export function WorkspaceHistoryPage() {
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
         <p role="status">Загрузка истории…</p>
+      ) : rows.length === 0 ? (
+        <p>Сохранённых сеансов пока нет.</p>
       ) : (
         <VirtualTable
           rows={rows}
@@ -89,10 +95,10 @@ export function WorkspaceHistoryPage() {
           columns={[
             {
               key: 'date',
-              header: 'Последнее сохранение',
+              header: 'Начало сеанса',
               width: '220px',
               render: (w) =>
-                new Date(w.updatedAt).toLocaleString('ru-RU', {
+                new Date(w.createdAt).toLocaleString('ru-RU', {
                   timeZoneName: 'short',
                 }),
             },
@@ -112,8 +118,10 @@ export function WorkspaceHistoryPage() {
               key: 'status',
               header: 'Сеанс',
               width: '130px',
-              render: (w) =>
-                w.workspaceId === state.workspaceId ? 'Текущий' : 'Сохранённый',
+              render: (w) => {
+                const status = w.workspaceId === state.workspaceId ? 'Текущий' : 'Сохранённый';
+                return originals.get(w.snapshotId) === w.workspaceId ? status : status + ' · копия';
+              },
             },
             {
               key: 'actions',

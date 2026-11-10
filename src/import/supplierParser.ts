@@ -9,7 +9,7 @@ import type {
   SupplierHistory,
   ValidationIssue,
 } from '../domain/types';
-import { readFirstSheetRows } from './workbook';
+import { readFirstSheet } from './workbook';
 import { moneySum } from '../domain/money';
 import { sumQuantities } from '../domain/rebalancing/numbers';
 
@@ -49,7 +49,7 @@ export function parseSupplierWorkbook(
   input: ArrayBuffer,
 ): ParseResult<SupplierDataset> {
   try {
-    const rows = readFirstSheetRows(input);
+    const { rows, readCode } = readFirstSheet(input);
     const header = findHeader(rows);
     if (!header) {
       return fatal(
@@ -66,7 +66,7 @@ export function parseSupplierWorkbook(
 
       if (header.sharedHierarchyColumn) {
         const sharedText = normalizeText(row[header.columns.name]);
-        const skuCode = normalizeText(row[header.columns.code]);
+        const skuCode = readCode(index, header.columns.code);
         const marker = normalizeKey(sharedText);
 
         if (!skuCode) {
@@ -109,7 +109,7 @@ export function parseSupplierWorkbook(
       }
 
       const supplierCell = normalizeText(row[header.columns.supplier]);
-      const skuCode = normalizeText(row[header.columns.code]);
+      const skuCode = readCode(index, header.columns.code);
       const skuName =
         header.columns.name >= 0 ? normalizeText(row[header.columns.name]) : '';
       const totalMarker = normalizeKey(skuName || supplierCell);

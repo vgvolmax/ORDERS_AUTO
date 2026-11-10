@@ -14,6 +14,7 @@ import {
   type RebalanceProposal,
   type BranchRegistry,
 } from '../../domain/rebalancing';
+import { moneyProduct } from '../../domain/money';
 import type { Sku } from '../../domain/types';
 import type {
   SkuQuantityPolicy,
@@ -136,15 +137,16 @@ export function SkippedRebalanceList({
                 width: 'minmax(230px, 1.3fr)',
                 render: (r) => {
                   const price = skuMap.get(r.skuCode)?.referencePrice;
+                  const amount = price != null && Number.isFinite(price) && price >= 0
+                    ? moneyProduct(r.missingQty, price)
+                    : null;
                   return (
                     <div className="skip-cell">
                       <span>{skippedReasonLabel[r.reason]}</span>
                       <strong>
-                        {price == null ||
-                        price < 0 ||
-                        !Number.isFinite(price * r.missingQty)
+                        {amount === null || !Number.isFinite(amount)
                           ? 'Сумма неизвестна'
-                          : money(price * r.missingQty)}
+                          : money(amount)}
                       </strong>
                       <button className="link" onClick={() => setOpened(r)}>
                         Потребность подразделений · {r.recipients.length}

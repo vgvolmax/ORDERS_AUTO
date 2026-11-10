@@ -8,6 +8,9 @@ import { parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
 import { Alert, Button } from '../../components/ui';
 import { ImportIssues } from './ImportIssues';
+import { loadWorkspaceFile } from '../../persistence/workspaces';
+
+const minMaxParserVersion = 1;
 
 export function ImportPage() {
   const { state, set, commit, saving } = useStore();
@@ -68,6 +71,24 @@ export function ImportPage() {
     try {
       const bytes = await file.arrayBuffer();
       if (reads.current[kind] !== token) return;
+      const activeFile = state.rawImports.minMax;
+      if (
+        kind === 'min' &&
+        activeFile?.parserVersion === minMaxParserVersion &&
+        activeFile.name === file.name &&
+        activeFile.size === bytes.byteLength
+      ) {
+        const saved = await loadWorkspaceFile(activeFile.fileId);
+        if (reads.current[kind] !== token) return;
+        const incoming = new Uint8Array(bytes);
+        if (
+          saved?.bytes.byteLength === incoming.byteLength &&
+          new Uint8Array(saved.bytes).every((byte, index) => byte === incoming[index])
+        ) {
+          set({ toast: 'Этот отчёт MIN/MAX уже загружен. Продолжайте работу в текущем сеансе.' });
+          return;
+        }
+      }
       const result =
         kind === 'min'
           ? parseMinMaxWorkbook(
@@ -93,6 +114,7 @@ export function ImportPage() {
         type: file.type,
         size: file.size,
         lastModified: file.lastModified,
+        ...(kind === 'min' ? { parserVersion: minMaxParserVersion } : {}),
       };
       const update = (current: typeof state) =>
         reads.current[kind] !== token ||

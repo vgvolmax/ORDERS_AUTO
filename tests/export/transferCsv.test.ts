@@ -93,3 +93,12 @@ it('uses a safe directed route and local date in the movement filename', () => {
     'Перемещение__Донор _ А__Ленина__2026-10-23.csv',
   );
 });
+
+it('protects formula-like movement identities without altering numeric quantities or prices', () => {
+  const csv = transferToCsv({
+    ...doc([line({ article: '@SUM(A1)', name: '\t=2+2', unitPrice: -10, amount: -2.5 })]),
+    fromName: '+100',
+  });
+
+  expect(csv.split('\r\n')[1]).toBe("00001;'@SUM(A1);'\t=2+2;'+100;Ленина;0.25;м;-10;-2.5");
+});

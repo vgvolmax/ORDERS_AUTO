@@ -116,7 +116,7 @@ describe('rebalancing business acceptance', () => {
     );
     expect(result.transfers.map((t) => [t.toBranchId, t.qty])).toEqual([['R', 1]]);
     expect(result.skippedSkus).toContainEqual(
-      expect.objectContaining({ reason: 'QUANTITY_STEP' }),
+      expect.objectContaining({ reason: 'INSUFFICIENT_SURPLUS' }),
     );
     expect(result.balances.find((b) => b.branchId === 'R')!.stockAfter).toBe(
       1.5,

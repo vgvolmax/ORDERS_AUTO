@@ -155,4 +155,22 @@ describe('InvoicesPage', () => {
     expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeDisabled();
     expect(screen.getByText(/Исключите из экспорта позиции без артикула и наименования/)).toBeInTheDocument();
   });
+  it('blocks every 1C export format until conflicting checked positions are resolved', async () => {
+    const item = parseInvoiceWorkbook().items[0]!;
+    parseInvoiceWorkbook.mockReturnValueOnce({
+      items: [item, { ...item, skuCode: '002', sourceRow: 3 }],
+      warnings: [],
+    });
+    render(<InvoicesPage initialOrderIds={['a']} />);
+    selectFile();
+    await compare();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Включить в экспорт.*002/ }));
+    expect(screen.getByText(/неразличимы.*1С/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Excel для 1С' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Скопировать для 1С' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Включить в экспорт.*002/ }));
+    expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeEnabled();
+  });
+
 });

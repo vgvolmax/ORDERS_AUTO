@@ -34,6 +34,7 @@ function StatefulOrders({ initial }: { initial: AppState }) {
 }
 
 const mocks = vi.hoisted(() => ({
+  downloadCsv: vi.fn(),
   downloadReadyOrdersZip: vi.fn(),
   buildSupplierWorkbook: vi.fn(),
   save: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('../../src/export/download', async (importOriginal) => {
     await importOriginal<typeof import('../../src/export/download')>();
   return {
     ...actual,
+    downloadCsv: mocks.downloadCsv,
     save: mocks.save,
     downloadReadyOrdersZip: mocks.downloadReadyOrdersZip,
   };
@@ -55,6 +57,7 @@ vi.mock('../../src/export/supplierWorkbook', () => ({
 
 describe('OrdersPage', () => {
   beforeEach(() => {
+    mocks.downloadCsv.mockClear();
     mocks.save.mockClear();
     mocks.downloadReadyOrdersZip.mockReset();
     mocks.downloadReadyOrdersZip.mockResolvedValue(undefined);
@@ -95,6 +98,60 @@ describe('OrdersPage', () => {
     });
     expect(within(dialog).getByText('Ленина')).toBeInTheDocument();
     expect(within(dialog).getByText('Ступино')).toBeInTheDocument();
+  });
+
+  it('shows a confirmed CSV export separately from the order threshold', async () => {
+    render(
+      <StatefulOrders
+        initial={baseState({
+          settings: {
+            minimumOrderAmount: 500,
+            thresholdMode: 'BRANCH_SUPPLIER',
+          },
+          uiPreferences: { 'orders:belowThreshold': true },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /400,00/ }));
+    const drawer = screen.getByRole('dialog', { name: 'Состав заказа' });
+    expect(within(drawer).queryByText('Выгружен')).not.toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('button', {
+      name: 'Выгрузить несмотря на порог',
+    }));
+    const confirm = screen.getByRole('dialog', {
+      name: 'Выгрузить заказ ниже порога?',
+    });
+    fireEvent.click(within(confirm).getByRole('button', {
+      name: 'Выгрузить несмотря на порог',
+    }));
+
+    await waitFor(() =>
+      expect(mocks.downloadCsv).toHaveBeenCalledWith(
+        expect.objectContaining({ branch: 'Ступино', status: 'BLOCKED' }),
+      ),
+    );
+    expect(await within(drawer).findByText('Выгружен')).toBeVisible();
+    expect(within(drawer).getByText('Заказ ниже минимального порога.')).toBeVisible();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Закрыть' }));
+
+    const card = screen.getByRole('button', {
+      name: /400,00.*Заблокирован.*Выгружен/i,
+    });
+    expect(card).toHaveClass('BLOCKED');
+    const metric = screen.getByText('Выгружены').closest('.metric');
+    expect(metric?.querySelector('strong')).toHaveTextContent('1');
+    expect(screen.getByRole('button', { name: 'Скачать все (1)' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', {
+      name: /все заказы ип баранов роман борисович/i,
+    }));
+    const supplier = screen.getByRole('dialog', {
+      name: /все заказы ип баранов роман борисович/i,
+    });
+    const branch = within(supplier).getByRole('columnheader', { name: /Ступино/ });
+    expect(within(branch).getByText('Выгружен')).toBeVisible();
+    expect(within(branch).getByText('Ниже порога')).toBeVisible();
   });
 
   it('keeps review and export state on a no-op quantity edit', () => {
