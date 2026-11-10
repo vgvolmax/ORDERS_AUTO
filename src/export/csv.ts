@@ -12,8 +12,12 @@ const HEADERS = [
   'Сумма',
 ];
 
-function escapeCell(value: unknown): string {
-  const text = String(value ?? '');
+export function protectSpreadsheetText(text: string): string {
+  // Quoting protects CSV delimiters but does not stop spreadsheet formulas.
+  return /^\s*[=+\-@]/u.test(text) ? "'" + text : text;
+}
+
+function escapeCell(text: string): string {
   if (!/[;"\r\n]/.test(text)) {
     return text;
   }
@@ -35,14 +39,23 @@ export function orderToCsv(order: Order): string {
       line.amount,
     ]);
 
-  return rowsToCsv(HEADERS, rows);
+  return rowsToCsv(HEADERS, rows, { protectFormulas: true });
 }
 
-export function rowsToCsv(headers: string[], rows: unknown[][]): string {
+export function rowsToCsv(
+  headers: string[],
+  rows: unknown[][],
+  { protectFormulas = false } = {},
+): string {
   return (
     '\ufeff' +
     [headers, ...rows]
-      .map((row) => row.map(escapeCell).join(';'))
+      .map((row) => row.map((value) => {
+        const text = protectFormulas && typeof value === 'string'
+          ? protectSpreadsheetText(value)
+          : String(value ?? '');
+        return escapeCell(text);
+      }).join(';'))
       .join('\r\n') +
     '\r\n'
   );
