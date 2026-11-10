@@ -1,7 +1,8 @@
 import * as XLSX from 'xlsx';
 import { invoiceDifferenceLabels, type InvoiceAdjustment, type InvoiceComparisonRow } from '../domain/invoices';
 import { moneySum } from '../domain/money';
-import { rowsToCsv } from './csv';
+import { normalizeKey } from '../domain/normalize';
+import { protectSpreadsheetText, rowsToCsv } from './csv';
 
 const ADJUSTMENT_HEADERS = ['Артикул', 'Номенклатура', 'Количество', 'Ед.', 'Цена', 'Сумма'];
 const COMPARISON_HEADERS = [
@@ -12,9 +13,7 @@ type Cell = string | number | null;
 
 function textCell(value: Cell): string {
   if (typeof value === 'number') return String(value).replace('.', ',');
-  const text = (value ?? '').replace(/[\t\r\n]/g, ' ');
-  // CSV quoting alone does not stop spreadsheet formulas after importing text.
-  return /^[\s\uFEFF]*[=+\-@]/u.test(text) ? "'" + text : text;
+  return protectSpreadsheetText((value ?? '').replace(/[\t\r\n]/g, ' '));
 }
 
 function delta(before: number | null, after: number | null): number | null {
@@ -30,7 +29,26 @@ export function invoiceComparisonCsv(rows: readonly InvoiceComparisonRow[]): str
   ].map(textCell)));
 }
 
+export function conflictingInvoiceAdjustments(rows: readonly InvoiceAdjustment[]): InvoiceAdjustment[] {
+  const byIdentity = new Map<string, InvoiceAdjustment[]>();
+  for (const row of rows) {
+    if (!row.included) continue;
+    const key = JSON.stringify([
+      normalizeKey(row.article),
+      normalizeKey(row.name),
+      normalizeKey(row.unit).replace(/[.\s]/g, ''),
+    ]);
+    const group = byIdentity.get(key);
+    if (group) group.push(row);
+    else byIdentity.set(key, [row]);
+  }
+  return [...byIdentity.values()].filter((group) => group.length > 1).flat();
+}
+
 function adjustmentCells(rows: readonly InvoiceAdjustment[]): Cell[][] {
+  if (conflictingInvoiceAdjustments(rows).length > 0) {
+    throw new Error('Отмеченные позиции неразличимы для 1С. Оставьте одну строку на артикул, наименование и единицу.');
+  }
   return rows.filter((row) => row.included).map((row) => [
     row.article, row.name, row.qty, row.unit, row.price, row.amount,
   ]);

@@ -64,3 +64,12 @@ it('exports the full invoice value when the only adjacent sum is a VAT amount', 
 
   expect(invoiceAdjustmentTsv(correction.map((row) => ({ ...row, included: true })))).toContain('120\t240');
 });
+
+it.each([invoiceAdjustmentCsv, invoiceAdjustmentTsv, invoiceAdjustmentWorkbook])(
+  'rejects a correction when two included positions share the same exported identity',
+  (exportCorrection) => {
+    const collision = { ...adjustment, id: 'another', skuCode: '0008', qty: 2.5 };
+    expect(() => exportCorrection([adjustment, collision])).toThrow(/неразличим/i);
+    expect(() => exportCorrection([adjustment, { ...collision, included: false }])).not.toThrow();
+  },
+);

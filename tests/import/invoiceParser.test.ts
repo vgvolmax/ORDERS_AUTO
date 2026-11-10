@@ -39,6 +39,18 @@ describe('parseInvoiceWorkbook', () => {
     });
   });
 
+  it('imports a populated sheet after an empty sheet with ambiguous headers', () => {
+    const empty = sheet([['Артикул', 'Количество', 'Количество', 'Цена']]);
+    const products = sheet([
+      ['Артикул', 'Количество', 'Цена'],
+      ['B-7', 2, 10],
+    ]);
+
+    expect(parseInvoiceWorkbook(workbook([empty, products])).items).toMatchObject([
+      { article: 'B-7', quantity: 2, price: 10, sourceRow: 2 },
+    ]);
+  });
+
   it('uses the fixed supplier template when a product line confirms its column layout', () => {
     const product: unknown[] = [];
     product[8] = 'B-7';
@@ -109,4 +121,32 @@ it('does not retain the pre-discount sum when the price is after discount', () =
     ['B-7', 2, 90, 200],
   ]);
   expect(parseInvoiceWorkbook(workbook([products])).items[0]).toMatchObject({ price: 90, amount: null });
+});
+
+it('prefers item quantity over the number of packages regardless of column order', () => {
+  const products = sheet([
+    ['Артикул', 'Количество упаковок', 'Количество', 'Ед.', 'Цена', 'Сумма'],
+    ['B-7', 2, 20, 'шт', 10, 200],
+  ]);
+  expect(parseInvoiceWorkbook(workbook([products])).items[0]).toMatchObject({
+    quantity: 20, unit: 'шт', price: 10, amount: 200,
+  });
+});
+
+it('prefers the total including VAT over a generic subtotal and does not retain the net unit price', () => {
+  const products = sheet([
+    ['Артикул', 'Количество', 'Цена без НДС', 'Сумма', 'НДС', 'Всего с учётом НДС'],
+    ['B-7', 2, 10, 20, 4, 24],
+  ]);
+  expect(parseInvoiceWorkbook(workbook([products])).items[0]).toMatchObject({
+    quantity: 2, price: null, amount: 24,
+  });
+});
+
+it('refuses equally plausible quantity columns and identifies them for the operator', () => {
+  const products = sheet([
+    ['Артикул', 'Количество', 'Количество', 'Цена'],
+    ['B-7', 2, 20, 10],
+  ]);
+  expect(() => parseInvoiceWorkbook(workbook([products]))).toThrow(/количество.*B.*C/i);
 });

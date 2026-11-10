@@ -16,6 +16,7 @@ import { parseOptionalNumber } from '../../domain/normalize';
 import { save } from '../../export/download';
 import { safeFilename } from '../../export/filenames';
 import {
+  conflictingInvoiceAdjustments,
   invoiceAdjustmentCsv,
   invoiceAdjustmentTsv,
   invoiceAdjustmentWorkbook,
@@ -97,8 +98,9 @@ export function InvoiceResults({
     !validNumber(row.qty) || !validNumber(row.price) || !validNumber(row.amount),
   );
   const unidentified = checked.filter((row) => !row.article.trim() && !row.name.trim());
+  const conflicts = conflictingInvoiceAdjustments(checked);
   const exportDisabled = Boolean(action) || checked.length === 0 ||
-    invalidNumbers.length > 0 || unidentified.length > 0;
+    invalidNumbers.length > 0 || unidentified.length > 0 || conflicts.length > 0;
   const visibleRows = rows.filter((row) => matchesItem(row, query) && (
     filter === 'all' || (
       filter === 'problems' ? row.differences.length > 0 : row.differences.includes(filter as InvoiceDifference)
@@ -340,6 +342,12 @@ export function InvoiceResults({
         {unidentified.length > 0 && (
           <Alert tone="warning">
             Исключите из экспорта позиции без артикула и наименования ({fmtQty(unidentified.length)}). Эти данные нужны для загрузки в 1С.
+          </Alert>
+        )}
+        {conflicts.length > 0 && (
+          <Alert tone="warning">
+            Отмеченные позиции неразличимы для 1С. Оставьте одну строку на артикул, наименование и единицу.
+            {' '}{conflicts.slice(0, 3).map(itemLabel).join(', ')}{conflicts.length > 3 ? '…' : '.'}
           </Alert>
         )}
         <div className="invoice-actions invoice-export-actions">

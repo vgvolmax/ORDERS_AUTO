@@ -57,18 +57,18 @@ describe('compareInvoice', () => {
   it('combines compatible duplicates, retaining exact amounts and all simultaneous differences', () => {
     const rows = compareInvoice([order(line(), line({ orderQty: 1, unitPrice: 12, amount: 12 }))], [
       invoice({ quantity: 2, price: 11, amount: 21.99 }),
-      invoice({ quantity: 3, price: 13, amount: 39.02, sourceRow: 3 }),
+      invoice({ quantity: 3, price: 13, amount: 39, sourceRow: 3 }),
     ]);
 
     expect(rows).toMatchObject([{
       orderQty: 4, invoiceQty: 5, orderPrice: 10.5, invoicePrice: 12.2,
-      invoiceAmount: 61.01, differences: ['quantity', 'higher'],
+      invoiceAmount: 60.99, differences: ['quantity', 'higher'],
     }]);
   });
 
   it('keeps incompatible invoice units visible in separate rows without duplicating the order', () => {
     const rows = compareInvoice([order(line())], [
-      invoice(), invoice({ quantity: 1, unit: 'упак', sourceRow: 3 }),
+      invoice(), invoice({ quantity: 1, unit: 'упак', amount: 10, sourceRow: 3 }),
     ]);
 
     expect(rows).toMatchObject([
@@ -86,7 +86,7 @@ describe('compareInvoice', () => {
 
   it('keeps an invoice price unknown when only some duplicate quantities have a price', () => {
     const rows = compareInvoice([order(line())], [
-      invoice({ quantity: 2 }), invoice({ quantity: 1, price: null, amount: null, sourceRow: 3 }),
+      invoice({ quantity: 2, amount: 20 }), invoice({ quantity: 1, price: null, amount: null, sourceRow: 3 }),
     ]);
     expect(rows[0]).toMatchObject({ invoiceQty: 3, invoicePrice: null, invoiceAmount: null, differences: ['unpriced'] });
     expect(buildInvoiceAdjustments(rows, 'invoice')[0]?.included).toBe(false);
@@ -152,4 +152,28 @@ it('retains one-sided prefixed numeric article matching', () => {
     invoice({ article: 'Поставщик 123456' }),
   ]);
   expect(rows.map(({ differences }) => differences)).toEqual([[]]);
+});
+
+it('does not match digits embedded within a different uninterrupted article', () => {
+  const rows = compareInvoice([order(line({ article: '123456' }))], [
+    invoice({ article: 'ABC123456DEF', name: 'Другой товар' }),
+  ]);
+  expect(rows.map(({ differences }) => differences)).toEqual([['missing'], ['extra']]);
+});
+
+it('flags a material invoice total discrepancy and recalculates a reviewed correction', () => {
+  const [row] = compareInvoice([order(line())], [invoice({ amount: 300 })]);
+  expect(row).toMatchObject({ invoiceAmount: 300, differences: ['amount'] });
+  expect(row!.notes.join(' ')).toContain('2');
+  expect(buildInvoiceAdjustments([row!], 'invoice')[0]).toMatchObject({ amount: 30, included: false });
+});
+
+it('keeps negative source lines visible when they cancel within an otherwise matching invoice group', () => {
+  const rows = compareInvoice([order(line())], [
+    invoice({ quantity: 5, amount: 50 }),
+    invoice({ quantity: -2, amount: -20, sourceRow: 3 }),
+  ]);
+  expect(rows[0]).toMatchObject({ invoiceQty: 3, invoiceAmount: 30, differences: ['signed'] });
+  expect(rows[0]!.notes.join(' ')).toContain('3');
+  expect(buildInvoiceAdjustments(rows, 'invoice')[0]?.included).toBe(false);
 });

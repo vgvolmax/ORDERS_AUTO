@@ -1,3 +1,4 @@
+import { addDecimal, decimal, multiplyDecimal } from './decimal';
 import { moneyProduct, moneySum } from './money';
 import { normalizeKey, normalizeText } from './normalize';
 import type { Order, OrderLine } from './types';
@@ -13,7 +14,7 @@ export interface InvoiceItem {
   sourceRow: number;
 }
 
-export type InvoiceDifference = 'missing' | 'extra' | 'quantity' | 'higher' | 'lower' | 'ambiguous' | 'unit' | 'unpriced';
+export type InvoiceDifference = 'missing' | 'extra' | 'quantity' | 'higher' | 'lower' | 'ambiguous' | 'unit' | 'unpriced' | 'amount' | 'signed';
 
 export const invoiceDifferenceLabels: Record<InvoiceDifference, string> = {
   missing: 'Нет в счёте',
@@ -24,6 +25,8 @@ export const invoiceDifferenceLabels: Record<InvoiceDifference, string> = {
   ambiguous: 'Неоднозначно',
   unit: 'Единицы',
   unpriced: 'Нет цены',
+  amount: 'Ошибка суммы',
+  signed: 'Отрицательные значения',
 };
 
 export interface InvoiceComparisonRow {
@@ -70,7 +73,7 @@ interface InvoiceValues {
 
 const QTY_EPSILON = 0.0001;
 const PRICE_EPSILON = 0.01;
-const MANUAL_DIFFERENCES = new Set<InvoiceDifference>(['missing', 'extra', 'ambiguous', 'unit']);
+const MANUAL_DIFFERENCES = new Set<InvoiceDifference>(['missing', 'extra', 'ambiguous', 'unit', 'amount', 'signed']);
 
 function articleKey(article: string | null): string {
   return (article ?? '').toLocaleUpperCase('ru-RU').replace(/Ё/g, 'Е').replace(/[^0-9A-ZА-Я]/g, '');
@@ -78,10 +81,8 @@ function articleKey(article: string | null): string {
 
 function articleTokens(article: string | null): string[] {
   const value = (article ?? '').toLocaleUpperCase('ru-RU').replace(/Ё/g, 'Е');
-  return [...new Set([
-    ...(value.match(/[0-9A-ZА-Я]{3,}/g) ?? []).filter((token) => /[0-9]/.test(token)),
-    ...(value.match(/\d{3,}/g) ?? []),
-  ])];
+  return [...new Set((value.match(/[0-9A-ZА-Я]{3,}/g) ?? [])
+    .filter((token) => /[0-9]/.test(token)))];
 }
 
 function unitKey(unit: string | null): string {
@@ -163,8 +164,19 @@ function sourceRows(items: readonly InvoiceItem[]): string {
   return items.map((item) => item.sourceRow).join(', ');
 }
 
-function invoiceNotes(items: readonly InvoiceItem[]): string[] {
+function inconsistentAmount({ quantity, price, amount }: InvoiceItem): boolean {
+  if (amount === null) return false;
+  if (quantity === 0) return amount !== 0;
+  if (price === null) return false;
+
+  const delta = addDecimal(decimal(amount), multiplyDecimal(decimal(-quantity), decimal(price)));
+  // Supplier totals can differ from the unrounded product by a kopeck.
+  return delta.n * 100n < -delta.d || delta.n * 100n > delta.d;
+}
+
+function invoiceDiagnostics(items: readonly InvoiceItem[]) {
   const notes: string[] = [];
+  const differences: InvoiceDifference[] = [];
   if (items.length > 1) {
     notes.push('Строки счёта ' + sourceRows(items) + ': количество суммировано.');
     const prices = items.flatMap(({ price, amount, quantity }) =>
@@ -173,10 +185,19 @@ function invoiceNotes(items: readonly InvoiceItem[]): string[] {
       notes.push('В счёте разные цены, показана средневзвешенная цена.');
     }
   }
-  if (items.some(({ quantity }) => quantity < 0)) notes.push('Счёт содержит отрицательное количество.');
-  if (items.some(({ price }) => price !== null && price < 0)) notes.push('Счёт содержит отрицательную цену.');
-  if (items.some(({ amount }) => amount !== null && amount < 0)) notes.push('Счёт содержит отрицательную сумму.');
-  return notes;
+  const inconsistent = items.filter(inconsistentAmount);
+  if (inconsistent.length) {
+    differences.push('amount');
+    notes.push(`Сумма не соответствует количеству и цене в строках счёта ${sourceRows(inconsistent)}.`);
+  }
+  const negativeQty = items.filter(({ quantity }) => quantity < 0);
+  const negativePrice = items.filter(({ price }) => price !== null && price < 0);
+  const negativeAmount = items.filter(({ amount }) => amount !== null && amount < 0);
+  if (negativeQty.length || negativePrice.length || negativeAmount.length) differences.push('signed');
+  if (negativeQty.length) notes.push(`Проверьте отрицательное количество в строках счёта ${sourceRows(negativeQty)}.`);
+  if (negativePrice.length) notes.push(`Проверьте отрицательную цену в строках счёта ${sourceRows(negativePrice)}.`);
+  if (negativeAmount.length) notes.push(`Проверьте отрицательную сумму в строках счёта ${sourceRows(negativeAmount)}.`);
+  return { differences, notes };
 }
 
 function compareGroup(
@@ -191,8 +212,7 @@ function compareGroup(
   const orderPrice = combinePrices(prices, orderQty);
   const firstItem = items[0];
   const values = firstItem ? invoiceValues(items) : null;
-  const differences: InvoiceDifference[] = [];
-  const notes = invoiceNotes(items);
+  const { differences, notes } = invoiceDiagnostics(items);
   if (!values && !incompatibleItems && group.ambiguousRows.length === 0) {
     differences.push('missing');
     notes.push('Позиция заказа не найдена в счёте.');
@@ -252,8 +272,8 @@ function invoiceOnlyRow(
 ): InvoiceComparisonRow {
   const sample = items[0]!;
   const values = invoiceValues(items);
-  const differences: InvoiceDifference[] = [difference];
-  const notes = invoiceNotes(items);
+  const { differences, notes } = invoiceDiagnostics(items);
+  differences.unshift(difference);
   notes.push(comment ?? 'Позиция счёта не найдена в заказе.');
   if (values.invoicePrice === null) {
     differences.push('unpriced');
@@ -358,7 +378,10 @@ export function compareInvoice(orders: readonly Order[], items: readonly Invoice
 export function adjustmentAmount(adjustment: InvoiceAdjustment, original: InvoiceComparisonRow): number | null {
   const { qty, price } = adjustment;
   if (qty === null || price === null || !Number.isFinite(qty) || !Number.isFinite(price)) return null;
-  if (qty === original.invoiceQty && price === original.invoicePrice && original.invoiceAmount !== null) {
+  if (
+    qty === original.invoiceQty && price === original.invoicePrice && original.invoiceAmount !== null &&
+    !original.differences.includes('amount') && !original.differences.includes('signed')
+  ) {
     return original.invoiceAmount;
   }
   return moneyProduct(qty, price);
