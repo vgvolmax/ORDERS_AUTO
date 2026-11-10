@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import { expect, it } from 'vitest';
 import { parseMinMaxWorkbook } from '../../src/import/minMaxParser';
 import { parseSupplierWorkbook } from '../../src/import/supplierParser';
-import { readFirstSheetRows } from '../../src/import/workbook';
+import { readFirstSheet } from '../../src/import/workbook';
 import { calculateDemand, priceDemand } from '../../src/domain/demand';
 import { resolveSuppliers } from '../../src/domain/suppliers';
 
@@ -65,7 +65,7 @@ it('retains visible numeric code zeros in both imports while quantities and pric
 });
 
 it('keeps text code zeros and characters without applying a numeric format', () => {
-  const rows = readFirstSheetRows(
+  const { readCode } = readFirstSheet(
     report(
       [
         ['Код', 'Номенклатура'],
@@ -74,7 +74,7 @@ it('keeps text code zeros and characters without applying a numeric format', () 
       'A2',
     ),
   );
-  expect(rows[1]![0]).toBe('000123-X');
+  expect(readCode(1, 0)).toBe('000123-X');
 });
 
 it.each(['General', '0.00E+00'])(
@@ -127,3 +127,36 @@ it.each(['General', '0.00E+00'])(
     expect(supplier.data!.history[0]!.skuCode).toBe('1234567890123');
   },
 );
+
+it.each(['Код товара', 'Код номенклатуры (1С)'])(
+  'reads formatted codes from the recognized supplier header %s',
+  (codeHeader) => {
+    const result = parseSupplierWorkbook(
+      report(
+        [
+          ['Контрагент', codeHeader, 'Номенклатура', 'Количество', 'Стоимость'],
+          ['ИП Баранов Роман Борисович', 1, 'Товар', 2, 200],
+        ],
+        'B2',
+      ),
+    );
+
+    expect(result.data?.history[0]?.skuCode).toBe('000001');
+  },
+);
+
+it('uses the recognized MIN/MAX header after a metadata row containing Код', () => {
+  const result = parseMinMaxWorkbook(
+    report(
+      [
+        ['Вид отчёта', 'Код', 'MIN/MAX'],
+        ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток'],
+        [1, 'A', 'Товар', 1, 1, 10],
+        [null, null, 'Ленина', 1, 1, 10],
+      ],
+      'A3',
+    ),
+  );
+
+  expect(result.data?.skus[0]?.code).toBe('000001');
+});
