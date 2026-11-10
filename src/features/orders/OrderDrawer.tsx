@@ -6,7 +6,10 @@ import type { WorkflowOrder } from '../../app/selectors';
 import { QuantityInput } from '../../components/QuantityInput';
 import { Alert, Button } from '../../components/ui';
 import { QuantitySummary } from '../../components/QuantitySummary';
+import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
 import { fmtQty, money, priceSourceLabel } from '../demand/DemandPage';
+
+const orderLineKey = (line: OrderLine) => line.skuCode;
 
 export function OrderDrawer({
   order,
@@ -47,6 +50,50 @@ export function OrderDrawer({
   const hardBlocked = order.blockers.some(
     (blocker) => blocker !== 'Ниже минимальной суммы',
   );
+
+  const columns: VirtualColumn<OrderLine>[] = [
+    { key: 'sku', header: 'Код', width: '100px', render: (line) => <strong>{line.skuCode}</strong> },
+    { key: 'article', header: 'Артикул', width: '110px', render: (line) => line.article ?? '—' },
+    { key: 'name', header: 'Наименование', width: 'minmax(170px, 1fr)', render: (line) => line.name },
+    {
+      key: 'stock', header: 'Остаток по отчёту', width: '100px', className: 'num',
+      render: (line) => fmtQty(line.stock),
+    },
+    { key: 'min', header: 'MIN', width: '55px', className: 'num', render: (line) => line.min ?? '—' },
+    { key: 'max', header: 'MAX', width: '55px', className: 'num', render: (line) => line.max ?? '—' },
+    {
+      key: 'calculated', header: 'Расчёт до MAX', width: '108px', className: 'num',
+      render: (line) => <>{fmtQty(line.calculatedQty)}{renderMovement?.(line)}</>,
+    },
+    {
+      key: 'quantity', header: 'К заказу', width: '115px',
+      render: (line) => (
+        <>
+          <QuantityInput
+            className={line.orderQty !== line.calculatedQty ? 'manual-qty' : ''}
+            aria-label={`Количество ${line.skuCode}`}
+            value={line.orderQty}
+            onCommit={(qty) => onEdit(line.skuCode, line.branch, qty)}
+          />
+          {line.warnings.map((warning) => (
+            <small className="warning-text" key={warning}>{warning}</small>
+          ))}
+        </>
+      ),
+    },
+    {
+      key: 'price', header: 'Цена', width: '95px', className: 'num',
+      render: (line) => line.unitPrice == null ? 'Нет цены' : money(line.unitPrice),
+    },
+    {
+      key: 'price-source', header: 'Источник цены', width: '108px',
+      render: (line) => priceSourceLabel(line.priceSource),
+    },
+    {
+      key: 'amount', header: 'Сумма', width: '115px', className: 'num',
+      render: (line) => line.amount == null ? '—' : money(line.amount),
+    },
+  ];
 
   return createPortal(
     <div
@@ -126,67 +173,13 @@ export function OrderDrawer({
         )}
         {exportError && <Alert tone="danger">{exportError}</Alert>}
 
-        <div className="table-wrap drawer-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Код</th>
-                <th>Артикул</th>
-                <th>Наименование</th>
-                <th className="num">Остаток по отчёту</th>
-                <th className="num">MIN</th>
-                <th className="num">MAX</th>
-                <th className="num">Расчёт до MAX</th>
-                <th>К заказу</th>
-                <th className="num">Цена</th>
-                <th>Источник цены</th>
-                <th className="num">Сумма</th>
-              </tr>
-            </thead>
-            <tbody>
-              {order.lines.map((line) => (
-                <tr key={line.skuCode}>
-                  <td>
-                    <strong>{line.skuCode}</strong>
-                  </td>
-                  <td>{line.article ?? '—'}</td>
-                  <td>{line.name}</td>
-                  <td className="num">{fmtQty(line.stock)}</td>
-                  <td className="num">{line.min ?? '—'}</td>
-                  <td className="num">{line.max ?? '—'}</td>
-                  <td className="num">
-                    {fmtQty(line.calculatedQty)}
-                    {renderMovement?.(line)}
-                  </td>
-                  <td>
-                    <QuantityInput
-                      className={
-                        line.orderQty !== line.calculatedQty ? 'manual-qty' : ''
-                      }
-                      aria-label={`Количество ${line.skuCode}`}
-                      value={line.orderQty}
-                      onCommit={(qty) => onEdit(line.skuCode, line.branch, qty)}
-                    />
-                    {line.warnings.map((warning) => (
-                      <small className="warning-text" key={warning}>
-                        {warning}
-                      </small>
-                    ))}
-                  </td>
-                  <td className="num">
-                    {line.unitPrice == null
-                      ? 'Нет цены'
-                      : money(line.unitPrice)}
-                  </td>
-                  <td>{priceSourceLabel(line.priceSource)}</td>
-                  <td className="num">
-                    {line.amount == null ? '—' : money(line.amount)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <VirtualTable
+          rows={order.lines}
+          columns={columns}
+          getRowKey={orderLineKey}
+          maxHeight="calc(100vh - 260px)"
+          estimateRowHeight={52}
+        />
 
         <div className="drawer-actions">
           {onReconcile && (

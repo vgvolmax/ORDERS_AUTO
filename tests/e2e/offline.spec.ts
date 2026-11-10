@@ -3417,3 +3417,49 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
 });
+
+test('E2E-25 virtualizes a long order and saves a quantity at the end of the list', async ({ page }) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const skus = Array.from({ length: 150 }, (_, i) => 'L-' + String(i + 1).padStart(3, '0'));
+  const supplier = 'ИП Баранов Роман Борисович';
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles({
+    name: 'long-order.xlsx', mimeType,
+    buffer: Buffer.from(buildWorkbook([
+      ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+      ...skus.flatMap((sku) => [
+        [sku, sku, 'Товар ' + sku, null, null, null, 10],
+        [null, null, 'Ленина', 0, 2, 10, null],
+      ]),
+    ])),
+  });
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles({
+    name: 'long-order-suppliers.xlsx', mimeType,
+    buffer: Buffer.from(buildWorkbook([
+      ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+      ...skus.map((sku) => [supplier, sku, 'Товар ' + sku, 1, 10, 'шт']),
+    ])),
+  });
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await page.getByRole('button', { name: 'Заказы', exact: true }).click();
+
+  const openOrder = async () => {
+    await page.locator('.order-cell').first().click();
+    const drawer = page.getByRole('dialog', { name: 'Состав заказа' });
+    await expect(drawer.getByRole('table')).toHaveAttribute('aria-rowcount', '151');
+    expect(await drawer.getByRole('spinbutton').count()).toBeLessThan(60);
+    await drawer.getByLabel('Прокрутка таблицы').evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    return drawer.getByRole('spinbutton', { name: 'Количество L-150', exact: true });
+  };
+
+  const quantity = await openOrder();
+  await quantity.fill('6');
+  await expect(quantity).toHaveAttribute('aria-busy', 'false');
+  await page.reload();
+  const restoredQuantity = await openOrder();
+  await expect(restoredQuantity).toHaveValue('6');
+});

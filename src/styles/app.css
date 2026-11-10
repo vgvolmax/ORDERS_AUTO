@@ -230,7 +230,6 @@ details summary { cursor: pointer; }
 .drawer { position: absolute; right: 0; top: var(--feedback-height); height: calc(100% - var(--feedback-height)); width: min(1180px, 96vw); background: #f5f7f9; padding: 20px; box-shadow: -10px 0 40px #0002; overflow: auto; }
 .drawer-head { display: flex; justify-content: space-between; gap: 20px; }
 .close { border: 0; background: none; font-size: 32px; cursor: pointer; }
-.drawer-table-wrap { max-height: calc(100vh - 260px); }
 .drawer-actions { display: flex; gap: 10px; justify-content: flex-end; padding: 18px 0; }
 .review-toggle { border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 8px 10px; }
 .review-toggle.is-reviewed { border-color: #78b88b; background: #eef9f2; }
