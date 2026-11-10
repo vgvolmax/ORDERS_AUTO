@@ -1,5 +1,6 @@
 import { skippedReasonLabel } from '../features/rebalancing/skippedRebalance';
 import ExcelJS from 'exceljs';
+import { moneyProduct } from '../domain/money';
 import type { PurchaseDemandLine } from '../domain/purchaseDemand';
 import {
   acceptedEconomicDiagnostics,
@@ -82,7 +83,7 @@ export async function buildRebalancingWorkbook(
       t.qty,
       sku?.unit ?? null,
       price,
-      price === null ? null : price * t.qty,
+      price === null ? null : moneyProduct(t.qty, price),
     ];
   };
   for (const t of accepted)
@@ -211,7 +212,7 @@ export async function buildRebalancingWorkbook(
       skipped.deliverableQty,
       skipped.missingQty,
       price,
-      price === null ? null : price * skipped.missingQty,
+      price === null ? null : moneyProduct(skipped.missingQty, price),
       skippedReasonLabel[skipped.reason],
     ]);
     for (const recipient of skipped.recipients)

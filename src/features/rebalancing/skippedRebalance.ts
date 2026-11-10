@@ -12,7 +12,7 @@ export const skippedReasonLabel: Record<SkippedRebalanceSku['reason'], string> =
   {
     INSUFFICIENT_SURPLUS: 'Недостаточно излишка сверх Max',
     ROUTE_LIMIT: 'Не позволяют выбранные маршруты',
-    QUANTITY_STEP: 'Остаток потребности меньше шага',
+    QUANTITY_STEP: 'Остаток у каждого получателя меньше шага',
     AMOUNT_THRESHOLD: 'Не проходят минимальную сумму перемещения',
     SEARCH_LIMIT: 'Достигнут лимит поиска оптимального плана',
   };

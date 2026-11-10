@@ -221,3 +221,25 @@ it('treats a negative raw price as unknown consistently in skipped details', asy
   expect(screen.getByText('Сумма неизвестна')).toBeVisible();
   expect(screen.queryByText(/−?[-]140,00/)).not.toBeInTheDocument();
 });
+
+it('shows the same rounded uncovered amount in the dashboard and SKU list', async () => {
+  const { fireEvent } = await import('@testing-library/react');
+  const state = rebalanceAppState();
+  state.minMax!.skus[0]!.referencePrice = 0.145;
+  state.minMax!.branchStocks[0]!.stock = 63;
+  state.minMax!.branchStocks[1]!.stock = 60;
+  state.minMax!.branchStocks[2]!.stock = 54;
+  state.minMax!.branchStocks[2]!.min = 60;
+  state.rebalance.proposal = createProposal(state);
+  state.rebalance.tab = 'results';
+  render(
+    <StoreContext.Provider value={{ state, set: () => undefined }}>
+      <RebalancingPage />
+    </StoreContext.Provider>,
+  );
+  expect(screen.getByText('Не распределено', { selector: '.metric > span' })
+    .parentElement).toHaveTextContent('0,44');
+  fireEvent.click(screen.getByRole('button', { name: 'Показать список' }));
+  expect(screen.getByRole('region', { name: 'Нераспределённые артикулы' }))
+    .toHaveTextContent('0,44');
+});

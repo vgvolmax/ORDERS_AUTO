@@ -12,6 +12,10 @@ export interface StockDonor extends FlowDonor {
   minimumUnits: number;
 }
 
+export interface StockReceiver extends FlowReceiver {
+  hasStepRemainder: boolean;
+}
+
 type Routes = ReadonlyMap<string, ReadonlySet<string>>;
 interface CandidateRoute {
   donor: number;
@@ -36,10 +40,10 @@ const MAX_STATES_PER_SKU = 4_000;
 export const MAX_STATES_PER_CALCULATION = 30_000;
 
 interface Choice {
-  receiver: FlowReceiver;
+  remaining: number;
+  receiver: StockReceiver;
   full: boolean;
   routes: CandidateRoute[];
-  reserved: number;
 }
 interface Plan {
   lines: FlowAssignment[];
@@ -79,7 +83,7 @@ function reserveScale(donors: StockDonor[], step: number) {
 
 export function prioritizeDonorStock(
   donors: StockDonor[],
-  receivers: FlowReceiver[],
+  receivers: StockReceiver[],
   allowed: Routes,
   step: number,
   preferred: ReadonlySet<string>,
@@ -96,7 +100,7 @@ export function prioritizeDonorStock(
   if (!targets.length)
     return { lines: legalSeed, limited: false };
 
-  // Fast path only when one donor can actually cover the target in full.
+  // Fast path when one donor can send the entire transferable quantity.
   // With a smaller donor we must search for legal partial quantities above the amount minimum.
   if (targets.length === 1) {
     const { receiver, routes } = targets[0]!;
@@ -136,7 +140,9 @@ export function prioritizeDonorStock(
     }
     return {
       lines, units, reserve, donorsUsed: BigInt(outgoing.size),
-      full: targets.filter(({ receiver }) => incoming.get(receiver.id) === receiver.targetNeed).length,
+      full: targets.filter(({ receiver }) =>
+        !receiver.hasStepRemainder && incoming.get(receiver.id) === receiver.targetNeed
+      ).length,
     };
   }
 
@@ -163,8 +169,7 @@ export function prioritizeDonorStock(
     const remainingRoutes = new Map<string, Set<string>>();
     const residual: FlowReceiver[] = [];
     const lines: FlowAssignment[] = [];
-    for (const { receiver, routes, full, reserved } of choices) {
-      const left = receiver.targetNeed - reserved - Number(!full);
+    for (const { receiver, routes, full, remaining: left } of choices) {
       for (const route of routes) {
         const from = donors[route.donor]!.id;
         lines.push({ from, to: receiver.id, units: route.minimum });
@@ -198,7 +203,7 @@ export function prioritizeDonorStock(
   function visit(index: number, full: number, demand: number, count: number): void {
     if (limited) return;
     const pending = choices.flatMap((choice) => {
-      const left = choice.receiver.targetNeed - choice.reserved - Number(!choice.full);
+      const left = choice.remaining;
       return left > 0
         ? [{ left, full: choice.full, donors: choice.routes.map((route) => route.donor) }]
         : [];
@@ -216,7 +221,7 @@ export function prioritizeDonorStock(
     if (required > available) return;
     const future = targets.slice(index);
     const fullNeeds = future.filter(({ receiver, routes }) =>
-      routes.reduce((sum, { donor, minimum }) =>
+      !receiver.hasStepRemainder && routes.reduce((sum, { donor, minimum }) =>
         sum + (caps[donor]! >= minimum ? caps[donor]! : 0), 0) >= receiver.targetNeed,
     ).map(({ receiver }) => receiver.targetNeed).sort((a, b) => a - b);
     let fullUpper = full;
@@ -240,8 +245,7 @@ export function prioritizeDonorStock(
     if (!next) return finish();
     const { receiver, routes } = next;
 
-    function choose(bundle: CandidateRoute[], fullChoice: boolean, minimum: number): void {
-      const max = fullChoice ? receiver.targetNeed : receiver.targetNeed - 1;
+    function choose(bundle: CandidateRoute[], fullChoice: boolean, minimum: number, max: number): void {
       const capacity = bundle.reduce((sum, route) => sum + caps[route.donor]!, 0);
       if (minimum > max || (fullChoice && capacity < max)) return;
       const chosen = fullChoice && bundle.length === 1
@@ -249,14 +253,15 @@ export function prioritizeDonorStock(
         : bundle;
       const reservedUnits = fullChoice && bundle.length === 1 ? max : minimum;
       for (const route of chosen) caps[route.donor]! -= route.minimum;
-      choices.push({ receiver, full: fullChoice, routes: chosen, reserved: reservedUnits });
+      choices.push({
+        receiver, full: fullChoice, routes: chosen, remaining: max - reservedUnits,
+      });
       visit(index + 1, full + Number(fullChoice), demand + max, count + chosen.length);
       choices.pop();
       for (const route of chosen) caps[route.donor]! += route.minimum;
     }
 
-    function combinations(bundle: CandidateRoute[], start: number, minimum: number, fullChoice: boolean): void {
-      const max = fullChoice ? receiver.targetNeed : receiver.targetNeed - 1;
+    function combinations(bundle: CandidateRoute[], start: number, minimum: number, fullChoice: boolean, max: number): void {
       for (let i = start; i < routes.length && !limited; i++) {
         const route = routes[i]!;
         const nextMinimum = minimum + route.minimum;
@@ -264,19 +269,24 @@ export function prioritizeDonorStock(
         bundle.push(route);
         if (bundle.length > 1) {
           if (!spend()) return;
-          choose([...bundle], fullChoice, nextMinimum);
+          choose([...bundle], fullChoice, nextMinimum, max);
         }
-        if (nextMinimum < max) combinations(bundle, i + 1, nextMinimum, fullChoice);
+        if (nextMinimum < max) combinations(bundle, i + 1, nextMinimum, fullChoice, max);
         bundle.pop();
       }
     }
 
-    for (const fullChoice of [true, false]) {
+    // A fractional target can receive all whole steps and still remain incomplete.
+    const choicesByCoverage = receiver.hasStepRemainder ? [false] : [true, false];
+    for (const fullChoice of choicesByCoverage) {
+      const max = fullChoice || receiver.hasStepRemainder
+        ? receiver.targetNeed
+        : receiver.targetNeed - 1;
       for (const route of routes) {
         if (limited) break;
-        if (caps[route.donor]! >= route.minimum) choose([route], fullChoice, route.minimum);
+        if (caps[route.donor]! >= route.minimum) choose([route], fullChoice, route.minimum, max);
       }
-      combinations([], 0, 0, fullChoice);
+      combinations([], 0, 0, fullChoice, max);
     }
     visit(index + 1, full, demand, count);
   }

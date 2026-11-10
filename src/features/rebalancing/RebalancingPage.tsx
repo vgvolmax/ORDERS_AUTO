@@ -27,6 +27,7 @@ import {
   emptyAcceptedFilters,
 } from './acceptedTransfersViewModel';
 import { buildRebalancingWorkbook } from '../../export/rebalancingWorkbook';
+import { readActiveWorkspaceRevision } from '../../persistence/workspaces';
 import {
   save as download,
   downloadTransferCsv,
@@ -72,6 +73,10 @@ export const rebalanceMessage = (e: unknown) =>
   e instanceof Error
     ? (messages[e.message] ?? e.message)
     : 'Не удалось выполнить действие';
+const staleExportMessage =
+  'Рабочий сеанс изменился. Обновите страницу и повторите выгрузку перемещений.';
+class StaleRebalanceExportError extends Error {}
+
 const REBALANCE_TABS = ['routes', 'conditions', 'results', 'accepted'] as const;
 const REBALANCE_TAB_ICONS = {
   routes: 'pin',
@@ -404,39 +409,58 @@ export function RebalancingPage() {
       setBusy(false);
     }
   }
-  async function excel() {
-    if (!d.snapshot || busy || saving) return;
+  async function verifyExportRevision(): Promise<void> {
+    if (!store.commit) return;
+    const active = await readActiveWorkspaceRevision();
+    if (
+      active?.workspaceId !== state.workspaceId ||
+      active.revision !== state.workspaceRevision
+    ) {
+      throw new StaleRebalanceExportError(staleExportMessage);
+    }
+  }
+
+  async function runExport(action: () => Promise<void>, fallback: string) {
+    if (busy || saving) return;
     setBusy(true);
     setError('');
     try {
+      await action();
+    } catch (e) {
+      setError(e instanceof StaleRebalanceExportError ? e.message : fallback);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function excel() {
+    if (!d.snapshot) return;
+    const snapshot = d.snapshot;
+    void runExport(async () => {
       const buffer = await buildRebalancingWorkbook({
-        snapshot: d.snapshot.snapshot,
+        snapshot: snapshot.snapshot,
         config: r.config,
         proposal: r.proposal,
         accepted: r.accepted,
         purchaseDemand: d.purchaseDemand,
-        issues: d.snapshot.issues,
+        issues: snapshot.issues,
         workspaceId: state.workspaceId,
         exportedAt: new Date().toISOString(),
         selectedLineIds: r.selectedLineIds,
         rejectedLineIds: r.rejectedLineIds,
       });
+      await verifyExportRevision();
       download(
         new Blob([buffer], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         }),
         `Перемещения_${new Date().toISOString().slice(0, 10)}.xlsx`,
       );
-    } catch (e) {
-      setError(`Не удалось выгрузить Excel: ${rebalanceMessage(e)}`);
-    } finally {
-      setBusy(false);
-    }
+    }, 'Не удалось выгрузить Excel перемещений. Повторите выгрузку.');
   }
+
   function csv(documentId: string) {
-    if (busy) return;
-    setError('');
-    try {
+    void runExport(async () => {
       const doc = buildTransferDocuments({
         proposal: r.proposal,
         accepted: r.accepted,
@@ -450,13 +474,26 @@ export function RebalancingPage() {
         scope: {},
       }).find((doc) => doc.id === documentId);
       if (!doc) throw new Error('В направлении нет принятых позиций.');
+      await verifyExportRevision();
       downloadTransferCsv(doc);
       set({
         toast: `CSV перемещения ${doc.fromName} → ${doc.toName} сформирован.`,
       });
-    } catch {
-      setError('Не удалось скачать CSV перемещения. Повторите выгрузку.');
-    }
+    }, 'Не удалось скачать CSV перемещения. Повторите выгрузку.');
+  }
+
+  function acceptedCsv(ids: string[]) {
+    void runExport(async () => {
+      const selected = new Set(ids);
+      const docs = acceptedDocuments.filter((doc) => selected.has(doc.id));
+      if (docs.length !== selected.size)
+        throw new Error('Состав принятых перемещений изменился. Повторите выбор.');
+      await verifyExportRevision();
+      downloadAcceptedTransfersCsv(docs);
+      set({
+        toast: `CSV принятых перемещений сформирован · направлений: ${docs.length}.`,
+      });
+    }, 'Не удалось скачать CSV принятых перемещений. Повторите выгрузку.');
   }
   return (
     <main
@@ -634,24 +671,7 @@ export function RebalancingPage() {
               busy={busy}
               saving={Boolean(saving)}
               error={confirmation ? '' : error}
-              onExport={(ids) => {
-                const selected = new Set(ids);
-                const docs = buildAcceptedDocuments({
-                  accepted: r.accepted,
-                  registry: r.registry,
-                  policies,
-                  skus: state.minMax?.skus ?? [],
-                  snapshot: d.snapshot?.snapshot ?? null,
-                }).filter((doc) => selected.has(doc.id));
-                if (docs.length !== selected.size)
-                  throw new Error(
-                    'Состав принятых перемещений изменился. Повторите выбор.',
-                  );
-                downloadAcceptedTransfersCsv(docs);
-                set({
-                  toast: `CSV принятых перемещений сформирован · направлений: ${docs.length}.`,
-                });
-              }}
+              onExport={acceptedCsv}
             />
           )}
           {tab === 'results' && (
