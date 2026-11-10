@@ -10,6 +10,8 @@
     "test:e2e": "playwright test tests/e2e/offline.spec.ts --project=chrome",
     "build": "vite build && node scripts/assemble-offline-package.mjs && node scripts/assert-offline-package.mjs",
     "validate:package": "node scripts/assert-offline-package.mjs",
+    "package:appbox": "node scripts/package-appbox.mjs",
+    "build:appbox": "npm run build && npm run package:appbox && node scripts/smoke-appbox.mjs",
     "verify": "npm run typecheck && npm test -- --run && npm run build"
   },
   "dependencies": {

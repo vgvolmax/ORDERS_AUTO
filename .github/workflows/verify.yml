@@ -47,6 +47,12 @@ jobs:
           npm run build
           diff -qr "$RUNNER_TEMP/build1" dist/ORDERS_AUTO
 
+      - name: Build AppBox archive from verified offline build
+        run: npm run package:appbox
+
+      - name: Smoke-test AppBox archive offline
+        run: node scripts/smoke-appbox.mjs
+
       - name: Chrome file protocol smoke
         run: npm run test:e2e
 
@@ -71,6 +77,15 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Publish AppBox package
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ORDERS_AUTO_AppBox
+          path: dist/ORDERS_AUTO.appbox.zip
+          if-no-files-found: error
+          retention-days: 30
+
   release:
     needs: verify
     if: github.ref == 'refs/heads/main'
@@ -85,10 +100,23 @@ jobs:
           name: ORDERS_AUTO
           path: release-package
 
+      - name: Download verified AppBox package
+        uses: actions/download-artifact@v4
+        with:
+          name: ORDERS_AUTO_AppBox
+          path: release-appbox
+
       - name: Create release archive
         run: |
           cd release-package
           zip -r ../ORDERS_AUTO.zip .
+
+      - name: Stage AppBox archive
+        run: |
+          set -euo pipefail
+          test -s release-appbox/ORDERS_AUTO.appbox.zip
+          unzip -Z1 release-appbox/ORDERS_AUTO.appbox.zip | grep -Fxq appbox.json
+          cp release-appbox/ORDERS_AUTO.appbox.zip ORDERS_AUTO.appbox.zip
 
       - name: Validate release archive
         run: |
@@ -128,7 +156,8 @@ jobs:
           short_sha="${GITHUB_SHA::7}"
           updated_at="$(date -u +'%Y-%m-%d %H:%M UTC')"
           cat > "$RUNNER_TEMP/release-notes.md" <<EOF
-          **СКАЧИВАТЬ: ORDERS_AUTO.zip**
+          **СКАЧИВАТЬ: ORDERS_AUTO.zip** — обычная офлайн-версия.
+          **ДЛЯ APPBOX: ORDERS_AUTO.appbox.zip** — адаптированный пакет для импорта.
 
           Готовая офлайн-версия «Волмакс Буст».
 
@@ -156,11 +185,12 @@ jobs:
 
           if gh release view latest >/dev/null 2>&1; then
             gh release upload latest ORDERS_AUTO.zip --clobber
+            gh release upload latest ORDERS_AUTO.appbox.zip --clobber
             gh release edit latest \
               --title 'Волмакс Буст — последняя версия' \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           else
-            gh release create latest ORDERS_AUTO.zip \
+            gh release create latest ORDERS_AUTO.zip ORDERS_AUTO.appbox.zip \
               --title 'Волмакс Буст — последняя версия' \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
