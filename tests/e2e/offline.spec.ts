@@ -9,6 +9,27 @@ function supplierLinks(page: Page, skuCode: string) {
   return page.getByRole('button', { name: `Связи ${skuCode}`, exact: true });
 }
 
+test('E2E-29 feedback never covers the masthead and keeps nine routes visible on short screens', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await importFullCoverageFixture(page);
+  const toast = page.locator('[data-ui-toast]');
+  await expect(toast).toBeVisible();
+  for (const height of [600, 720]) {
+    await page.setViewportSize({ width: 1280, height });
+    const header = page.locator('.workspace-masthead-row');
+    const toastBox = await toast.boundingBox();
+    const headerBox = await header.boundingBox();
+    expect(toastBox).not.toBeNull();
+    expect(headerBox!.y).toBeGreaterThanOrEqual(toastBox!.y + toastBox!.height);
+    await expect(page.getByRole('table', { name: 'Матрица маршрутов' }).locator('tbody tr')).toHaveCount(9);
+    await expectRouteFrameFits(page);
+    await page.screenshot({ path: testInfo.outputPath(`29-feedback-${height}.png`) });
+  }
+  const before = await page.locator('main').boundingBox();
+  await expect(toast).toBeHidden({ timeout: 5000 });
+  expect((await page.locator('main').boundingBox())!.y).toBe(before!.y);
+});
+
 async function assignPrimary(page: Page, skuCode: string, supplier: string) {
   await supplierLinks(page, skuCode).click();
   const dialog = page.getByRole('dialog', { name: 'Связи товара', exact: true });
