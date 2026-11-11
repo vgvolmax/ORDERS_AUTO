@@ -159,3 +159,8 @@ ConditionsPanel использует прежние QuantityInput/checkbox и о
 ### Полные сообщения импорта и ручной поставщик без истории ·03.11.2026
 
 ImportIssues использует общий SearchInput, native Select и VirtualTable. Все сообщения доступны, включая виртуализированные строки. На странице «Поставщики» можно назначить любую из 32 компаний, даже если её нет в стартовом отчёте. После настройки еженедельный импорт принимает MIN/MAX и сохраняет связи. Покрытие — importIssues.test.tsx, supplierPool.test.tsx, supplierDecisionPersistence.test.tsx и E2E-21/23.
+
+
+### Независимый справочник ·11.11.2026
+
+Runtime owners: SuppliersPage — справочник/долговременное сохранение, SupplierProducts — фильтр присутствия и виртуальная таблица; SupplierRoster — общие связи и текущие закупочные суммы; прежний ProductSupplierDialog — редактирование отсутствующего товара. Native Select/Button/Dialog/VirtualTable и существующие tokens неизменны. Источник данных — AppState.catalog; расчёты заказов — snapshot. Приёмка E2E-28 и tests/ui/independentCatalog.test.tsx.

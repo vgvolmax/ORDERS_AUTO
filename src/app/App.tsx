@@ -10,6 +10,8 @@ import { StoreContext, type AppState, type StatePatch } from './appStore';
 import { createInitialState } from './initialState';
 import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
 import { loadActiveWorkspace, saveWorkspace, saveWorkspaceView } from '../persistence/workspaces';
+import { loadOrCreateSupplierCatalog } from '../persistence/supplierCatalog';
+import { attachSupplierCatalog } from './catalogSession';
 import { usePageScroll } from './usePageScroll';
 import { AppToast } from '../components/AppToast';
 import { Dialog } from '../components/Dialog';
@@ -106,9 +108,10 @@ export function App() {
     void (async () => {
       try {
         const active = await loadActiveWorkspace();
-        const initial = active
+        const catalog = await loadOrCreateSupplierCatalog(active);
+        const initial = attachSupplierCatalog(active
           ? stateFromWorkspace(active)
-          : createInitialState();
+          : createInitialState(), catalog);
         if (!cancelled) {
           initial.importEpoch = importEpoch;
           const nextSession: ReturnType<typeof createWorkspaceSession> =
@@ -179,7 +182,7 @@ export function App() {
   };
   const navigation = {
     page: state.page,
-    branches: state.supplierAssignments ? state.minMax?.branches : undefined,
+    branches: state.catalog || state.supplierAssignments ? state.minMax?.branches ?? [] : undefined,
     onNavigate: (page: AppState['page']) => {
       if (page === 'invoices' && state.page === 'invoices') return;
       leaveInvoice(() => {

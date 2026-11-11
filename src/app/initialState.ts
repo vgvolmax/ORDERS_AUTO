@@ -3,6 +3,7 @@ import { normalizeKey } from '../domain/normalize';
 import type { BranchRegistry } from '../domain/rebalancing/types';
 export function createInitialState(patch: Partial<AppState> = {}): AppState {
   const state: AppState = {
+    catalog: null,
     workspaceId: crypto.randomUUID(),
     workspaceRevision: -1,
     snapshotId: crypto.randomUUID(),

@@ -10,6 +10,7 @@ import {
   type SupplierAssignmentCommand,
 } from '../../domain/supplierAssignments';
 import { SUPPLIER_POOL } from '../../domain/supplierPool';
+import { changeCatalogAssignment } from '../../domain/supplierCatalog';
 import { BulkSupplierDialog, ProductSupplierDialog } from './SupplierAssignmentDialogs';
 import {
   SupplierProducts,
@@ -33,12 +34,12 @@ export function SuppliersPage() {
       <header>
         <p className="eyebrow">Закупка</p>
         <h1>Поставщики</h1>
-        <p>Назначайте основного и дополнительных поставщиков из рабочего списка. Заказ формируется у основного.</p>
+        <p>Постоянный справочник товаров и поставщиков. Назначения сохраняются независимо от рабочих сеансов.</p>
       </header>
-      {state.supplierAssignments === undefined ? (
+      {!state.catalog && state.supplierAssignments === undefined ? (
         <EmptyState>Загрузите отчёты, чтобы открыть каталог и связи поставщиков.</EmptyState>
       ) : (
-        <SupplierWorkspace key={state.workspaceId} assignments={state.supplierAssignments} />
+        <SupplierWorkspace key={state.workspaceId} assignments={state.catalog?.assignments ?? state.supplierAssignments ?? []} />
       )}
     </main>
   );
@@ -65,7 +66,8 @@ function SupplierWorkspace({
   const [error, setError] = useState('');
   const savingRef = useRef(false);
   const productTab = useRef<HTMLButtonElement>(null);
-  const products = state.minMax?.skus;
+  const products = state.catalog?.products ?? state.minMax?.skus;
+  const currentCodes = useMemo(() => new Set(state.minMax?.skus.map((sku) => sku.code)), [state.minMax]);
   const productsByCode = useMemo(
     () => new Map(products?.map((sku) => [sku.code, sku])),
     [products],
@@ -109,7 +111,7 @@ function SupplierWorkspace({
       const codes = 'skuCodes' in command ? command.skuCodes : [command.skuCode];
       const patch = (current: typeof state) => {
         if (
-          !current.supplierAssignments ||
+          (!current.catalog && !current.supplierAssignments) ||
           current.workspaceId !== state.workspaceId ||
           current.snapshotId !== state.snapshotId
         ) {
@@ -117,10 +119,10 @@ function SupplierWorkspace({
         }
         if (
           command.kind === 'set-primary' &&
-          current.supplierAssignments !== assignments
+          (current.catalog?.assignments ?? current.supplierAssignments) !== assignments
         ) {
           const affected = new Set(codes);
-          const currentPrimaries = new Map(current.supplierAssignments
+          const currentPrimaries = new Map((current.catalog?.assignments ?? current.supplierAssignments ?? [])
             .filter((assignment) => affected.has(assignment.skuCode))
             .map((assignment) => [assignment.skuCode, assignment.primary]));
           if (codes.some((code) => (
@@ -130,7 +132,9 @@ function SupplierWorkspace({
           }
         }
         return {
-          supplierAssignments: applySupplierAssignmentChange(current.supplierAssignments, command),
+          ...(current.catalog
+            ? { catalog: changeCatalogAssignment(current.catalog, command) }
+            : { supplierAssignments: applySupplierAssignmentChange(current.supplierAssignments ?? [], command) }),
           toast: success,
         };
       };
@@ -155,6 +159,7 @@ function SupplierWorkspace({
   return (
     <>
       <PurchasingDataAlert issues={derived.projection.dataIssues} />
+      {state.catalog && <p className="muted">Связи меняются в справочнике и для затронутых товаров текущего сеанса. Сохранённые сеансы остаются прежними. Потребность и суммы относятся к текущему MIN/MAX.</p>}
       <div className="workspace-tabs supplier-views" role="group" aria-label="Представления поставщиков">
         <button ref={productTab} aria-pressed={view === 'products'} onClick={() => setView('products')}>
           Товары
@@ -167,6 +172,7 @@ function SupplierWorkspace({
         <SupplierProducts
           active={view === 'products'}
           products={products ?? []}
+          currentCodes={currentCodes}
           assignmentsByCode={assignmentsByCode}
           demandCodes={demandCodes}
           filters={filters}

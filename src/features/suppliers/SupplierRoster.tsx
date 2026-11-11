@@ -5,7 +5,8 @@ import { ThresholdControls } from '../../components/ThresholdControls';
 import { EmptyState, Input, SearchInput } from '../../components/ui';
 import { moneySum } from '../../domain/money';
 import type { SupplierAssignment } from '../../domain/supplierAssignments';
-import type { Order, Sku } from '../../domain/types';
+import type { Order } from '../../domain/types';
+import type { CatalogProduct } from '../../domain/supplierCatalog';
 import { money } from '../../format/numbers';
 import type { SupplierRole } from './SupplierProducts';
 
@@ -17,7 +18,7 @@ export function SupplierRoster({
   onShowProducts,
 }: {
   catalogAssignments: ReadonlyMap<string, SupplierAssignment>;
-  productsByCode: ReadonlyMap<string, Sku>;
+  productsByCode: ReadonlyMap<string, CatalogProduct>;
   orders: Order[];
   suppliers: readonly string[];
   onShowProducts: (supplier: string, role: SupplierRole) => void;

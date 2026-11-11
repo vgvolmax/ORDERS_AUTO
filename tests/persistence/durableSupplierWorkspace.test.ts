@@ -5,6 +5,7 @@ import { createProposal } from '../../src/app/rebalanceActions';
 import { derive } from '../../src/app/selectors';
 import { createWorkspaceSession, stateFromWorkspace } from '../../src/app/workspaceSession';
 import { applySupplierAssignmentChange } from '../../src/domain/supplierAssignments';
+import { loadSupplierCatalog } from '../../src/persistence/supplierCatalog';
 import {
   listWorkspaces,
   loadActiveWorkspace,
@@ -224,6 +225,7 @@ it('restores participation and routes after a branch returns while respecting a 
   await session.commit({ minMax: incomplete });
   await session.commit({ minMax: structuredClone(incomplete) });
   const saved = stateFromWorkspace((await loadActiveWorkspace())!);
+  saved.catalog = await loadSupplierCatalog();
   expect(saved.rebalance.registry.map(({ active }) => active)).toEqual([true, false, false]);
   expect(createProposal(saved).transfers).toEqual([]);
 

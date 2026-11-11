@@ -1,4 +1,5 @@
 import { db, type WorkspaceRecord, type WorkspaceSources } from './db';
+import type { SupplierCatalog } from '../domain/supplierCatalog';
 import { applyWorkspaceView, workspaceView, type WorkspaceView } from '../domain/workspace';
 import type {
   ActiveWorkspace,
@@ -136,6 +137,7 @@ export async function listWorkspaces(): Promise<WorkspaceMetadata[]> {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 export interface WorkspaceSaveOptions {
+  catalog?: { expectedRevision: number; value: SupplierCatalog };
   reuseSources?: boolean;
   updateView?: boolean;
   previousView?: WorkspaceView;
@@ -151,7 +153,7 @@ export async function saveWorkspace(
   if (value.revision !== expectedRevision + 1)
     throw new Error('WORKSPACE_CONFLICT');
   const tx = (await db()).transaction(
-    ['workspaces', 'workspaceFiles', 'workspaceMeta', 'workspaceSources', 'workspaceViews'],
+    ['workspaces', 'workspaceFiles', 'workspaceMeta', 'workspaceSources', 'workspaceViews', 'supplierCatalog'],
     'readwrite',
   );
   void tx.done.catch(() => undefined);
@@ -168,6 +170,13 @@ export async function saveWorkspace(
       (active?.revision ?? -1) !== (expectedActive?.revision ?? -1)
     )
       throw workspaceConflict();
+    if (options?.catalog) {
+      const catalogs = tx.objectStore('supplierCatalog');
+      const current = await catalogs.get('main');
+      if ((current?.revision ?? -1) !== options.catalog.expectedRevision)
+        throw new Error('CATALOG_CONFLICT: справочник изменён в другой вкладке. Обновите страницу и повторите действие.');
+      await catalogs.put(options.catalog.value, 'main');
+    }
     const rawFiles = tx.objectStore('workspaceFiles');
     for (const file of files) {
       if ((await rawFiles.getKey(file.fileId)) !== undefined)
