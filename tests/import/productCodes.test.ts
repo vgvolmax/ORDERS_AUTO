@@ -5,6 +5,8 @@ import { parseSupplierWorkbook } from '../../src/import/supplierParser';
 import { readFirstSheet } from '../../src/import/workbook';
 import { calculateDemand, priceDemand } from '../../src/domain/demand';
 import { resolveSuppliers } from '../../src/domain/suppliers';
+import { compareInvoice } from '../../src/domain/invoices';
+import { buildOrderProjection } from '../../src/domain/orders';
 
 function report(
   rows: unknown[][],
@@ -17,6 +19,38 @@ function report(
   XLSX.utils.book_append_sheet(book, sheet, 'Report');
   return XLSX.write(book, { type: 'array', bookType: 'xlsx' });
 }
+
+it('preserves a zero-masked article through MIN/MAX, orders and article-only invoice matching', () => {
+  const data = parseMinMaxWorkbook(report([
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+    ['0001', 123, 'Товар', 0, null, null, 100],
+    [null, null, 'Ленина', 0, 2, 10, null],
+  ], 'B2')).data!;
+  expect(data.skus[0]?.article).toBe('000123');
+  const resolutions = resolveSuppliers([{
+    skuCode: '0001', supplier: 'ИП Баранов Роман Борисович', skuName: 'Товар', unit: 'шт',
+    purchaseQty: 1, purchaseAmount: 100, weightedUnitCost: 100,
+  }], [], ['0001']);
+  const { orders } = buildOrderProjection(priceDemand(calculateDemand(data), data.skus, resolutions),
+    resolutions, [], { minimumOrderAmount: 0, thresholdMode: 'SUPPLIER_TOTAL' });
+  expect(compareInvoice(orders, [{
+    skuCode: null, article: '000123', name: 'Товар', quantity: 10,
+    unit: 'шт', price: 100, amount: 1000, sourceRow: 2,
+  }])).toMatchObject([{ skuCode: '0001', article: '000123', differences: [] }]);
+});
+
+it.each([
+  ['000123-X', '000000', '000123-X'],
+  [1234567890123, '0.00E+00', '1234567890123'],
+  [123, '0.00', '123'],
+])('reads article %s without rounding or inventing digits from %s', (article, format, expected) => {
+  const data = parseMinMaxWorkbook(report([
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток'],
+    ['0001', article, 'Товар', 0, null, null],
+    [null, null, 'Ленина', 0, 2, 10],
+  ], 'B2', format)).data!;
+  expect(data.skus[0]?.article).toBe(expected);
+});
 
 it('retains visible numeric code zeros in both imports while quantities and prices stay numeric', () => {
   const min = report(

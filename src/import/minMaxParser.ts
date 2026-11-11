@@ -27,6 +27,8 @@ interface IndexedRow {
   rowNumber: number;
 }
 
+export const MIN_MAX_PARSER_VERSION = 2;
+
 export function parseMinMaxWorkbook(
   input: ArrayBuffer,
   savedBranchNames: readonly string[] = [],
@@ -118,7 +120,7 @@ export function parseMinMaxWorkbook(
           code,
           article:
             header.columns.article >= 0
-              ? normalizeText(parentRow[header.columns.article]) || null
+              ? readCode(index, header.columns.article) || null
               : null,
           name: normalizeText(parentRow[header.columns.name]),
           reportedTotalStock: parseOptionalNumber(

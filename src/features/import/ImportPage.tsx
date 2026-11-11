@@ -4,13 +4,11 @@ import { derive } from '../../app/selectors';
 import { RebalanceError } from '../../domain/rebalancing/types';
 import { isSupplierInPool, supplierKey } from '../../domain/supplierPool';
 import type { ValidationIssue } from '../../domain/types';
-import { parseMinMaxWorkbook } from '../../import/minMaxParser';
+import { MIN_MAX_PARSER_VERSION, parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
 import { Alert, Button } from '../../components/ui';
 import { ImportIssues } from './ImportIssues';
 import { loadWorkspaceFile } from '../../persistence/workspaces';
-
-const minMaxParserVersion = 1;
 
 export function ImportPage() {
   const { state, set, commit, saving } = useStore();
@@ -74,7 +72,7 @@ export function ImportPage() {
       const activeFile = state.rawImports.minMax;
       if (
         kind === 'min' &&
-        activeFile?.parserVersion === minMaxParserVersion &&
+        activeFile?.parserVersion === MIN_MAX_PARSER_VERSION &&
         activeFile.name === file.name &&
         activeFile.size === bytes.byteLength
       ) {
@@ -114,7 +112,7 @@ export function ImportPage() {
         type: file.type,
         size: file.size,
         lastModified: file.lastModified,
-        ...(kind === 'min' ? { parserVersion: minMaxParserVersion } : {}),
+        ...(kind === 'min' ? { parserVersion: MIN_MAX_PARSER_VERSION } : {}),
       };
       const update = (current: typeof state) =>
         reads.current[kind] !== token ||
