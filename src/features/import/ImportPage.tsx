@@ -25,7 +25,7 @@ export function ImportPage() {
   ).size;
   const minMaxIssues = useMemo(() => {
     if (!state.minMax) return state.minMaxIssues;
-    const key = (issue: ValidationIssue) => JSON.stringify([issue.code, issue.skuCode, issue.branch]);
+    const key = (issue: ValidationIssue) => JSON.stringify([issue.severity, issue.code, issue.skuCode, issue.branch]);
     const seen = new Set(state.minMaxIssues.map(key));
     return [...state.minMaxIssues, ...collectPurchasingIssues(state.minMax, []).filter((issue) => !seen.has(key(issue)))];
   }, [state.minMax, state.minMaxIssues]);

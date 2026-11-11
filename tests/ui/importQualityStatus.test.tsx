@@ -32,6 +32,19 @@ it('shows invalid norms from a restored legacy dataset even without saved import
   expect(within(card).getAllByText(/Отрицательный норматив/)).toHaveLength(1);
 });
 
+it('does not let a legacy MIN>MAX warning suppress the new negative-MAX error', () => {
+  const state = baseState({ minMaxIssues: [{
+    code: 'INVALID_NORM', severity: 'WARNING', skuCode: 'SKU1', branch: 'Ленина', row: 3,
+    message: 'MIN больше MAX: SKU1 / Ленина (0 > -5)',
+  }] });
+  Object.assign(state.minMax!.branchStocks[0]!, { min: 0, max: -5 });
+  renderWithStore(<ImportPage />, state);
+  const card = screen.getByRole('heading', { name: 'Отчёт MIN/MAX' }).closest('section')!;
+  expect(within(card).getByText('Прочитан с ошибками')).toBeVisible();
+  expect(within(card).getByText(/Отрицательный норматив/)).toBeVisible();
+  expect(within(card).getByText(/MIN больше MAX/)).toBeVisible();
+});
+
 it('shows clean imports as successful and never reports success while reading', () => {
   const state = baseState();
   const { unmount } = renderWithStore(<ImportPage />, state);
