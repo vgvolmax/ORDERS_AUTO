@@ -800,7 +800,7 @@ test('E2E-18 one SKU per donor-recipient must meet the minimum; other SKUs and d
   expect(csv).toContain('AMOUNT-A');
   expect(csv).toContain(';ОреховоЗуево;3;шт;1000;3000');
   expect(csv).toContain(';ОреховоЗуево;10;шт;500;5000');
-  expect(csv).toContain(';ОреховоЗуево;15;шт;339.3;5089.5');
+  expect(csv).toContain(';ОреховоЗуево;15;шт;339,3;5089,5');
   expect(csv).not.toContain('Ленина');
   await page.screenshot({
     path: testInfo.outputPath('18-transfer-sku-amount.png'),
@@ -1326,7 +1326,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await expect(transferDrawer).toContainText('A1');
   await expect(transferDrawer).toContainText('75 → 60');
   await expect(transferDrawer).toContainText('10 → 25');
-  await expect(transferDrawer.getByRole('spinbutton')).toHaveCount(0);
+  await expect(transferDrawer.getByRole('spinbutton', { name: 'Количество SKU1', exact: true })).toHaveValue('15');
   await page.keyboard.press('Escape');
   await expect(routeA).toBeFocused();
   await routeA.click();
@@ -1360,6 +1360,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   await expect(
     transferDrawer.getByText('Принято', { exact: true }),
   ).toBeVisible();
+  await expect(transferDrawer.getByRole('spinbutton')).toHaveCount(0);
   await expect(transferDrawer).toContainText('75 → 60');
   await page.screenshot({
     path: testInfo.outputPath('08-accepted-transfer-1280.png'),
