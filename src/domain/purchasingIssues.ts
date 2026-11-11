@@ -1,4 +1,5 @@
 import { normalizeKey } from './normalize';
+import { hasNegativeStockNorm } from './stockNorms';
 import type { MinMaxDataset, ValidationIssue } from './types';
 
 /** Import diagnostics also govern procurement, not only the rebalance snapshot. */
@@ -13,6 +14,7 @@ export function collectPurchasingIssues(
         'DUPLICATE_SKU',
         'DUPLICATE_SKU_BRANCH',
         'INVALID_BRANCH_VALUES',
+        'INVALID_NORM',
       ].includes(i.code),
   );
   const seenSkus = new Set<string>();
@@ -43,6 +45,13 @@ export function collectPurchasingIssues(
     seenSkus.add(sku.code);
   }
   for (const row of dataset.branchStocks) {
+    if (hasNegativeStockNorm(row.min, row.max) && !hasIssue('INVALID_NORM', row.skuCode, row.branch)) {
+      issues.push({
+        severity: 'ERROR', code: 'INVALID_NORM', skuCode: row.skuCode, branch: row.branch,
+        message: `Отрицательный норматив MIN/MAX: ${row.skuCode} / ${row.branch}. Укажите неотрицательные значения.`,
+      });
+      issueKeys.add(issueKey('INVALID_NORM', row.skuCode, row.branch));
+    }
     const key = JSON.stringify([row.skuCode, normalizeKey(row.branch)]);
     if (
       seenSlices.has(key) &&

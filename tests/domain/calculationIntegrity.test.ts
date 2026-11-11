@@ -79,6 +79,17 @@ function imported(
 }
 
 describe('calculation audit regressions: import → purchasing → orders', () => {
+  it('excludes a negative MIN and diagnoses the same row in legacy snapshots without stored issues', () => {
+    const x = imported([sku(), [null, null, 'Ленина', 0, -5, 10, null], branch('Ступино')], [history()]);
+    for (const state of [x.state, { ...x.state, minMaxIssues: [] }]) {
+      const result = derive(state);
+      expect(result.projection.orders.map((order) => order.branch)).toEqual(['Ступино']);
+      expect(result.projection.dataIssues).toContainEqual(expect.objectContaining({
+        code: 'INVALID_NORM', skuCode: 'SKU1', branch: 'Ленина', severity: 'ERROR',
+      }));
+      expect(result.purchaseDemand.find((row) => row.branch === 'Ленина')?.purchaseStatus).toBe('INVALID_NORM');
+    }
+  });
   it('keeps fractional physical need exact at the monetary threshold', () => {
     const x = imported(
       [sku('SKU1', 1), branch('Ленина', 0.1, 0.3)],

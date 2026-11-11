@@ -3,11 +3,12 @@ import { invoiceDifferenceLabels, type InvoiceAdjustment, type InvoiceComparison
 import { moneySum } from '../domain/money';
 import { normalizeKey } from '../domain/normalize';
 import { protectSpreadsheetText, rowsToCsv } from './csv';
+import { hasInvoiceAmountDifference, invoiceAmountDifference, invoicePriceWithinTolerance } from '../domain/invoiceAmounts';
 
 const ADJUSTMENT_HEADERS = ['Артикул', 'Номенклатура', 'Количество', 'Ед.', 'Цена', 'Сумма'];
 const COMPARISON_HEADERS = [
   'Расхождения', 'Код 1С', 'Артикул', 'Номенклатура', 'Количество заказа', 'Количество счёта',
-  'Разница количества', 'Ед.', 'Цена заказа', 'Цена счёта', 'Разница цены', 'Сумма счёта', 'Комментарий',
+  'Разница количества', 'Ед.', 'Цена заказа', 'Цена счёта', 'Разница цены', 'Сумма заказа', 'Сумма счёта', 'Разница суммы', 'Комментарий',
 ];
 type Cell = string | number | null;
 
@@ -22,10 +23,11 @@ function delta(before: number | null, after: number | null): number | null {
 
 export function invoiceComparisonCsv(rows: readonly InvoiceComparisonRow[]): string {
   return rowsToCsv(COMPARISON_HEADERS, rows.map((row) => [
-    row.differences.map((difference) => invoiceDifferenceLabels[difference]).join(', ') || 'Совпадает',
+    [...row.differences.map((difference) => invoiceDifferenceLabels[difference]), ...(hasInvoiceAmountDifference(row) ? ['Разница суммы'] : [])].join(', ') || 'Совпадает',
     row.skuCode, row.article, row.name, row.orderQty, row.invoiceQty, delta(row.orderQty, row.invoiceQty),
     row.unit, row.orderPrice, row.invoicePrice, delta(row.orderPrice, row.invoicePrice),
-    row.invoiceAmount, row.notes.join(' '),
+    row.orderAmount, row.invoiceAmount, invoiceAmountDifference(row),
+    [...row.notes, ...(invoicePriceWithinTolerance(row) ? ['Цена в пределах допуска 0,01 ₽ за единицу.'] : [])].join(' '),
   ].map(textCell)));
 }
 

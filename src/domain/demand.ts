@@ -9,6 +9,7 @@ import type {
 import { normalizeKey } from './normalize';
 import { moneyProduct, moneySum } from './money';
 import { addDecimal, decimal, decimalNumber } from './decimal';
+import { hasNegativeStockNorm } from './stockNorms';
 
 export interface StockCalculation {
   status: StockStatus;
@@ -21,6 +22,9 @@ export function calculateStockStatus(
   min: number | null,
   max: number | null,
 ): StockCalculation {
+  if (hasNegativeStockNorm(min, max)) {
+    return { status: 'INVALID_NORM', deficitQty: 0, deficitPct: null };
+  }
   if (max == null || max <= 0) {
     return { status: 'NO_NORM', deficitQty: 0, deficitPct: null };
   }

@@ -41,6 +41,7 @@ export interface InvoiceComparisonRow {
   invoiceQty: number | null;
   orderPrice: number | null;
   invoicePrice: number | null;
+  orderAmount: number | null;
   invoiceAmount: number | null;
   differences: InvoiceDifference[];
   notes: string[];
@@ -74,7 +75,7 @@ interface InvoiceValues {
 }
 
 const QTY_EPSILON = 0.0001;
-const PRICE_EPSILON = 0.01;
+export const INVOICE_PRICE_TOLERANCE = 0.01;
 const MANUAL_DIFFERENCES = new Set<InvoiceDifference>(['missing', 'extra', 'ambiguous', 'unit', 'amount', 'signed']);
 
 function articleKey(article: string | null): string {
@@ -215,6 +216,8 @@ function compareGroup(
   const { lines } = group;
   const sample = lines[0]!;
   const orderQty = moneySum(lines.map((line) => line.orderQty));
+  const orderAmount = lines.some((line) => line.amount === null)
+    ? null : moneySum(lines.map((line) => line.amount!));
   const prices = lines.map((line) => ({ qty: line.orderQty, price: line.unitPrice }));
   const orderPrice = combinePrices(prices, orderQty);
   const firstItem = items[0];
@@ -232,7 +235,7 @@ function compareGroup(
     }
     if (orderPrice !== null && values.invoicePrice !== null) {
       const priceDiff = moneySum([values.invoicePrice, -orderPrice]);
-      if (Math.abs(priceDiff) > PRICE_EPSILON) {
+      if (Math.abs(priceDiff) > INVOICE_PRICE_TOLERANCE) {
         differences.push(priceDiff > 0 ? 'higher' : 'lower');
         notes.push(priceDiff > 0 ? 'Цена в счёте выше цены заказа.' : 'Цена в счёте ниже цены заказа.');
       }
@@ -268,6 +271,7 @@ function compareGroup(
     orderQty,
     invoiceQty: values?.invoiceQty ?? null,
     orderPrice,
+    orderAmount,
     invoicePrice: values?.invoicePrice ?? null,
     invoiceAmount: values?.invoiceAmount ?? null,
     differences,
@@ -300,6 +304,7 @@ function invoiceOnlyRow(
     unit: sample.unit,
     orderQty: null,
     orderPrice: null,
+    orderAmount: null,
     ...values,
     differences,
     notes,

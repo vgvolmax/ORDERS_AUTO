@@ -9,6 +9,7 @@ import { parseSupplierWorkbook } from '../../import/supplierParser';
 import { Alert, Button } from '../../components/ui';
 import { ImportIssues } from './ImportIssues';
 import { loadWorkspaceFile } from '../../persistence/workspaces';
+import { collectPurchasingIssues } from '../../domain/purchasingIssues';
 
 export function ImportPage() {
   const { state, set, commit, saving } = useStore();
@@ -22,6 +23,12 @@ export function ImportPage() {
   const supplierPoolCount = new Set(
     state.suppliers?.suppliers.filter(isSupplierInPool).map(supplierKey),
   ).size;
+  const minMaxIssues = useMemo(() => {
+    if (!state.minMax) return state.minMaxIssues;
+    const key = (issue: ValidationIssue) => JSON.stringify([issue.severity, issue.code, issue.skuCode, issue.branch]);
+    const seen = new Set(state.minMaxIssues.map(key));
+    return [...state.minMaxIssues, ...collectPurchasingIssues(state.minMax, []).filter((issue) => !seen.has(key(issue)))];
+  }, [state.minMax, state.minMaxIssues]);
 
   // Cleanup belongs to the session that mounted this import page.
   useEffect(() => {
@@ -221,7 +228,7 @@ export function ImportPage() {
               ? `${state.minMax.skus.length} SKU · ${state.minMax.branches.length} подразделений`
               : null
           }
-          issues={state.minMaxIssues}
+          issues={minMaxIssues}
           onFile={(file) => load(file, 'min')}
         />
         <FileCard
@@ -300,7 +307,7 @@ function FileCard({
       aria-busy={busy}
     >
       <div className="upload-icon" aria-hidden="true">
-        {ready ? '✓' : '⇧'}
+        {busy ? '⇧' : ready && (errors.length || warnings.length) ? '!' : ready ? '✓' : '⇧'}
       </div>
       <h2>{title}</h2>
       <p>{accept.replaceAll(',', ' / ')} · отчёт из 1С</p>
@@ -327,18 +334,13 @@ function FileCard({
       )}
 
       <strong
-        className={ready ? 'success' : errors.length ? 'danger-text' : ''}
+        className={busy ? '' : errors.length ? 'danger-text' : ready && warnings.length ? 'warning-text' : ready ? 'success' : ''}
       >
-        {locked
-          ? 'Использован при первичной настройке'
-          : busy
-            ? 'Обработка файла…'
-            : ready
-              ? 'Успешно распознан'
-              : errors.length
-                ? 'Файл требует исправления'
-                : 'Файл не загружен'}
+        {busy ? 'Обработка файла…' : ready
+          ? errors.length ? 'Прочитан с ошибками' : warnings.length ? 'Прочитан с предупреждениями' : 'Успешно распознан'
+          : errors.length ? 'Файл требует исправления' : 'Файл не загружен'}
       </strong>
+      {locked && <small>Использован при первичной настройке</small>}
       {summary && <small>{summary}</small>}
       {(warnings.length > 0 || errors.length > 0) && (
         <ImportIssues title={title} issues={issues} />
