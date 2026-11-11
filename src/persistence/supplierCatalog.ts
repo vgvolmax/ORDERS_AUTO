@@ -1,5 +1,5 @@
 import { createSupplierCatalog, type SupplierCatalog } from '../domain/supplierCatalog';
-import type { StoredWorkspace } from '../domain/workspace';
+import type { StoredWorkspace, WorkspaceData } from '../domain/workspace';
 import { db } from './db';
 import { listWorkspaces, loadWorkspace } from './workspaces';
 
@@ -16,17 +16,24 @@ export async function loadSupplierCatalog(): Promise<SupplierCatalog | null> {
   return checkedSupplierCatalog(await (await db()).get('supplierCatalog', 'main'));
 }
 
+/** Shared by boot migration, first setup completion and legacy recovery. */
+export async function recoverSupplierCatalog(data: WorkspaceData): Promise<SupplierCatalog | null> {
+  if (data.supplierAssignments === undefined) return null;
+  const history: Pick<WorkspaceData, 'minMax'>[] = [];
+  for (const meta of await listWorkspaces()) {
+    const workspace = await loadWorkspace(meta.workspaceId);
+    if (workspace?.data.minMax) history.push({ minMax: {
+      skus: workspace.data.minMax.skus, branchStocks: [], branches: [],
+    } });
+  }
+  return createSupplierCatalog(data, history);
+}
+
 /** Idempotent migration: never merge historic supplier choices into the catalog. */
 export async function loadOrCreateSupplierCatalog(active: StoredWorkspace | null): Promise<SupplierCatalog | null> {
   const existing = await loadSupplierCatalog();
   if (existing || active?.data.supplierAssignments === undefined) return existing;
-  const history: StoredWorkspace['data'][] = [];
-  for (const meta of await listWorkspaces()) {
-    if (meta.workspaceId === active.workspaceId) continue;
-    const workspace = await loadWorkspace(meta.workspaceId);
-    if (workspace) history.push(workspace.data);
-  }
-  const catalog = createSupplierCatalog(active.data, history)!;
+  const catalog = (await recoverSupplierCatalog(active.data))!;
   const tx = (await db()).transaction(['supplierCatalog', 'workspaceMeta'], 'readwrite');
   void tx.done.catch(() => undefined);
   try {

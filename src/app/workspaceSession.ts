@@ -13,11 +13,12 @@ import {
   type StoredWorkspace,
   type WorkspaceFile,
   type WorkspaceView,
+  type WorkspaceData,
 } from '../domain/workspace';
 import type { WorkspaceSaveOptions } from '../persistence/workspaces';
 import { createInitialState, reconcileRegistry } from './initialState';
 import { attachSupplierCatalog, prepareCatalogState } from './catalogSession';
-import { createSupplierCatalog } from '../domain/supplierCatalog';
+import { createSupplierCatalog, type SupplierCatalog } from '../domain/supplierCatalog';
 export function workspaceFromState(state: AppState): StoredWorkspace {
   const {
     minMax,
@@ -87,6 +88,7 @@ export function createWorkspaceSession({
   initial,
   save,
   saveView,
+  recoverCatalog = async (data) => createSupplierCatalog(data),
   publish,
   id = () => crypto.randomUUID(),
 }: {
@@ -98,6 +100,7 @@ export function createWorkspaceSession({
     options?: WorkspaceSaveOptions,
   ) => Promise<void>;
   saveView?: (id: string, previous: WorkspaceView, next: WorkspaceView) => Promise<void>;
+  recoverCatalog?: (data: WorkspaceData) => Promise<SupplierCatalog | null>;
   publish: (state: AppState) => void;
   id?: () => string;
 }) {
@@ -114,7 +117,7 @@ export function createWorkspaceSession({
           snapshotId: workspace.snapshotId,
           workspaceRevision: 0,
           workspaceCreatedAt: new Date().toISOString(),
-        }), state.catalog ?? createSupplierCatalog(workspace.data));
+        }), state.catalog ?? await recoverCatalog(workspace.data));
         const stored = workspaceFromState(next);
         if (state.workspaceRevision >= 0)
           stored.previousActive = {
@@ -169,6 +172,10 @@ export function createWorkspaceSession({
             next.suppliers.history,
           );
         next = prepareCatalogState(previous, next);
+        if (!previous.catalog && next.catalog) {
+          next.catalog = await recoverCatalog(next);
+          if (!next.catalog) throw new Error('CATALOG_INITIALIZATION: не удалось подготовить справочник');
+        }
         const viewChanged = hasViewChanges(previous, next);
         if (
           saveView &&

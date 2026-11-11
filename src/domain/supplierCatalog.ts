@@ -17,7 +17,7 @@ export interface SupplierCatalog {
 }
 
 /** The active workspace alone owns migrated choices; history only fills identities. */
-export function createSupplierCatalog(data: WorkspaceData, history: readonly WorkspaceData[] = []): SupplierCatalog | null {
+export function createSupplierCatalog(data: WorkspaceData, history: readonly Pick<WorkspaceData, 'minMax'>[] = []): SupplierCatalog | null {
   if (data.supplierAssignments === undefined) return null;
   const products = new Map<string, CatalogProduct>();
   for (const workspace of [data, ...history]) {
