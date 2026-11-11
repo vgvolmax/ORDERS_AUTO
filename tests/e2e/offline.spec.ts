@@ -3607,7 +3607,9 @@ test('E2E-27 masked articles and explicit invoice sheets produce a safe correcti
   await page.locator('.order-cell').first().click();
   const order = page.getByRole('dialog', { name: 'Состав заказа' });
   await expect(order.getByText('000123', { exact: true })).toBeVisible();
-  await order.getByRole('checkbox', { name: 'Заказ проверен' }).check();
+  const reviewed = order.getByRole('checkbox', { name: 'Заказ проверен' });
+  await reviewed.click();
+  await expect(reviewed).toBeChecked();
   await order.getByRole('button', { name: 'Сверить счёт', exact: true }).click();
   const invoice = (parts: Array<[number, string | null]>) => {
     const book = xlsx.utils.book_new();
