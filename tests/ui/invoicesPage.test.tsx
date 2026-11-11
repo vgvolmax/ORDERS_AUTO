@@ -34,7 +34,9 @@ vi.mock('../../src/features/invoices/useInvoiceOrders', () => ({
     verifySource,
   }),
 }));
-vi.mock('../../src/import/invoiceParser', () => ({ parseInvoiceWorkbook }));
+vi.mock('../../src/import/invoiceParser', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../src/import/invoiceParser')>(), parseInvoiceWorkbook,
+}));
 vi.mock('../../src/export/download', () => ({ save }));
 
 function order(id: string, branch: string, supplier = 'Альфа', orderQty = 2) {

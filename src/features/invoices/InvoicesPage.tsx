@@ -9,7 +9,13 @@ import {
   compareInvoice,
 } from '../../domain/invoices';
 import { fmtQty, money } from '../../format/numbers';
-import { parseInvoiceWorkbook } from '../../import/invoiceParser';
+import {
+  InvoiceSheetsRequiredError,
+  parseInvoiceWorkbook,
+  selectInvoiceSheets,
+  type ParsedInvoiceSheet,
+} from '../../import/invoiceParser';
+import { InvoiceSheets } from './InvoiceSheets';
 import {
   InvoiceResults,
   type InvoiceAction,
@@ -19,10 +25,12 @@ import { useInvoiceOrders } from './useInvoiceOrders';
 import './InvoicesPage.css';
 
 type EligibleOrder = WorkflowOrder & { exported: boolean };
+type SheetChoice = { sheets: ParsedInvoiceSheet[]; selectedNames: string[] };
 type InvoiceFile = { context: string; name: string } & (
   | { status: 'reading' }
   | { status: 'failed'; error: string }
-  | { status: 'ready'; data: ReturnType<typeof parseInvoiceWorkbook> }
+  | ({ status: 'selecting' } & SheetChoice)
+  | { status: 'ready'; data: ReturnType<typeof parseInvoiceWorkbook>; sheetChoice?: SheetChoice }
 );
 type Comparison = InvoiceResult & { scope: string };
 type Confirmation = { message: string; label: string; run: () => void };
@@ -74,6 +82,7 @@ export function InvoicesPage({
   );
   const activeFile = file?.context === context ? file : null;
   const readyFile = activeFile?.status === 'ready' ? activeFile : null;
+  const sheetChoice = activeFile?.status === 'selecting' ? activeFile : readyFile?.sheetChoice;
   const visibleComparison =
     comparison && scope !== null && comparison.scope === scope && !invalidated
       ? comparison
@@ -188,12 +197,41 @@ export function InvoicesPage({
       setFile({ ...fileInfo, status: 'ready', data });
     } catch (failure) {
       if (fileSequence.current !== current || latest.current.context !== context) return;
+      if (failure instanceof InvoiceSheetsRequiredError) {
+        setFile({ ...fileInfo, status: 'selecting', sheets: failure.sheets, selectedNames: [] });
+        return;
+      }
       setFile({
         ...fileInfo,
         status: 'failed',
         error: failure instanceof Error ? failure.message : 'Не удалось прочитать счёт.',
       });
     }
+  }
+
+  function changeSheets(name: string, included: boolean) {
+    if (!activeFile || !sheetChoice) return;
+    const selectedNames = included
+      ? [...sheetChoice.selectedNames, name]
+      : sheetChoice.selectedNames.filter((selected) => selected !== name);
+    withConfirmation(
+      'Смена листов счёта сбросит результат сверки и ручные правки корректировки.',
+      'Изменить листы',
+      () => {
+        resetComparison();
+        setFile({ context, name: activeFile.name, status: 'selecting', sheets: sheetChoice.sheets, selectedNames });
+      },
+    );
+  }
+
+  function applySheets() {
+    if (activeFile?.status !== 'selecting' || !activeFile.selectedNames.length) return;
+    const { sheets, selectedNames } = activeFile;
+    setFile({
+      context, name: activeFile.name, status: 'ready',
+      data: selectInvoiceSheets(sheets, selectedNames),
+      sheetChoice: { sheets, selectedNames },
+    });
   }
 
   function chooseFile(next: File) {
@@ -404,11 +442,21 @@ export function InvoicesPage({
                 <small>
                   {activeFile.status === 'reading' ? 'Чтение счёта…' :
                     activeFile.status === 'ready' ? `Позиций в файле: ${fmtQty(activeFile.data.items.length)}` :
+                    activeFile.status === 'selecting' ? 'Выберите листы для сверки' :
                     'Файл не загружен'}
                 </small>
               </span>
             </div>
           ) : <p className="invoice-upload-hint">{completeSelection ? 'Счёт пока не выбран.' : 'Сначала отметьте заказы одного поставщика.'}</p>}
+          {sheetChoice && (
+            <InvoiceSheets
+              {...sheetChoice}
+              applied={activeFile?.status === 'ready'}
+              disabled={Boolean(action)}
+              onChange={changeSheets}
+              onApply={applySheets}
+            />
+          )}
           {activeFile?.status === 'failed' && <Alert tone="danger">{activeFile.error}</Alert>}
           {readyFile && readyFile.data.warnings.length > 0 && (
             <Alert tone="warning">

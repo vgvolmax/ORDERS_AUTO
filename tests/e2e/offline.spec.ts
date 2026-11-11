@@ -3576,3 +3576,70 @@ test('E2E-26 manual transfer quantity, route context and accepted Excel survive 
   expect(evidence.consoleErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
 });
+
+test('E2E-27 masked articles and explicit invoice sheets produce a safe correction offline', async ({ page }) => {
+  const xlsx = await import('xlsx');
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const { readFile } = await import('node:fs/promises');
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const min = xlsx.utils.aoa_to_sheet([
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+    ['0001', 123, 'Кран', 0, null, null, 100],
+    [null, null, 'Ленина', 0, 2, 10, null],
+  ]);
+  min.B2!.z = '000000';
+  const minBook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(minBook, min, 'TDSheet');
+  await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles({
+    name: 'masked.xlsx', mimeType, buffer: Buffer.from(xlsx.write(minBook, { type: 'array', bookType: 'xlsx' })),
+  });
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles({
+    name: 'supplier.xlsx', mimeType, buffer: Buffer.from(buildWorkbook([
+      ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+      ['ИП Баранов Роман Борисович', '0001', 'Кран', 1, 100, 'шт'],
+    ])),
+  });
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('button', { name: 'Заказы', exact: true }).click();
+  await page.locator('.order-cell').first().click();
+  const order = page.getByRole('dialog', { name: 'Состав заказа' });
+  await expect(order.getByText('000123', { exact: true })).toBeVisible();
+  await order.getByRole('checkbox', { name: 'Заказ проверен' }).check();
+  await order.getByRole('button', { name: 'Сверить счёт', exact: true }).click();
+  const invoice = (parts: Array<[number, string | null]>) => {
+    const book = xlsx.utils.book_new();
+    parts.forEach(([qty, unit], i) => xlsx.utils.book_append_sheet(book, xlsx.utils.aoa_to_sheet([
+      ['Артикул', 'Наименование', 'Количество', 'Ед. измерения', 'Цена', 'Сумма'],
+      ['000123', 'Кран', qty, unit, 100, qty * 100],
+    ]), 'Часть ' + (i + 1)));
+    return { name: 'invoice.xlsx', mimeType, buffer: Buffer.from(xlsx.write(book, { type: 'array', bookType: 'xlsx' })) };
+  };
+  await page.getByLabel('Файл счёта поставщика').setInputFiles(invoice([[4, 'шт'], [6, 'шт']]));
+  const sheets = page.getByRole('group', { name: 'Листы счёта' });
+  await expect(page.getByRole('button', { name: 'Сравнить', exact: true })).toBeDisabled();
+  await sheets.getByRole('checkbox', { name: /Часть 1/ }).check();
+  await sheets.getByRole('checkbox', { name: /Часть 2/ }).check();
+  await sheets.getByRole('button', { name: 'Использовать выбранные листы' }).click();
+  await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: /Количество.*000123/ })).toHaveValue('10');
+  const downloadReady = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Excel для 1С', exact: true }).click();
+  const download = await downloadReady;
+  const correction = xlsx.read(await readFile((await download.path())!), { type: 'buffer' });
+  expect(xlsx.utils.sheet_to_json(correction.Sheets[correction.SheetNames[0]!]!, { header: 1 })).toEqual([
+    ['Артикул', 'Номенклатура', 'Количество', 'Ед.', 'Цена', 'Сумма'],
+    ['000123', 'Кран', 10, 'шт', 100, 1000],
+  ]);
+  for (const unit of ['упак', null]) {
+    await page.getByLabel('Файл счёта поставщика').setInputFiles(invoice([[10, unit]]));
+    await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeVisible();
+    for (const checkbox of await page.getByRole('checkbox', { name: /Включить в экспорт/ }).all()) {
+      await expect(checkbox).not.toBeChecked();
+    }
+    await expect(page.getByRole('button', { name: 'Excel для 1С', exact: true })).toBeDisabled();
+  }
+});

@@ -18,6 +18,41 @@ const invoice = (overrides: Partial<InvoiceItem> = {}): InvoiceItem => ({
   price: 10, amount: 30, sourceRow: 2, ...overrides,
 });
 
+it.each([
+  ['invoice', 'шт', null],
+  ['order', null, 'шт'],
+  ['both', null, null],
+] as const)('requires manual unit review when %s units are unknown', (_side, orderUnit, invoiceUnit) => {
+  const rows = compareInvoice([order(line({ unit: orderUnit }))], [invoice({ unit: invoiceUnit })]);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.differences).toContain('unit');
+  expect(rows[0]?.notes.join(' ')).toMatch(/не указан|неизвест/i);
+  expect(buildInvoiceAdjustments(rows, 'invoice')[0]?.included).toBe(false);
+});
+
+it('keeps a missing-unit invoice line separate from compatible pieces', () => {
+  const rows = compareInvoice([order(line())], [
+    invoice({ quantity: 2, amount: 20 }),
+    invoice({ quantity: 1, amount: 10, unit: null, sourceRow: 3 }),
+  ]);
+  expect(rows).toMatchObject([
+    { orderQty: 3, invoiceQty: 2, unit: 'шт', differences: ['quantity'] },
+    { orderQty: null, invoiceQty: 1, unit: null, differences: ['unit'] },
+  ]);
+  expect(buildInvoiceAdjustments(rows, 'invoice').map(({ included }) => included)).toEqual([true, false]);
+});
+
+it('requires unit review for every split when an unknown-unit order meets mixed invoice units', () => {
+  const rows = compareInvoice([order(line({ unit: null }))], [
+    invoice({ quantity: 2, amount: 20, unit: null }),
+    invoice({ quantity: 1, amount: 10, unit: 'шт', sourceRow: 3 }),
+  ]);
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.differences).toContain('unit');
+  expect(rows[1]?.differences).toContain('unit');
+  expect(buildInvoiceAdjustments(rows, 'invoice').map(({ included }) => included)).toEqual([false, false]);
+});
+
 describe('compareInvoice', () => {
   it('uses an explicit 1C code before the article and preserves leading zeros', () => {
     const rows = compareInvoice([order(line(), line({ skuCode: '7', article: 'B-345' }))], [
