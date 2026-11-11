@@ -13,9 +13,12 @@ import {
   type StoredWorkspace,
   type WorkspaceFile,
   type WorkspaceView,
+  type WorkspaceData,
 } from '../domain/workspace';
 import type { WorkspaceSaveOptions } from '../persistence/workspaces';
 import { createInitialState, reconcileRegistry } from './initialState';
+import { attachSupplierCatalog, prepareCatalogState } from './catalogSession';
+import { createSupplierCatalog, type SupplierCatalog } from '../domain/supplierCatalog';
 export function workspaceFromState(state: AppState): StoredWorkspace {
   const {
     minMax,
@@ -85,6 +88,7 @@ export function createWorkspaceSession({
   initial,
   save,
   saveView,
+  recoverCatalog = async (data) => createSupplierCatalog(data),
   publish,
   id = () => crypto.randomUUID(),
 }: {
@@ -96,6 +100,7 @@ export function createWorkspaceSession({
     options?: WorkspaceSaveOptions,
   ) => Promise<void>;
   saveView?: (id: string, previous: WorkspaceView, next: WorkspaceView) => Promise<void>;
+  recoverCatalog?: (data: WorkspaceData) => Promise<SupplierCatalog | null>;
   publish: (state: AppState) => void;
   id?: () => string;
 }) {
@@ -105,21 +110,23 @@ export function createWorkspaceSession({
     getState: () => state,
     restore(workspace: StoredWorkspace): Promise<void> {
       const operation = tail.then(async () => {
-        const next = createInitialState({
+        const next = attachSupplierCatalog(createInitialState({
           ...workspace.data,
           importEpoch: state.importEpoch + 1,
           workspaceId: id(),
           snapshotId: workspace.snapshotId,
           workspaceRevision: 0,
           workspaceCreatedAt: new Date().toISOString(),
-        });
+        }), state.catalog ?? await recoverCatalog(workspace.data));
         const stored = workspaceFromState(next);
         if (state.workspaceRevision >= 0)
           stored.previousActive = {
             workspaceId: state.workspaceId,
             revision: state.workspaceRevision,
           };
-        await save(stored, -1);
+        await save(stored, -1, [], next.catalog && next.catalog !== state.catalog ? {
+          catalog: { expectedRevision: state.catalog?.revision ?? -1, value: next.catalog },
+        } : undefined);
         state = next;
         publish(next);
       });
@@ -143,7 +150,7 @@ export function createWorkspaceSession({
         ) {
           return;
         }
-        let next = {
+        let next: AppState = {
           ...state,
           ...update,
           workspaceRevision: state.workspaceRevision + 1,
@@ -164,9 +171,15 @@ export function createWorkspaceSession({
           next.supplierAssignments = seedSupplierAssignments(
             next.suppliers.history,
           );
+        next = prepareCatalogState(previous, next);
+        if (!previous.catalog && next.catalog) {
+          next.catalog = await recoverCatalog(next);
+          if (!next.catalog) throw new Error('CATALOG_INITIALIZATION: не удалось подготовить справочник');
+        }
         const viewChanged = hasViewChanges(previous, next);
         if (
           saveView &&
+          next.catalog === previous.catalog &&
           next.supplierAssignments === previous.supplierAssignments &&
           Object.keys(update).every((key) =>
             key === 'page' || key === 'uiPreferences' || key === 'rebalance' || key === 'toast',
@@ -258,6 +271,9 @@ export function createWorkspaceSession({
           replaced ? -1 : previous.workspaceRevision,
           update.pendingFiles ?? [],
           {
+            ...(next.catalog && next.catalog !== previous.catalog ? {
+              catalog: { expectedRevision: previous.catalog?.revision ?? -1, value: next.catalog },
+            } : {}),
             reuseSources: !replaced && !minMaxChanged && next.suppliers === previous.suppliers &&
               next.minMaxIssues === previous.minMaxIssues && next.supplierIssues === previous.supplierIssues,
             updateView: viewChanged || replaced || previous.workspaceRevision < 0,

@@ -3645,3 +3645,92 @@ test('E2E-27 masked articles and explicit invoice sheets produce a safe correcti
     await expect(page.getByRole('button', { name: 'Excel для 1С', exact: true })).toBeDisabled();
   }
 });
+
+test('E2E-28 independent catalog survives absent products, archived restore and a new working week offline', async ({ page }, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const first = 'ИП Баранов Роман Борисович';
+  const second = 'ИП Никишин Андрей Николаевич';
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const evidence = observeRuntime(page);
+  const nav = page.getByRole('navigation', { name: 'Основная навигация' });
+  const min = (name: string, both: boolean) => ({
+    name, mimeType, buffer: Buffer.from(buildWorkbook([
+      ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+      ['0001', 'A-1', 'Кран', null, null, null, 100],
+      [null, null, 'Ленина', 0, 2, 10, null],
+      ...(both ? [
+        ['0002', 'A-2', 'Товар вернётся', null, null, null, 50],
+        [null, null, 'Ленина', 0, 2, 10, null],
+      ] : []),
+    ])),
+  });
+  const uploadWeek = async (name: string, both: boolean) => {
+    await nav.getByRole('button', { name: 'Обновить MIN/MAX', exact: true }).click();
+    await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles(min(name, both));
+    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  };
+  await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles(min('catalog-week-1.xlsx', true));
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles({
+    name: 'catalog-suppliers.xlsx', mimeType, buffer: Buffer.from(buildWorkbook([
+      ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+      [first, '0001', 'Кран', 1, 100, 'шт'],
+      [first, '0002', 'Товар вернётся', 1, 50, 'шт'],
+    ])),
+  });
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await page.locator('.order-cell').first().click();
+  const order = page.getByRole('dialog', { name: 'Состав заказа' });
+  const reviewed = order.getByRole('checkbox', { name: 'Заказ проверен' });
+  await reviewed.click();
+  await expect(reviewed).toBeChecked();
+  await order.getByRole('button', { name: 'Закрыть', exact: true }).click();
+
+  await uploadWeek('catalog-week-2.xlsx', false);
+  await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  const absent = page.getByRole('row').filter({ has: supplierLinks(page, '0002') });
+  await expect(absent).toContainText('Нет в MIN/MAX');
+  await assignPrimary(page, '0001', second);
+  await assignPrimary(page, '0002', second);
+  await page.getByRole('combobox', { name: 'Наличие в MIN/MAX', exact: true }).selectOption('current');
+  await expect(supplierLinks(page, '0002')).toHaveCount(0);
+  await page.getByRole('combobox', { name: 'Наличие в MIN/MAX', exact: true }).selectOption('all');
+  await page.reload();
+  await expect(page.getByRole('row').filter({ has: supplierLinks(page, '0002') })).toContainText(second);
+  const linkBounds = await supplierLinks(page, '0002').boundingBox();
+  expect(linkBounds).not.toBeNull();
+  expect(linkBounds!.x + linkBounds!.width).toBeLessThanOrEqual(1280);
+  await page.screenshot({ path: testInfo.outputPath('28-independent-catalog.png'), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await nav.getByRole('button', { name: 'История сеансов', exact: true }).click();
+  await page.getByRole('row').filter({ hasText: 'catalog-week-1.xlsx' })
+    .getByRole('button', { name: 'Восстановить', exact: true }).click();
+  await page.getByRole('button', { name: 'Восстановить копию', exact: true }).click();
+  await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await expect(page.getByRole('button', { name: `Все заказы ${first}`, exact: true })).toBeVisible();
+  await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  await expect(page.getByRole('row').filter({ has: supplierLinks(page, '0001') })).toContainText(second);
+
+  await uploadWeek('catalog-week-3.xlsx', true);
+  await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await expect(page.getByRole('button', { name: `Все заказы ${second}`, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: `Все заказы ${first}`, exact: true })).toHaveCount(0);
+  await page.locator('.order-cell').first().click();
+  await expect(order.getByText('A-2', { exact: true })).toBeVisible();
+  await order.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole('button', { name: `Все заказы ${second}`, exact: true })).toBeVisible();
+  await nav.getByRole('button', { name: 'Счета', exact: true }).click();
+  const source = page.getByRole('combobox', { name: 'Рабочий сеанс', exact: true });
+  const old = source.locator('option').filter({ hasText: 'catalog-week-1.xlsx' }).first();
+  await source.selectOption((await old.getAttribute('value'))!);
+  await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${first} — Ленина`, exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${second} — Ленина`, exact: true })).toHaveCount(0);
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});

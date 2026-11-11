@@ -3,7 +3,7 @@ import { Dialog } from '../../components/Dialog';
 import { Alert, Button, Select } from '../../components/ui';
 import type { SupplierAssignment, SupplierAssignmentCommand } from '../../domain/supplierAssignments';
 import { SUPPLIER_POOL } from '../../domain/supplierPool';
-import type { Sku } from '../../domain/types';
+import type { CatalogProduct } from '../../domain/supplierCatalog';
 
 interface SaveProps {
   saving: boolean;
@@ -45,7 +45,7 @@ export function ProductSupplierDialog({
   onSave,
   onClose,
 }: SaveProps & {
-  product: Sku;
+  product: CatalogProduct;
   assignment: SupplierAssignment | undefined;
   onDismissError: () => void;
 }) {

@@ -4,11 +4,12 @@ import { productColumns } from '../../components/productColumns';
 import { Button, SearchInput, Select } from '../../components/ui';
 import type { SupplierAssignment } from '../../domain/supplierAssignments';
 import { SUPPLIER_POOL } from '../../domain/supplierPool';
-import type { Sku } from '../../domain/types';
+import type { CatalogProduct } from '../../domain/supplierCatalog';
 
 type PrimaryFilter = 'all' | 'with-primary' | 'without-primary';
 export type SupplierRole = 'any' | 'primary' | 'additional';
 export interface ProductFilters {
+  presence?: 'all' | 'current' | 'absent';
   query: string;
   primary: PrimaryFilter;
   supplier: string;
@@ -17,6 +18,7 @@ export interface ProductFilters {
 }
 
 export const defaultProductFilters: ProductFilters = {
+  presence: 'all',
   query: '',
   primary: 'all',
   supplier: '',
@@ -24,11 +26,12 @@ export const defaultProductFilters: ProductFilters = {
   hasDemand: false,
 };
 
-const productKey = (sku: Sku) => sku.code;
+const productKey = (sku: CatalogProduct) => sku.code;
 
 export function SupplierProducts({
   active,
   products,
+  currentCodes,
   assignmentsByCode,
   demandCodes,
   filters,
@@ -39,7 +42,8 @@ export function SupplierProducts({
   onOpenBulk,
 }: {
   active: boolean;
-  products: Sku[];
+  products: CatalogProduct[];
+  currentCodes: ReadonlySet<string>;
   assignmentsByCode: ReadonlyMap<string, SupplierAssignment>;
   demandCodes: ReadonlySet<string>;
   filters: ProductFilters;
@@ -54,6 +58,8 @@ export function SupplierProducts({
   const visible = useMemo(() => {
     const query = filters.query.trim().toLocaleLowerCase('ru-RU');
     return products.filter((sku) => {
+      if (filters.presence === 'current' && !currentCodes.has(sku.code)) return false;
+      if (filters.presence === 'absent' && currentCodes.has(sku.code)) return false;
       const assignment = assignmentsByCode.get(sku.code);
       const primary = assignment?.primary;
       if (filters.primary === 'with-primary' && !primary) return false;
@@ -68,7 +74,7 @@ export function SupplierProducts({
         (value) => value?.toLocaleLowerCase('ru-RU').includes(query),
       );
     });
-  }, [products, filters, assignmentsByCode, demandCodes]);
+  }, [products, filters, assignmentsByCode, demandCodes, currentCodes]);
   const selected = useMemo(() => new Set(selectedCodes), [selectedCodes]);
   const selectedVisible = visible.reduce((total, sku) => total + Number(selected.has(sku.code)), 0);
   const allSelected = visible.length > 0 && selectedVisible === visible.length;
@@ -105,6 +111,16 @@ export function SupplierProducts({
             placeholder="Код 1С, артикул, название"
             onValueChange={(query) => onFiltersChange({ ...filters, query })}
           />
+        </label>
+        <label>
+          Наличие в MIN/MAX
+          <Select value={filters.presence ?? 'all'} onChange={(event) =>
+            onFiltersChange({ ...filters, presence: event.target.value as 'all' | 'current' | 'absent' })
+          }>
+            <option value="all">Все товары справочника</option>
+            <option value="current">Есть в текущем MIN/MAX</option>
+            <option value="absent">Нет в текущем MIN/MAX</option>
+          </Select>
         </label>
         <label>
           Наличие основного
@@ -172,7 +188,7 @@ export function SupplierProducts({
           rows={visible}
           getRowKey={productKey}
           maxHeight="min(58vh, 700px)"
-          emptyMessage={products.length ? 'Нет товаров по выбранным фильтрам.' : 'В отчёте MIN/MAX нет товаров.'}
+          emptyMessage={products.length ? 'Нет товаров по выбранным фильтрам.' : 'В справочнике нет товаров.'}
           columns={[
             {
               key: 'check',
@@ -187,7 +203,7 @@ export function SupplierProducts({
                 />
               ),
             },
-            ...productColumns<Sku>((sku) => ({ code: sku.code, article: sku.article, name: sku.name }), {
+            ...productColumns<CatalogProduct>((sku) => ({ code: sku.code, article: sku.article, name: sku.name }), {
               code: { width: '130px' },
               article: { width: '110px' },
               name: { width: 'minmax(210px,1.25fr)' },
@@ -206,9 +222,14 @@ export function SupplierProducts({
             },
             {
               key: 'demand',
-              header: 'Потребность',
-              width: '105px',
-              render: (sku) => demandCodes.has(sku.code) ? 'Есть' : 'Нет',
+              header: 'Текущий MIN/MAX',
+              width: '120px',
+              render: (sku) => (
+                <>
+                  <div>{currentCodes.has(sku.code) ? 'Есть в MIN/MAX' : 'Нет в MIN/MAX'}</div>
+                  {currentCodes.has(sku.code) && <small>{demandCodes.has(sku.code) ? 'Есть потребность' : 'Без потребности'}</small>}
+                </>
+              ),
             },
             {
               key: 'links',

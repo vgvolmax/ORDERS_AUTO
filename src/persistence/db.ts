@@ -1,4 +1,5 @@
 import { openDB, type DBSchema } from 'idb';
+import type { SupplierCatalog } from '../domain/supplierCatalog';
 import type { OrderSettings, SupplierOverride } from '../domain/types';
 import type {
   StoredWorkspace,
@@ -13,6 +14,7 @@ export type WorkspaceSources = Pick<WorkspaceData,
 export type WorkspaceRecord = StoredWorkspace & { separatedSources?: true };
 
 interface OrdersAutoSchema extends DBSchema {
+  supplierCatalog: { key: string; value: SupplierCatalog; };
   workspaces: {
     key: string;
     value: WorkspaceRecord;
@@ -43,11 +45,13 @@ interface OrdersAutoSchema extends DBSchema {
 }
 
 export function db() {
-  return openDB<OrdersAutoSchema>('orders-auto', 3, {
+  return openDB<OrdersAutoSchema>('orders-auto', 4, {
     blocking(_current, _next, event) {
       (event.target as IDBDatabase).close();
     },
     upgrade(database) {
+      if (!database.objectStoreNames.contains('supplierCatalog'))
+        database.createObjectStore('supplierCatalog');
       if (!database.objectStoreNames.contains('workspaces'))
         database.createObjectStore('workspaces', { keyPath: 'workspaceId' });
       if (!database.objectStoreNames.contains('workspaceSources'))

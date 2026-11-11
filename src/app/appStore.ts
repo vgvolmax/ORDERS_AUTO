@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import type { SupplierCatalog } from '../domain/supplierCatalog';
 import type {
   WorkspaceData,
   WorkspaceFile,
@@ -6,6 +7,7 @@ import type {
 } from '../domain/workspace';
 
 export interface AppState extends WorkspaceData {
+  catalog: SupplierCatalog | null;
   workspaceId: string;
   workspaceRevision: number;
   snapshotId: string;
