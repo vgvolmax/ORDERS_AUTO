@@ -18,6 +18,27 @@ const invoice = (overrides: Partial<InvoiceItem> = {}): InvoiceItem => ({
   price: 10, amount: 30, sourceRow: 2, ...overrides,
 });
 
+it('keeps actual order amounts while a one-kopeck unit-price difference stays within tolerance', () => {
+  const rows = compareInvoice([order(line({ orderQty: 10000, unitPrice: 100, amount: 1000000 }))], [
+    invoice({ quantity: 10000, price: 100.01, amount: 1000100 }),
+  ]);
+  expect(rows[0]).toMatchObject({ orderAmount: 1000000, invoiceAmount: 1000100, differences: [] });
+  expect(buildInvoiceAdjustments(rows, 'invoice')[0]).toMatchObject({ qty: 10000, price: 100.01, amount: 1000100, included: true });
+});
+
+it('sums original line amounts instead of multiplying a weighted price back by quantity', () => {
+  const rows = compareInvoice([order(
+    line({ orderQty: 1, unitPrice: 0.1, amount: 0.1 }),
+    line({ orderQty: 2, unitPrice: 0.2, amount: 0.4 }),
+  )], [invoice({ quantity: 3, price: null, amount: 0.5 })]);
+  expect(rows[0]).toMatchObject({ orderAmount: 0.5, invoiceAmount: 0.5 });
+});
+
+it('keeps an order total unknown when any positive line amount is unknown', () => {
+  const rows = compareInvoice([order(line({ amount: null, unitPrice: null }))], [invoice()]);
+  expect(rows[0]).toMatchObject({ orderAmount: null, invoiceAmount: 30 });
+});
+
 it.each([
   ['invoice', 'шт', null],
   ['order', null, 'шт'],

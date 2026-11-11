@@ -3,6 +3,14 @@ import { calculateStockStatus, priceDemand } from '../../src/domain/demand';
 import type { DemandLine, Sku, SupplierResolution } from '../../src/domain/types';
 
 describe('demand rules', () => {
+  it.each([[-5, 10], [-5, null], [-5, 0], [0, -1], [null, -1]])(
+    'excludes negative norms MIN=%s MAX=%s before calculating demand',
+    (min, max) => {
+      expect(calculateStockStatus(0, min, max)).toEqual({
+        status: 'INVALID_NORM', deficitQty: 0, deficitPct: null,
+      });
+    },
+  );
   it.each([
     [40, 'OK'],
     [39, 'YELLOW'],

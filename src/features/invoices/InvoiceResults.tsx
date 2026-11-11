@@ -12,6 +12,7 @@ import {
   type InvoiceDifference,
 } from '../../domain/invoices';
 import { moneySum } from '../../domain/money';
+import { hasInvoiceAmountDifference, hasInvoiceDiscrepancy, invoiceAmountDifference, invoicePriceWithinTolerance, summarizeInvoiceAmounts } from '../../domain/invoiceAmounts';
 import { parseOptionalNumber } from '../../domain/normalize';
 import { save } from '../../export/download';
 import { safeFilename } from '../../export/filenames';
@@ -66,6 +67,7 @@ export function InvoiceResults({
   const [copyNotice, setCopyNotice] = useState('');
   const [copyFallback, setCopyFallback] = useState('');
   const { rows, mode, adjustments, drafts } = comparison;
+  const amounts = useMemo(() => summarizeInvoiceAmounts(rows), [rows]);
   const counts = useMemo(() => {
     const differences = new Map<InvoiceDifference, number>();
     let ordered = 0;
@@ -74,7 +76,7 @@ export function InvoiceResults({
     for (const row of rows) {
       if (row.orderQty !== null) ordered++;
       if (row.orderQty !== null && row.invoiceQty !== null && !row.differences.includes('ambiguous')) matched++;
-      if (row.differences.length) discrepancies++;
+      if (hasInvoiceDiscrepancy(row)) discrepancies++;
       for (const difference of row.differences) {
         differences.set(difference, (differences.get(difference) ?? 0) + 1);
       }
@@ -103,7 +105,8 @@ export function InvoiceResults({
     invalidNumbers.length > 0 || unidentified.length > 0 || conflicts.length > 0;
   const visibleRows = rows.filter((row) => matchesItem(row, query) && (
     filter === 'all' || (
-      filter === 'problems' ? row.differences.length > 0 : row.differences.includes(filter as InvoiceDifference)
+      filter === 'problems' ? hasInvoiceDiscrepancy(row) :
+        filter === 'total' ? hasInvoiceAmountDifference(row) : row.differences.includes(filter as InvoiceDifference)
     )
   ));
   const visibleAdjustments = effective.filter((row) => matchesItem(row, editQuery) && (
@@ -224,7 +227,7 @@ export function InvoiceResults({
     },
     {
       key: 'status', header: 'По итогам сверки', width: 'minmax(145px, .65fr)',
-      render: (row) => <DifferenceList differences={originals.get(row.id)!.differences} />,
+      render: (row) => <DifferenceList row={originals.get(row.id)!} />,
     },
   ];
 
@@ -257,6 +260,13 @@ export function InvoiceResults({
             icon="file"
           />
         </div>
+        <div className="metrics metrics-three" role="group" aria-label="Суммы сверки">
+          <MetricCard label="Сумма заказов" value={display(amounts.orderAmount, money)} />
+          <MetricCard label="Сумма счёта" value={display(amounts.invoiceAmount, money)} />
+          <MetricCard label="Разница суммы" value={display(amounts.difference, signedMoney)}
+            tone={amounts.difference !== null && amounts.difference !== 0 ? 'warning' : 'neutral'}
+            note={amounts.difference === null ? 'Не хватает данных о суммах' : 'Счёт минус заказы · по всем позициям'} />
+        </div>
         <div className="invoice-filters">
           <label className="filter-search">
             Поиск по результату
@@ -273,6 +283,7 @@ export function InvoiceResults({
             <Select value={filter} onChange={(event) => setFilter(event.target.value)}>
               <option value="all">Все позиции ({fmtQty(rows.length)})</option>
               <option value="problems">С расхождениями ({fmtQty(counts.discrepancies)})</option>
+              <option value="total">Разница суммы ({fmtQty(rows.filter(hasInvoiceAmountDifference).length)})</option>
               {Object.entries(invoiceDifferenceLabels).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label} ({fmtQty(counts.differences.get(value as InvoiceDifference) ?? 0)})
@@ -409,10 +420,12 @@ function ItemName({ row }: { row: Item }) {
   );
 }
 
-function DifferenceList({ differences }: { differences: readonly InvoiceDifference[] }) {
+function DifferenceList({ row }: { row: InvoiceComparisonRow }) {
+  const { differences } = row;
+  const amountDiffers = hasInvoiceAmountDifference(row);
   return (
     <div className="invoice-differences">
-      {differences.length === 0 ? <span className="badge OK">Совпадает</span> :
+      {differences.length === 0 && !amountDiffers ? <span className="badge OK">Совпадает</span> :
         differences.map((difference) => (
           <span
             key={difference}
@@ -422,12 +435,18 @@ function DifferenceList({ differences }: { differences: readonly InvoiceDifferen
           </span>
         ))
       }
+      {amountDiffers && <span className="badge YELLOW">Сумма отличается</span>}
+      {invoicePriceWithinTolerance(row) && <small>Цена в пределах допуска 0,01 ₽ за единицу.</small>}
     </div>
   );
 }
 
 function display(value: number | null, format: (n: number) => string): string {
   return value === null ? '—' : format(value);
+}
+
+function signedMoney(value: number): string {
+  return `${value > 0 ? '+' : ''}${money(value)}`;
 }
 
 function ValueWithDelta({
@@ -504,8 +523,20 @@ const comparisonColumns: VirtualColumn<InvoiceComparisonRow>[] = [
     />,
   },
   {
+    key: 'orderAmount', header: 'Сумма заказа', width: '120px', className: 'num',
+    render: (row) => display(row.orderAmount, money),
+  },
+  {
+    key: 'invoiceAmount', header: 'Сумма счёта', width: '120px', className: 'num invoice-emphasis',
+    render: (row) => display(row.invoiceAmount, money),
+  },
+  {
+    key: 'amountDifference', header: 'Разница суммы', width: '120px', className: 'num',
+    render: (row) => display(invoiceAmountDifference(row), signedMoney),
+  },
+  {
     key: 'differences', header: 'Расхождения', width: 'minmax(143px, .8fr)',
-    render: (row) => <DifferenceList differences={row.differences} />,
+    render: (row) => <DifferenceList row={row} />,
   },
   {
     key: 'notes', header: 'Комментарий', width: 'minmax(143px, .8fr)',

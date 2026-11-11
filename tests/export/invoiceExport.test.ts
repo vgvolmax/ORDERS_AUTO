@@ -12,6 +12,18 @@ const adjustment: InvoiceAdjustment = {
 const excluded = { ...adjustment, id: '2', article: 'Лишнее', included: false };
 
 describe('invoice exports', () => {
+  it('exports the actual order amount and the signed invoice difference independently of price tolerance', () => {
+    const row = {
+      id: 'o', skuCode: '0007', article: 'A', name: 'Товар', unit: 'шт',
+      orderQty: 10000, invoiceQty: 10000, orderPrice: 100, invoicePrice: 100.01,
+      orderAmount: 1000000, invoiceAmount: 1000100, differences: [], notes: [],
+    } satisfies InvoiceComparisonRow;
+    const csv = invoiceComparisonCsv([row]);
+    expect(csv).toContain('Сумма заказа;Сумма счёта;Разница суммы');
+    expect(csv).toContain(';1000000;1000100;100;');
+    expect(csv).toContain('Разница суммы;0007;');
+    expect(csv).not.toContain('Совпадает;');
+  });
   it('keeps MIN/MAX order in the report and all 1C formats across branches', () => {
     const orders: Order[] = ['0007', '0003'].map((skuCode, index) => ({
       id: String(index), branch: `Склад ${index}`, supplier: 'Поставщик',
@@ -66,7 +78,7 @@ describe('invoice exports', () => {
   it('includes concurrent difference labels and comments in the comparison CSV', () => {
     const row: InvoiceComparisonRow = {
       id: 'o', skuCode: '0007', article: '00123', name: 'Товар', unit: 'шт',
-      orderQty: 1, invoiceQty: 2, orderPrice: 2, invoicePrice: 3, invoiceAmount: 6,
+      orderQty: 1, invoiceQty: 2, orderPrice: 2, invoicePrice: 3, orderAmount: 2, invoiceAmount: 6,
       differences: ['quantity', 'higher'], notes: ['Проверить'],
     };
     expect(invoiceComparisonCsv([row])).toMatch(/Количество.*Дороже.*0007.*Проверить/);

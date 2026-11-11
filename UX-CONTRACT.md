@@ -164,3 +164,8 @@ ImportIssues использует общий SearchInput, native Select и Virtu
 ### Независимый справочник ·11.11.2026
 
 Runtime owners: SuppliersPage — справочник/долговременное сохранение, SupplierProducts — фильтр присутствия и виртуальная таблица; SupplierRoster — общие связи и текущие закупочные суммы; прежний ProductSupplierDialog — редактирование отсутствующего товара. Native Select/Button/Dialog/VirtualTable и существующие tokens неизменны. Источник данных — AppState.catalog; расчёты заказов — snapshot. Приёмка E2E-28 и tests/ui/independentCatalog.test.tsx.
+
+
+### Исправления доверия к данным и feedback · 11.11.2026
+
+Источники: SPEC.md «Исправления аудита 11.11.2026» и DATA_CONTRACTS.md «Диагностика нормативов и суммы сверки». FileCard отражает качество принятого файла, InvoiceResults/CSV показывают реальные суммы и денежную разницу без изменения допуска цены или корректировки. Полные итоги не зависят от фильтров; неизвестные данные не становятся нулём. WorkspaceMasthead постоянно резервирует 36px под AppToast, в том числе при отсутствии сообщения. Runtime owners: domain/stockNorms, purchasingIssues, domain/invoiceAmounts, прежние FileCard/MetricCard/VirtualTable/WorkspaceMasthead. Evidence: demand/minMaxParser/calculationIntegrity/importQualityStatus/invoiceAmounts/invoicesPage/invoiceExport и E2E-29/30.

@@ -75,6 +75,30 @@ describe('InvoicesPage', () => {
     source.skuCodes = ['001'];
   });
 
+  it('shows a 100 RUB total difference inside unit-price tolerance, including under discrepancy filters', async () => {
+    source.orders = [order('a', 'Склад 1', 'Альфа', 10000)];
+    parseInvoiceWorkbook.mockReturnValueOnce({
+      items: [{ skuCode: '001', article: 'ART', name: 'Масло', quantity: 10000, unit: 'шт', price: 100.01, amount: 1000100, sourceRow: 2 }],
+      warnings: [],
+    });
+    render(<InvoicesPage initialOrderIds={['a']} />);
+    selectFile();
+    await compare();
+    const result = screen.getByRole('region', { name: 'Результат сверки' });
+    const totals = within(result).getByRole('group', { name: 'Суммы сверки' });
+    expect(totals).toHaveTextContent(/1\s000\s000,00/);
+    expect(totals).toHaveTextContent(/1\s000\s100,00/);
+    expect(totals).toHaveTextContent(/\+100,00/);
+    expect(within(result).getByText('С расхождениями').closest('.metric')).toHaveTextContent('1');
+    fireEvent.change(within(result).getByRole('combobox', { name: 'Расхождения' }), { target: { value: 'problems' } });
+    expect(within(result).getByText('Масло')).toBeVisible();
+    expect(within(result).getByText(/Цена в пределах допуска/)).toBeVisible();
+    expect(within(result).queryByText('Совпадает')).not.toBeInTheDocument();
+    fireEvent.change(within(result).getByRole('searchbox', { name: 'Поиск по результату' }), { target: { value: 'нет такого товара' } });
+    expect(totals).toHaveTextContent(/\+100,00/);
+    expect(screen.getByRole('checkbox', { name: /Включить в экспорт.*ART/ })).toBeChecked();
+  });
+
   it('shows comparison and adjustment rows in source order across branches', async () => {
     const second = order('b', 'Склад 2');
     Object.assign(second.lines[0]!, { skuCode: '002', article: 'NEXT', name: 'Шайба' });

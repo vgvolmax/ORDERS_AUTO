@@ -52,6 +52,19 @@ const minMaxHeader = [
   'Минимальный остаток', 'Максимальный остаток', 'Цена',
 ];
 
+it.each([[-5, 10], [0, -1]])('reports negative MIN=%s MAX=%s without dropping the source row', (min, max) => {
+  const result = parseMinMaxWorkbook(buildWorkbook([
+    minMaxHeader,
+    ['SKU1', 'A', 'Товар', 0, null, null, 100],
+    [null, null, 'Ленина', 0, min, max, null],
+  ]));
+  expect(result.fatal).toBe(false);
+  expect(result.data?.branchStocks).toContainEqual({ skuCode: 'SKU1', branch: 'Ленина', stock: 0, min, max });
+  expect(result.issues).toContainEqual(expect.objectContaining({
+    code: 'INVALID_NORM', severity: 'ERROR', skuCode: 'SKU1', branch: 'Ленина', row: 3,
+  }));
+});
+
 it.each(['D3', 'E3', 'F3'])(
   'reports the Excel formula error in %s instead of accepting it as a blank',
   (address) => {

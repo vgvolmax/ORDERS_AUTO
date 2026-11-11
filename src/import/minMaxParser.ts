@@ -11,6 +11,7 @@ import type {
   ValidationIssueCode,
 } from '../domain/types';
 import { readFirstSheet } from './workbook';
+import { hasNegativeStockNorm } from '../domain/stockNorms';
 
 interface MinMaxColumns {
   code: number;
@@ -27,7 +28,7 @@ interface IndexedRow {
   rowNumber: number;
 }
 
-export const MIN_MAX_PARSER_VERSION = 2;
+export const MIN_MAX_PARSER_VERSION = 3;
 
 export function parseMinMaxWorkbook(
   input: ArrayBuffer,
@@ -186,7 +187,16 @@ export function parseMinMaxWorkbook(
           }
           seenSkuBranch.add(uniqueKey);
 
-          if (min != null && max != null && min > max) {
+          if (hasNegativeStockNorm(min, max)) {
+            issues.push({
+              severity: 'ERROR',
+              code: 'INVALID_NORM',
+              message: `Отрицательный норматив MIN/MAX: ${code} / ${branch}. Укажите неотрицательные значения (MIN: ${min ?? 'не задан'}, MAX: ${max ?? 'не задан'}).`,
+              skuCode: code,
+              branch,
+              row: rowNumber,
+            });
+          } else if (min != null && max != null && min > max) {
             issues.push({
               severity: 'WARNING',
               code: 'INVALID_NORM',

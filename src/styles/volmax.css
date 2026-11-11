@@ -70,7 +70,7 @@
 .workspace-side-tools { display: grid; gap: 4px; padding-top: 8px; margin-top: 7px; border-top: 1px solid #52708780; }
 .sidebar .new-import { margin-top: 0; border-color: transparent; }
 
-.workspace-masthead { flex-shrink: 0; padding: 0 var(--page-x); }
+.workspace-masthead { flex-shrink: 0; padding: var(--feedback-height) var(--page-x) 0; }
 .workspace-masthead-row {
   min-height: 86px;
   display: flex;
@@ -298,7 +298,7 @@ thead th, .virtual-header, .virtual-header > .is-frozen { background: var(--tabl
   .sidebar nav button { min-height: 33px; }
 }
 @media (max-height: 650px) {
-  .workspace-masthead-row { min-height: var(--feedback-height); }
+  .workspace-masthead-row { min-height: 32px; }
   .workspace-masthead-row > img { width: min(226px, 37%); }
   .workspace-masthead-row :is(.workspace-source, .workspace-save-state) {
     min-height: 30px;

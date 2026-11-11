@@ -30,6 +30,59 @@ test('E2E-29 feedback never covers the masthead and keeps nine routes visible on
   expect((await page.locator('main').boundingBox())!.y).toBe(before!.y);
 });
 
+test('E2E-30 invalid norms are visible and a kopeck price tolerance cannot hide the invoice total', async ({ page }, testInfo) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const evidence = observeRuntime(page);
+  const supplier = 'ИП Баранов Роман Борисович';
+  await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  const min = buildWorkbook([
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+    ['NEG', 'BAD', 'Неверный норматив', null, null, null, 100],
+    [null, null, 'Ленина', 0, -5, 10, null],
+    ['GOOD', 'GOOD-ART', 'Контроль суммы счёта', null, null, null, 100],
+    [null, null, 'Ленина', 0, 1, 10000, null],
+  ]);
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles({ name: 'audit-min.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(min) });
+  await expect(page.getByText('Прочитан с ошибками', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Отрицательный норматив MIN\/MAX/)).toBeVisible();
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles({ name: 'audit-sup.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(buildWorkbook([
+    ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+    [supplier, 'NEG', 'Неверный норматив', 1, 100, 'шт'],
+    [supplier, 'GOOD', 'Контроль суммы счёта', 1, 100, 'шт'],
+  ])) });
+  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await page.locator('.sidebar').getByRole('button', { name: 'Заказы', exact: true }).click();
+  await page.locator('.order-cell').click();
+  const drawer = page.getByRole('dialog', { name: 'Состав заказа' });
+  await expect(drawer).not.toContainText('Неверный норматив');
+  await drawer.getByRole('checkbox', { name: 'Заказ проверен' }).check();
+  await expect(drawer.getByRole('checkbox', { name: 'Заказ проверен' })).toBeChecked();
+  await drawer.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.locator('.sidebar').getByRole('button', { name: 'Счета', exact: true }).click();
+  await page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ленина` }).check();
+  await page.getByLabel('Файл счёта поставщика').setInputFiles({ name: 'audit-invoice.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(buildWorkbook([
+    ['Код 1С', 'Артикул', 'Наименование', 'Количество', 'Ед. измерения', 'Цена', 'Сумма'],
+    ['GOOD', 'GOOD-ART', 'Контроль суммы счёта', 10000, 'шт', 100.01, 1000100],
+  ])) });
+  await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
+  const result = page.getByRole('region', { name: 'Результат сверки' });
+  await expect(result.getByRole('group', { name: 'Суммы сверки' })).toContainText('+100,00');
+  await result.getByRole('combobox', { name: 'Расхождения', exact: true }).selectOption('total');
+  const row = result.getByRole('row').filter({ hasText: 'Контроль суммы счёта' });
+  await expect(row).toContainText('Сумма отличается');
+  await expect(row).toContainText('Цена в пределах допуска');
+  await expect(row).not.toContainText('Совпадает');
+  const downloaded = page.waitForEvent('download');
+  await result.getByRole('button', { name: 'Скачать результат CSV' }).click();
+  const csv = readFileSync((await (await downloaded).path())!, 'utf8');
+  expect(csv).toContain(';1000000;1000100;100;');
+  await page.screenshot({ path: testInfo.outputPath('30-invoice-amount-difference.png'), fullPage: true });
+  expect(evidence.pageErrors).toEqual([]);
+  expect(evidence.remoteRequests).toEqual([]);
+});
+
 async function assignPrimary(page: Page, skuCode: string, supplier: string) {
   await supplierLinks(page, skuCode).click();
   const dialog = page.getByRole('dialog', { name: 'Связи товара', exact: true });
