@@ -1,4 +1,5 @@
 import { IDBFactory } from 'fake-indexeddb';
+import * as XLSX from 'xlsx';
 import {
   act,
   fireEvent,
@@ -235,4 +236,41 @@ it('keeps the same working week when the identical MIN/MAX file is uploaded agai
   await screen.findByText(/уже загружен/);
   await waitFor(() => expect(proceed).toBeEnabled());
   expect(await loadActiveWorkspace()).toEqual(original);
+});
+
+it('reparses the same MIN/MAX after upgrading the identifier reader', async () => {
+  vi.stubGlobal('indexedDB', new IDBFactory());
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+    ['SKU1', 123, 'Товар', 0, null, null, 100],
+    [null, null, 'Ленина', 0, 2, 10, null],
+  ]);
+  sheet.B2!.z = '000000';
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, 'TDSheet');
+  const bytes = XLSX.write(book, { type: 'array', bookType: 'xlsx' });
+  const first = render(<App />);
+  const inputs = await screen.findAllByLabelText(/выбрать файл/i);
+  fireEvent.change(inputs[0]!, { target: { files: [asFile(bytes, 'week.xlsx', '')] } });
+  fireEvent.change(inputs[1]!, { target: { files: [asFile(buildSupplierFixture(), 'suppliers.xlsx', '')] } });
+  await waitFor(() => expect(screen.getByRole('button', { name: /перейти к потребности/i })).toBeEnabled());
+  first.unmount();
+  const original = (await loadActiveWorkspace())!;
+  await saveWorkspace({
+    ...original, revision: original.revision + 1,
+    data: {
+      ...original.data,
+      minMax: { ...original.data.minMax!, skus: [{ ...original.data.minMax!.skus[0]!, article: '123' }] },
+      rawImports: { ...original.data.rawImports, minMax: { ...original.data.rawImports.minMax!, parserVersion: 1 } },
+    },
+  }, original.revision);
+  render(<App />);
+  fireEvent.change(await screen.findByLabelText('Выбрать файл Отчёт MIN/MAX'), {
+    target: { files: [asFile(bytes, 'week.xlsx', '')] },
+  });
+  await waitFor(async () => {
+    const current = (await loadActiveWorkspace())!;
+    expect(current.data.minMax?.skus[0]?.article).toBe('000123');
+    expect(current.workspaceId).not.toBe(original.workspaceId);
+  });
 });

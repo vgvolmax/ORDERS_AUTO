@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseInvoiceWorkbook } from '../../src/import/invoiceParser';
+import { InvoiceSheetsRequiredError, parseInvoiceWorkbook, selectInvoiceSheets } from '../../src/import/invoiceParser';
+import { compareInvoice } from '../../src/domain/invoices';
 
 function workbook(sheets: XLSX.WorkSheet[], bookType: 'xlsx' | 'biff8' = 'xlsx'): ArrayBuffer {
   const book = XLSX.utils.book_new();
@@ -9,6 +10,81 @@ function workbook(sheets: XLSX.WorkSheet[], bookType: 'xlsx' | 'biff8' = 'xlsx')
 }
 
 const sheet = XLSX.utils.aoa_to_sheet;
+
+it('requires an explicit sheet choice instead of silently dropping or combining invoice sheets', () => {
+  const header = ['Код 1С', 'Артикул', 'Количество', 'Ед.', 'Цена', 'Сумма'];
+  const bytes = workbook([
+    sheet([header, ['0001', '000123', 4, 'шт', 100, 400]]),
+    sheet([header, ['0001', '000123', 6, 'шт', 100, 600]]),
+  ]);
+  expect(() => parseInvoiceWorkbook(bytes)).toThrow(/выберите.*листы/i);
+  let choice: InvoiceSheetsRequiredError | undefined;
+  try { parseInvoiceWorkbook(bytes); } catch (error) {
+    expect(error).toBeInstanceOf(InvoiceSheetsRequiredError);
+    choice = error as InvoiceSheetsRequiredError;
+  }
+  const result = selectInvoiceSheets(choice!.sheets, ['Лист 1', 'Лист 2']);
+  expect(result.items).toMatchObject([
+    { quantity: 4, sourceRow: 2, sourceSheet: 'Лист 1' },
+    { quantity: 6, sourceRow: 2, sourceSheet: 'Лист 2' },
+  ]);
+  expect(compareInvoice([], result.items)).toMatchObject([{ invoiceQty: 10, invoiceAmount: 1000 }]);
+  const firstOnly = selectInvoiceSheets(choice!.sheets, ['Лист 1']);
+  expect(firstOnly.items.map(({ quantity }) => quantity)).toEqual([4]);
+  expect(firstOnly.warnings.join(' ')).toMatch(/не включены.*Лист 2/i);
+  expect(() => selectInvoiceSheets(choice!.sheets, [])).toThrow(/лист/i);
+  expect(() => selectInvoiceSheets(choice!.sheets, ['Удалённый лист'])).toThrow(/лист/i);
+  expect(selectInvoiceSheets(choice!.sheets, ['Лист 1', 'Лист 1']).items).toHaveLength(1);
+});
+
+it('keeps invoice rows on different sheets distinguishable when physical row numbers repeat', () => {
+  const parsed = selectInvoiceSheets([
+    { name: 'Первая', ...parseInvoiceWorkbook(workbook([sheet([
+      ['Артикул', 'Количество', 'Ед.', 'Цена'], ['LEFT', 4, 'шт', 100],
+    ])])) },
+    { name: 'Вторая', ...parseInvoiceWorkbook(workbook([sheet([
+      ['Артикул', 'Количество', 'Ед.', 'Цена'], ['RIGHT', 6, 'шт', 100],
+    ])])) },
+  ], ['Первая', 'Вторая']);
+  const rows = compareInvoice([], parsed.items);
+  expect(rows).toHaveLength(2);
+  expect(new Set(rows.map(({ id }) => id)).size).toBe(2);
+});
+
+it('finds every fixed-layout invoice sheet before requiring a choice', () => {
+  const row: unknown[] = [];
+  row[8] = 'B-7'; row[12] = 'Крепёж'; row[40] = 2; row[46] = 'шт'; row[47] = 3; row[67] = 6;
+  expect(() => parseInvoiceWorkbook(workbook([sheet([['Счёт'], row]), sheet([['Счёт'], row])]))).toThrow(/выберите.*листы/i);
+});
+
+it.each(['Ед. измерения', 'Ед. изм.', 'Единица измерения', 'Единицы изм.', 'Ед. измер.', 'Единица измер.', 'Единицы измер.'])(
+  'recognizes the invoice unit column %s without assuming pieces', (unitHeader) => {
+    const result = parseInvoiceWorkbook(workbook([sheet([
+      ['Артикул', 'Количество', unitHeader, 'Цена', 'Сумма'],
+      ['A-123', 10, 'упак', 100, 1000],
+    ])]));
+    expect(result.items[0]?.unit).toBe('упак');
+  },
+);
+
+it('does not hide a recognized invoice part when its quantities cannot be read', () => {
+  const header = ['Артикул', 'Количество', 'Ед.', 'Цена'];
+  const bytes = workbook([
+    sheet([header, ['A-123', 4, 'шт', 100]]),
+    sheet([header, ['B-456', 'ошибка', 'шт', 100]]),
+  ]);
+  expect(() => parseInvoiceWorkbook(bytes)).toThrow(/выберите.*листы/i);
+  try { parseInvoiceWorkbook(bytes); } catch (error) {
+    const sheets = (error as InvoiceSheetsRequiredError).sheets;
+    expect(sheets).toHaveLength(2);
+    expect(sheets[1]?.items).toEqual([]);
+    expect(sheets[1]?.warnings.join(' ')).toMatch(/строке 2.*количество/i);
+    const selected = selectInvoiceSheets(sheets, ['Лист 1']);
+    expect(selected.items[0]?.quantity).toBe(4);
+    expect(selected.warnings.join(' ')).toMatch(/Лист 2.*количество/i);
+    expect(() => selectInvoiceSheets(sheets, ['Лист 2'])).toThrow(/нет.*позиц/i);
+  }
+});
 
 describe('parseInvoiceWorkbook', () => {
   it('uses the first recognized sheet, discount columns and physical row numbers around repeated headers', () => {

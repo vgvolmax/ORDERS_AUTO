@@ -26,8 +26,15 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Install Chrome for Playwright
-        run: npx playwright install --with-deps chrome
+      - name: Verify runner Chrome for Playwright
+        run: |
+          # GitHub-hosted Ubuntu runners include Chrome and its dependencies.
+          node --input-type=module <<'NODE'
+          import { chromium } from '@playwright/test';
+          const browser = await chromium.launch({ channel: 'chrome', headless: true });
+          console.log(`Chrome ${browser.version()}`);
+          await browser.close();
+          NODE
 
       - name: Typecheck
         run: npm run typecheck

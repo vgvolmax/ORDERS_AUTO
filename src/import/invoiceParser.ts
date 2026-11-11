@@ -15,9 +15,43 @@ interface Header {
   amount: number;
 }
 
-interface ParsedInvoice {
+export interface ParsedInvoice {
   items: InvoiceItem[];
   warnings: string[];
+}
+
+export interface ParsedInvoiceSheet extends ParsedInvoice {
+  name: string;
+}
+
+export class InvoiceSheetsRequiredError extends Error {
+  constructor(readonly sheets: ParsedInvoiceSheet[]) {
+    super('В счёте несколько товарных листов. Выберите нужные листы для сверки.');
+    this.name = 'InvoiceSheetsRequiredError';
+  }
+}
+
+export function selectInvoiceSheets(
+  sheets: readonly ParsedInvoiceSheet[],
+  names: readonly string[],
+): ParsedInvoice {
+  const selected = new Set(names);
+  if (!selected.size) throw new Error('Выберите хотя бы один товарный лист счёта.');
+  if ([...selected].some((name) => !sheets.some((sheet) => sheet.name === name))) {
+    throw new Error('Выбранный лист счёта не найден. Загрузите файл заново.');
+  }
+  const included = sheets.filter((sheet) => selected.has(sheet.name));
+  const omitted = sheets.filter((sheet) => !selected.has(sheet.name));
+  if (!included.some((sheet) => sheet.items.length > 0)) {
+    throw new Error('На выбранных листах нет распознанных товарных позиций. Исправьте данные счёта.');
+  }
+  return {
+    items: included.flatMap((sheet) => sheet.items.map((item) => ({ ...item, sourceSheet: sheet.name }))),
+    warnings: [
+      ...sheets.flatMap((sheet) => sheet.warnings.map((warning) => `Лист «${sheet.name}»: ${warning}`)),
+      ...(omitted.length ? [`Не включены листы: ${omitted.map((sheet) => `«${sheet.name}»`).join(', ')}.`] : []),
+    ],
+  };
 }
 
 class AmbiguousInvoiceHeaderError extends Error {}
@@ -114,7 +148,7 @@ function findHeader(cells: Cells): Header | null {
     article,
     name: find((label) => /^(товар|номенклат|наименование)/.test(label)),
     quantity,
-    unit: find((label) => /^(ед|единица|единицы|едизм|единицаизмерения|единицыизмерения|unit)$/.test(label)),
+    unit: find((label) => /^(ед(?:иниц[аы])?(?:изм(?:ер(?:ения)?)?)?|unit)$/.test(label)),
     price,
     amount,
   };
@@ -218,13 +252,12 @@ export function parseInvoiceWorkbook(bytes: ArrayBuffer): ParsedInvoice {
     throw new Error('Не удалось открыть файл счёта. Проверьте, что это корректный файл Excel (.xlsx или .xls).');
   }
 
-  let firstRows: SheetRows = [];
+  const sheets: ParsedInvoiceSheet[] = [];
   let firstEmptyResult: ParsedInvoice | null = null;
-  for (const [index, name] of workbook.SheetNames.entries()) {
+  for (const name of workbook.SheetNames) {
     const sheet = workbook.Sheets[name];
     if (!sheet) continue;
     const rows = sheetRows(sheet);
-    if (index === 0) firstRows = rows;
 
     let header: Header | null = null;
     for (const [rowIndex, cells] of rows) {
@@ -234,19 +267,19 @@ export function parseInvoiceWorkbook(bytes: ArrayBuffer): ParsedInvoice {
         if (!(error instanceof AmbiguousInvoiceHeaderError)) throw error;
         const hasOtherRows = rows.some(([index, rowCells]) =>
           index !== rowIndex && [...rowCells.values()].some((cell) => normalizeText(cell.v)));
-        if (hasOtherRows) throw error;
+        if (hasOtherRows) throw new Error(`Лист «${name}»: ${error.message}`);
       }
       if (header) break;
     }
-    if (!header) continue;
-    const result = parseRows(rows, header, false);
-    if (result.items.length > 0) return result;
+    if (!header && !hasFixedLayout(rows)) continue;
+    const result = parseRows(rows, header ?? FIXED_HEADER, !header);
+    if (result.items.length > 0 || result.warnings.length > 0) sheets.push({ name, ...result });
     firstEmptyResult ??= result;
   }
-
-  if (hasFixedLayout(firstRows)) {
-    const result = parseRows(firstRows, FIXED_HEADER, true);
-    if (result.items.length > 0) return result;
+  if (sheets.length > 1) throw new InvoiceSheetsRequiredError(sheets);
+  if (sheets.length === 1 && sheets[0]!.items.length > 0) {
+    const { items, warnings } = sheets[0]!;
+    return { items, warnings };
   }
 
   if (firstEmptyResult) {

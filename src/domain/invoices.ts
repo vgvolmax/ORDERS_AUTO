@@ -13,6 +13,7 @@ export interface InvoiceItem {
   price: number | null;
   amount: number | null;
   sourceRow: number;
+  sourceSheet?: string;
 }
 
 export type InvoiceDifference = 'missing' | 'extra' | 'quantity' | 'higher' | 'lower' | 'ambiguous' | 'unit' | 'unpriced' | 'amount' | 'signed';
@@ -63,7 +64,7 @@ interface OrderGroup {
   unit: string | null;
   lines: OrderLine[];
   matches: InvoiceItem[];
-  ambiguousRows: number[];
+  ambiguousRows: string[];
 }
 
 interface InvoiceValues {
@@ -162,7 +163,9 @@ function invoiceValues(items: readonly InvoiceItem[]): InvoiceValues {
 }
 
 function sourceRows(items: readonly InvoiceItem[]): string {
-  return items.map((item) => item.sourceRow).join(', ');
+  return items.map((item) => item.sourceSheet
+    ? `«${item.sourceSheet}»: ${item.sourceRow}`
+    : String(item.sourceRow)).join(', ');
 }
 
 function inconsistentAmount({ quantity, price, amount }: InvoiceItem): boolean {
@@ -178,6 +181,9 @@ function inconsistentAmount({ quantity, price, amount }: InvoiceItem): boolean {
 function invoiceDiagnostics(items: readonly InvoiceItem[]) {
   const notes: string[] = [];
   const differences: InvoiceDifference[] = [];
+  if (items.some((item) => item.sourceSheet)) {
+    notes.push('Источник счёта: ' + sourceRows(items) + '.');
+  }
   if (items.length > 1) {
     notes.push('Строки счёта ' + sourceRows(items) + ': количество суммировано.');
     const prices = items.flatMap(({ price, amount, quantity }) =>
@@ -245,6 +251,10 @@ function compareGroup(
     if (orderPrice === null) notes.push('В заказе отсутствует цена для полного количества.');
     if (values.invoicePrice === null) notes.push('В счёте отсутствует цена для полного количества.');
   }
+  if (values && (!unitKey(group.unit) || items.some((item) => !unitKey(item.unit)))) {
+    differences.push('unit');
+    notes.push('Не указана единица измерения в заказе или счёте. Сверьте единицы вручную перед включением в корректировку.');
+  }
   if (orderPrice !== null && new Set(prices.map(({ price }) => price)).size > 1) {
     notes.push('В заказе разные цены, показана средневзвешенная цена.');
   }
@@ -281,7 +291,9 @@ function invoiceOnlyRow(
     notes.push('В счёте отсутствует цена для полного количества.');
   }
   return {
-    id: 'invoice:' + sourceRows(items),
+    id: 'invoice:' + (items.some((item) => item.sourceSheet)
+      ? JSON.stringify(items.map((item) => [item.sourceSheet ?? null, item.sourceRow]))
+      : sourceRows(items)),
     skuCode: skuCode ?? sample.skuCode,
     article: items.find((item) => item.article)?.article ?? '',
     name: items.find((item) => item.name)?.name ?? '',
@@ -366,10 +378,10 @@ export function compareInvoice(
     if (selected) {
       selected.matches.push(item);
     } else {
-      for (const group of candidates) group.ambiguousRows.push(item.sourceRow);
+      for (const group of candidates) group.ambiguousRows.push(sourceRows([item]));
       const codes = [...new Set(candidates.map((candidate) => candidate.skuCode))].join(', ');
       unresolved.push(invoiceOnlyRow([item], 'ambiguous', undefined,
-        `Строка счёта ${item.sourceRow}: несколько возможных позиций заказа (Код 1С: ${codes}).`));
+        `Строка счёта ${sourceRows([item])}: несколько возможных позиций заказа (Код 1С: ${codes}).`));
     }
   }
 
