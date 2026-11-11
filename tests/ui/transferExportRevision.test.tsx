@@ -41,6 +41,7 @@ it('blocks stale accepted CSVs and Excel after a second tab revokes the transfer
   const acceptedCsv = vi.spyOn(downloads, 'downloadAcceptedTransfersCsv').mockImplementation(() => undefined);
   const resultCsv = vi.spyOn(downloads, 'downloadTransferCsv').mockImplementation(() => undefined);
   const excel = vi.spyOn(downloads, 'save').mockImplementation(() => undefined);
+  const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
   const commit = vi.fn();
   const renderPage = (tab: 'accepted' | 'results') => (
     <StoreContext.Provider value={{
@@ -52,7 +53,7 @@ it('blocks stale accepted CSVs and Excel after a second tab revokes the transfer
     </StoreContext.Provider>
   );
   const { rerender } = render(renderPage('accepted'));
-  const reject = async (button: HTMLElement, probe: typeof acceptedCsv | typeof resultCsv | typeof excel) => {
+  const reject = async (button: HTMLElement, probe: typeof acceptedCsv | typeof resultCsv | typeof excel | typeof anchorClick) => {
     fireEvent.click(button);
     await waitFor(() => {
       expect(probe).not.toHaveBeenCalled();
@@ -63,6 +64,7 @@ it('blocks stale accepted CSVs and Excel after a second tab revokes the transfer
   };
 
   await reject(screen.getByRole('button', { name: 'CSV Донор А → Получатель' }), acceptedCsv);
+  await reject(screen.getByRole('button', { name: 'Excel Донор А → Получатель' }), anchorClick);
   await reject(screen.getByRole('button', { name: 'Excel перемещений' }), excel);
   rerender(renderPage('results'));
   fireEvent.click(screen.getByRole('button', { name: 'Открыть перемещение Донор А → Получатель' }));

@@ -24,6 +24,7 @@ export function AcceptedTransfersView({
   filters,
   onFilters,
   onExport,
+  onExportCsv,
   onRevoke,
   busy = false,
   saving = false,
@@ -32,7 +33,8 @@ export function AcceptedTransfersView({
   documents: TransferDocument[];
   filters: AcceptedTransferFilters;
   onFilters: (filters: AcceptedTransferFilters) => void | Promise<void>;
-  onExport: (ids: string[]) => void;
+  onExport: (ids: string[]) => void | Promise<void>;
+  onExportCsv?: (ids: string[]) => void | Promise<void>;
   onRevoke?: ((ids: string[]) => void) | undefined;
   busy?: boolean;
   saving?: boolean;
@@ -44,13 +46,14 @@ export function AcceptedTransfersView({
   );
   const [sort, setSort] = useState<TableSort | null>(null);
   const [exportError, setExportError] = useState('');
-  function exportCsv(ids: string[]) {
+  async function exportDirections(ids: string[], format: 'Excel' | 'CSV') {
     setExportError('');
     try {
-      onExport(ids);
+      const download = format === 'Excel' ? onExport : onExportCsv;
+      await download?.(ids);
     } catch {
       setExportError(
-        'Не удалось скачать CSV принятых перемещений. Повторите выгрузку.',
+        `Не удалось скачать ${format} принятых перемещений. Повторите выгрузку.`,
       );
     }
   }
@@ -214,9 +217,21 @@ export function AcceptedTransfersView({
         >
           Снять выбор
         </Button>
-        <Button disabled={!selected.length} onClick={() => exportCsv(selected)}>
-          CSV выбранных ({selected.length})
+        <Button
+          disabled={busy || !selected.length}
+          onClick={() => exportDirections(selected, 'Excel')}
+        >
+          Excel выбранных ({selected.length})
         </Button>
+        {onExportCsv && (
+          <Button
+            className="secondary"
+            disabled={busy || !selected.length}
+            onClick={() => exportDirections(selected, 'CSV')}
+          >
+            CSV выбранных ({selected.length})
+          </Button>
+        )}
         {onRevoke && (
           <Button
             className="secondary"
@@ -229,10 +244,10 @@ export function AcceptedTransfersView({
         )}
       </div>
       <p className="accepted-export-help">
-        Поиск отбирает направления. CSV содержит все принятые товары выбранных
-        направлений, включая скрытые поиском.
+        В выгрузку входят все принятые товары выбранных направлений, включая
+        скрытые поиском.
         {onRevoke &&
-          ' Отмена направлений также охватывает весь отмеченный набор; состав и изменение закупки показаны перед подтверждением.'}
+          ' Отмена охватывает все выбранные направления. Состав и изменение закупки показаны перед подтверждением.'}
       </p>
       {exportError && !opened && <Alert tone="danger">{exportError}</Alert>}
       {!documents.length ? (
@@ -309,19 +324,39 @@ export function AcceptedTransfersView({
                 ),
               },
               {
-                key: 'csv',
-                header: 'CSV',
+                key: 'excel',
+                header: 'Excel',
                 width: '85px',
                 render: (d) => (
                   <Button
                     className="secondary"
-                    aria-label={`CSV ${d.fromName} → ${d.toName}`}
-                    onClick={() => exportCsv([d.id])}
+                    aria-label={`Excel ${d.fromName} → ${d.toName}`}
+                    disabled={busy}
+                    onClick={() => exportDirections([d.id], 'Excel')}
                   >
-                    CSV
+                    Excel
                   </Button>
                 ),
               },
+              ...(onExportCsv
+                ? [
+                    {
+                      key: 'csv',
+                      header: 'CSV',
+                      width: '75px',
+                      render: (d: TransferDocument) => (
+                        <Button
+                          className="secondary"
+                          aria-label={`CSV ${d.fromName} → ${d.toName}`}
+                          disabled={busy}
+                          onClick={() => exportDirections([d.id], 'CSV')}
+                        >
+                          CSV
+                        </Button>
+                      ),
+                    },
+                  ]
+                : []),
             ]}
           />
         </div>
@@ -336,7 +371,8 @@ export function AcceptedTransfersView({
           onRevoke={onRevoke ? (id) => onRevoke([id]) : undefined}
           onRevokeMany={onRevoke}
           onAccept={() => undefined}
-          onExport={() => exportCsv([opened.id])}
+          onExportWorkbook={() => exportDirections([opened.id], 'Excel')}
+          onExport={onExportCsv && (() => exportDirections([opened.id], 'CSV'))}
           exportCount={opened.lines.length}
           onClose={() => setOpenedDocument(null)}
           stale={false}

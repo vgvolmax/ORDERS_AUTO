@@ -1,6 +1,7 @@
 import { skippedReasonLabel } from '../features/rebalancing/skippedRebalance';
 import ExcelJS from 'exceljs';
 import { moneyProduct } from '../domain/money';
+import { buildSkuOrder } from '../domain/skuOrder';
 import type { PurchaseDemandLine } from '../domain/purchaseDemand';
 import {
   acceptedEconomicDiagnostics,
@@ -29,6 +30,13 @@ export async function buildRebalancingWorkbook(
     { snapshot, proposal, accepted } = input;
   const branches = new Map(snapshot.branches.map((b) => [b.id, b.name])),
     skus = new Map(snapshot.skus.map((s) => [s.skuCode, s]));
+  const compareSku = buildSkuOrder(snapshot.skus.map((sku) => sku.skuCode));
+  const inSourceOrder = <T extends { skuCode?: string }>(rows: Iterable<T>) =>
+    [...rows].sort((left, right) => {
+      if (left.skuCode === undefined) return right.skuCode === undefined ? 0 : 1;
+      if (right.skuCode === undefined) return -1;
+      return compareSku(left.skuCode, right.skuCode);
+    });
   const sheet = (name: string, headers: string[]) => {
     const s = wb.addWorksheet(name);
     s.addRow(headers);
@@ -86,7 +94,7 @@ export async function buildRebalancingWorkbook(
       price === null ? null : moneyProduct(t.qty, price),
     ];
   };
-  for (const t of accepted)
+  for (const t of inSourceOrder(accepted))
     acceptedSheet.addRow([
       ...movement(t),
       'Принято — учтено в потребности',
@@ -95,7 +103,7 @@ export async function buildRebalancingWorkbook(
       t.sourceRunId,
       JSON.stringify(t.acceptedConfig),
     ]);
-  for (const t of proposal?.transfers ?? []) {
+  for (const t of inSourceOrder(proposal?.transfers ?? [])) {
     if (
       accepted.some(
         (a) =>
@@ -133,7 +141,7 @@ export async function buildRebalancingWorkbook(
     'Цена закупки, ₽',
     'Текущая сумма, ₽',
   ]);
-  for (const l of input.purchaseDemand)
+  for (const l of inSourceOrder(input.purchaseDemand))
     summary.addRow([
       l.skuCode,
       l.branch,
@@ -169,7 +177,7 @@ export async function buildRebalancingWorkbook(
       ...acceptedEconomicDiagnostics(snapshot, accepted),
     ].map((i) => [JSON.stringify(i), i]),
   );
-  for (const i of unique.values())
+  for (const i of inSourceOrder(unique.values()))
     issues.addRow([
       i.code,
       i.severity,
@@ -201,7 +209,7 @@ export async function buildRebalancingWorkbook(
     'Предложено переместить',
     'Осталось',
   ]);
-  for (const skipped of proposal?.skippedSkus ?? []) {
+  for (const skipped of inSourceOrder(proposal?.skippedSkus ?? [])) {
     const sku = skus.get(skipped.skuCode),
       price = sku?.referencePrice ?? null;
     skippedSheet.addRow([

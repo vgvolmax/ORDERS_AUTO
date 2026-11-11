@@ -1,16 +1,20 @@
-import { useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useId, useRef, useState } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { Dialog, useModalLayer } from '../../components/Dialog';
 import { VirtualTable } from '../../components/VirtualTable';
 import { productColumns } from '../../components/productColumns';
 import { Alert, Button, SearchInput } from '../../components/ui';
 import { fmtQty, money } from '../demand/DemandPage';
 import type {
+  TransferDirection,
   TransferDocument,
   TransferDocumentLine,
   TransferStockView,
 } from './transferDocuments';
-import { summarizeTransferDocuments } from './transferDocuments';
+import { summarizeTransferDocuments, transferDecisionLabel } from './transferDocuments';
+import { TransferDirectionsPopover } from './TransferDirectionsPopover';
+import { TransferQuantityEditor, transferQuantityWarnings, type ReadTransferQuantity } from './TransferQuantityEditor';
+import './TransferDrawer.css';
 
 export function TransferDrawer({
   document: doc,
@@ -21,6 +25,10 @@ export function TransferDrawer({
   onRevokeMany,
   onAccept,
   onExport,
+  onExportWorkbook,
+  onEditQuantity,
+  quantityDetails,
+  directionsBySku,
   exportCount,
   onClose,
   stale,
@@ -36,7 +44,11 @@ export function TransferDrawer({
   onRevoke?: ((id: string) => void) | undefined;
   onRevokeMany?: ((ids: string[]) => void) | undefined;
   onAccept: (ids: string[]) => void;
-  onExport: () => void;
+  onExport?: (() => void) | undefined;
+  onExportWorkbook?: (() => void) | undefined;
+  onEditQuantity?: ((sourceLineId: string, qty: number) => Promise<void>) | undefined;
+  quantityDetails?: ReadTransferQuantity | undefined;
+  directionsBySku?: ReadonlyMap<string, TransferDirection[]> | undefined;
   exportCount: number;
   onClose: () => void;
   stale: boolean;
@@ -46,16 +58,56 @@ export function TransferDrawer({
   ariaLabel?: string;
 }) {
   const ref = useRef<HTMLElement>(null);
-  useModalLayer(ref, onClose);
+  const directionsId = useId();
   const [query, setQuery] = useState('');
   const [acceptedSelection, setAcceptedSelection] = useState<string[]>([]);
   const [product, setProduct] = useState<TransferDocumentLine | null>(null);
+  const [directionContext, setDirectionContext] = useState<{
+    lineId: string;
+    anchor: HTMLButtonElement;
+  } | null>(null);
+  const [quantityDrafts, setQuantityDrafts] = useState(new Map<string, string>());
+  const [discardOpen, setDiscardOpen] = useState(false);
   const rows = doc.lines.filter((l) =>
     [l.skuCode, l.article ?? '', l.name]
       .join(' ')
       .toLocaleLowerCase('ru')
       .includes(query.trim().toLocaleLowerCase('ru')),
   );
+  const directionLine = rows.find((line) => line.id === directionContext?.lineId);
+  const activeDirections = directionLine && directionsBySku?.get(directionLine.skuCode);
+  const directionQuantity = directionLine && directionLine.decision !== 'ACCEPTED'
+    ? quantityDetails?.(directionLine.sourceLineId) ?? null
+    : null;
+  const directionWarnings =
+    directionQuantity && directionLine?.originalQty !== undefined &&
+    directionLine.originalQty !== directionLine.qty
+      ? transferQuantityWarnings(directionQuantity)
+      : [];
+  function closeDirections(restoreFocus: boolean) {
+    setDirectionContext(null);
+    if (restoreFocus && directionContext?.anchor.isConnected)
+      directionContext.anchor.focus({ preventScroll: true });
+  }
+  function setQuantityDraft(lineId: string, value: string | undefined) {
+    setQuantityDrafts((drafts) => {
+      const next = new Map(drafts);
+      if (value === undefined) next.delete(lineId);
+      else next.set(lineId, value);
+      return next;
+    });
+  }
+  const hasUnsavedQuantities = doc.lines.some(
+    (line) => line.decision === 'PROPOSED' && quantityDrafts.has(line.id),
+  );
+  function closeDrawer() {
+    if (hasUnsavedQuantities) setDiscardOpen(true);
+    else onClose();
+  }
+  useModalLayer(ref, () => {
+    if (directionLine) closeDirections(true);
+    else closeDrawer();
+  });
   const eligible = rows.filter((l) => l.decision === 'PROPOSED');
   const acceptedRows = rows.filter(
     (l) => l.decision === 'ACCEPTED' && l.transferId,
@@ -93,7 +145,7 @@ export function TransferDrawer({
       className="drawer-back"
       role="presentation"
       onMouseDown={(e) => {
-        if (e.currentTarget === e.target) onClose();
+        if (e.currentTarget === e.target) closeDrawer();
       }}
     >
       <aside
@@ -134,7 +186,7 @@ export function TransferDrawer({
               </strong>
             </div>
           </div>
-          <button className="close" aria-label="Закрыть" onClick={onClose}>
+          <button className="close" aria-label="Закрыть" onClick={closeDrawer}>
             ×
           </button>
         </div>
@@ -154,6 +206,7 @@ export function TransferDrawer({
               value={query}
               onValueChange={(value) => {
                 setQuery(value);
+                closeDirections(false);
               }}
             />
           </label>
@@ -277,15 +330,42 @@ export function TransferDrawer({
                   article: { width: '110px' },
                   name: {
                     width: 'minmax(200px,1.5fr)',
-                    render: (l) => (
-                      <button
-                        className="transfer-product-name"
-                        aria-label={`Показать полное название ${l.skuCode}`}
-                        onClick={() => setProduct(l)}
-                      >
-                        {l.name}
-                      </button>
-                    ),
+                    render: (l) => {
+                      const directionCount = directionsBySku?.get(l.skuCode)?.length ?? 0;
+                      const expanded = directionLine?.id === l.id;
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            className="transfer-product-name"
+                            aria-label={`Показать полное название ${l.skuCode}`}
+                            onClick={() => {
+                              closeDirections(false);
+                              setProduct(l);
+                            }}
+                          >
+                            {l.name}
+                          </button>
+                          {directionCount > 0 && (
+                            <button
+                              type="button"
+                              className="link transfer-directions-trigger"
+                              aria-label={`Направления ${directionCount} для ${l.skuCode}`}
+                              aria-haspopup="dialog"
+                              aria-expanded={expanded}
+                              aria-controls={expanded ? directionsId : undefined}
+                              onClick={(event) =>
+                                expanded
+                                  ? closeDirections(true)
+                                  : setDirectionContext({ lineId: l.id, anchor: event.currentTarget })
+                              }
+                            >
+                              Направления {directionCount}
+                            </button>
+                          )}
+                        </>
+                      );
+                    },
                   },
                 },
               ),
@@ -302,14 +382,36 @@ export function TransferDrawer({
                 render: (l) => <Stock values={l.to} line={l} />,
               },
               {
+                key: 'qty',
+                header: 'Количество',
+                width: '130px',
+                render: (l) =>
+                  l.decision === 'PROPOSED' && onEditQuantity ? (
+                    <TransferQuantityEditor
+                      line={l}
+                      draft={quantityDrafts.get(l.id)}
+                      disabled={disabled || saving}
+                      quantityDetails={quantityDetails}
+                      onDraft={(value) => setQuantityDraft(l.id, value)}
+                      onSave={onEditQuantity}
+                    />
+                  ) : (
+                    <div className="transfer-quantity">
+                      <strong>{fmtQty(l.qty)}</strong>
+                      <small>Ед. изм.: {l.unit ?? 'ед.'}</small>
+                      {l.originalQty !== undefined && l.originalQty !== l.qty && (
+                        <small className="transfer-manual-qty">Вручную · расчёт {fmtQty(l.originalQty)}</small>
+                      )}
+                    </div>
+                  ),
+              },
+              {
                 key: 'cost',
-                header: 'Количество · цена · сумма',
-                width: 'minmax(155px, 1fr)',
+                header: 'Цена · сумма',
+                width: 'minmax(115px, 1fr)',
                 className: 'transfer-cost num',
                 render: (l) => (
                   <>
-                    <strong>{fmtQty(l.qty)}</strong>
-                    <small>Ед. изм.: {l.unit ?? 'ед.'}</small>
                     <small>
                       Цена:{' '}
                       {l.unitPrice === null ? 'Нет цены' : money(l.unitPrice)}
@@ -326,14 +428,8 @@ export function TransferDrawer({
                 width: 'minmax(125px, 1fr)',
                 render: (l) => (
                   <div className="transfer-line-actions">
-                    <span
-                      className={l.decision === 'ACCEPTED' ? 'success' : ''}
-                    >
-                      {l.decision === 'ACCEPTED'
-                        ? 'Принято'
-                        : l.decision === 'REJECTED'
-                          ? 'Отклонено'
-                          : 'Предложено'}
+                    <span data-decision={l.decision}>
+                      {transferDecisionLabel[l.decision]}
                     </span>
                     {l.transferId ? (
                       onRevoke && (
@@ -356,7 +452,10 @@ export function TransferDrawer({
                       <button
                         className="link"
                         disabled={busy}
-                        onClick={() => onReject(l.sourceLineId)}
+                        onClick={() => {
+                          setQuantityDraft(l.id, undefined);
+                          onReject(l.sourceLineId);
+                        }}
                       >
                         {l.decision === 'REJECTED' ? 'Вернуть' : 'Отклонить'}
                       </button>
@@ -370,7 +469,11 @@ export function TransferDrawer({
         <p className="transfer-scope-note">
           {hasProposals &&
             'Принятие — все отмеченные позиции текущего поиска, включая строки за пределами экрана. '}
-          CSV — принятые позиции всего перемещения.
+          {onExportWorkbook && onExport
+            ? 'Excel и CSV содержат принятые позиции всего перемещения.'
+            : onExportWorkbook
+              ? 'Excel содержит принятые позиции всего перемещения.'
+              : onExport && 'CSV — принятые позиции всего перемещения.'}
           {onRevokeMany && (
             <>
               {' '}
@@ -394,20 +497,34 @@ export function TransferDrawer({
               </small>
             )}
             {saving && <small role="status">Сохраняем выбор…</small>}
+            {hasUnsavedQuantities && (
+              <small role="status">Сохраните или отмените правки количества.</small>
+            )}
           </div>
           <div className="transfer-action-buttons">
-            <Button
-              className="secondary"
-              aria-label={`Скачать CSV принятых позиций (${exportCount})`}
-              disabled={busy || !exportCount}
-              onClick={onExport}
-            >
-              CSV принятых ({exportCount})
-            </Button>
+            {onExportWorkbook && (
+              <Button
+                aria-label={`Скачать Excel принятых позиций (${exportCount})`}
+                disabled={busy || !exportCount}
+                onClick={onExportWorkbook}
+              >
+                Excel принятых ({exportCount})
+              </Button>
+            )}
+            {onExport && (
+              <Button
+                className="secondary"
+                aria-label={`Скачать CSV принятых позиций (${exportCount})`}
+                disabled={busy || !exportCount}
+                onClick={onExport}
+              >
+                CSV принятых ({exportCount})
+              </Button>
+            )}
             <Button
               className="secondary"
               aria-label="Закрыть карточку"
-              onClick={onClose}
+              onClick={closeDrawer}
             >
               Закрыть
             </Button>
@@ -423,7 +540,7 @@ export function TransferDrawer({
             )}
             {hasProposals && (
               <Button
-                disabled={disabled || !routeSelected.length}
+                disabled={disabled || hasUnsavedQuantities || !routeSelected.length}
                 aria-label={`Принять выбранные в перемещении (${routeSelected.length})`}
                 onClick={() => onAccept(routeSelected)}
               >
@@ -434,6 +551,43 @@ export function TransferDrawer({
             )}
           </div>
         </div>
+        {directionContext && directionLine && activeDirections && (
+          <TransferDirectionsPopover
+            id={directionsId}
+            anchor={directionContext.anchor}
+            skuCode={directionLine.skuCode}
+            unit={directionLine.unit}
+            directions={activeDirections}
+            currentDirectionId={doc.id}
+            quantity={directionQuantity}
+            warnings={directionWarnings}
+            onClose={closeDirections}
+          />
+        )}
+        {discardOpen && (
+          <Dialog
+            title="Закрыть карточку без сохранения?"
+            onClose={() => setDiscardOpen(false)}
+            actions={
+              <>
+                <Button className="secondary" onClick={() => setDiscardOpen(false)}>
+                  Продолжить редактирование
+                </Button>
+                <Button
+                  disabled={busy}
+                  onClick={() => {
+                    flushSync(() => setDiscardOpen(false));
+                    onClose();
+                  }}
+                >
+                  Закрыть без сохранения
+                </Button>
+              </>
+            }
+          >
+            <p>Несохранённые правки количества будут сброшены.</p>
+          </Dialog>
+        )}
         {product && (
           <Dialog
             title={`Товар ${product.skuCode}`}

@@ -2,7 +2,9 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { VirtualTable } from '../../components/VirtualTable';
 import { Button, SearchInput } from '../../components/ui';
 import { fmtQty, money } from '../demand/DemandPage';
+import type { ReadTransferQuantity } from './TransferQuantityEditor';
 import {
+  buildTransferDirections,
   buildTransferDocuments,
   summarizeTransferDocuments,
   type TransferDocument,
@@ -19,6 +21,9 @@ export function ResultsTable({
   onRevokeMany,
   onAccept,
   onExport,
+  onExportWorkbook,
+  onEditQuantity,
+  quantityDetails,
   stale,
   busy,
   acceptingDisabled = false,
@@ -34,6 +39,11 @@ export function ResultsTable({
   onRevokeMany?: (ids: string[]) => void;
   onAccept: (ids: string[]) => void;
   onExport: (documentId: string) => void;
+  onExportWorkbook?: ((documentId: string) => void) | undefined;
+  onEditQuantity?:
+    | ((sourceLineId: string, qty: number) => Promise<void>)
+    | undefined;
+  quantityDetails?: ReadTransferQuantity | undefined;
   stale: boolean;
   busy: boolean;
   acceptingDisabled?: boolean;
@@ -101,6 +111,17 @@ export function ResultsTable({
       rejected,
     ],
   );
+  const routeSummaries = useMemo(
+    () =>
+      new Map(
+        allDocs.map((doc) => [doc.id, summarizeTransferDocuments([doc])]),
+      ),
+    [allDocs],
+  );
+  const directionsBySku = useMemo(
+    () => buildTransferDirections(allDocs),
+    [allDocs],
+  );
   // Keep the parent modal mounted when revoking the last line removes its route.
   // The confirmation can then close before the operator closes the inspector.
   const opened =
@@ -118,6 +139,9 @@ export function ResultsTable({
   const byId = new Map(docs.map((doc) => [doc.id, doc]));
   const visibleLines = docs.flatMap((doc) => doc.lines);
   const eligible = visibleLines.filter((l) => l.decision === 'PROPOSED');
+  const rejectedCount = visibleLines.filter(
+    (line) => line.decision === 'REJECTED',
+  ).length;
   const selectedSet = new Set(selected),
     rejectedSet = new Set(rejected);
   const acceptedSources = new Set(
@@ -202,8 +226,10 @@ export function ResultsTable({
           Предложено строк по фильтрам: {eligible.length}. Учтено строк по
           фильтрам:{' '}
           {visibleLines.filter((l) => l.decision === 'ACCEPTED').length}.
-          Отклонено:{' '}
-          {visibleLines.filter((l) => l.decision === 'REJECTED').length}.
+          <span className={rejectedCount > 0 ? 'danger-text' : undefined}>
+            Отклонено: {rejectedCount}
+          </span>
+          .
         </p>
         <details className="results-help">
           <summary>Как работают предложения и выбор</summary>
@@ -268,15 +294,17 @@ export function ResultsTable({
                   const doc = byId.get(JSON.stringify([from, to]));
                   if (!doc) return <span className="muted">—</span>;
                   const summary = summarizeTransferDocuments([doc]);
-                  const acceptedCount = summary.acceptedCount;
+                  const fullRoute = routeSummaries.get(doc.id) ?? summary;
+                  const routeClass = fullRoute.proposedCount
+                    ? ''
+                    : fullRoute.acceptedCount
+                      ? ' is-reviewed'
+                      : ' is-rejected';
                   return (
                     <button
                       className={
-                        'order-cell ' +
-                        (summary.activeCount > 0 &&
-                        acceptedCount === summary.activeCount
-                          ? 'is-reviewed'
-                          : '') +
+                        'order-cell' +
+                        routeClass +
                         (summary.selectedCount > 0 ? ' has-selection' : '')
                       }
                       aria-label={[
@@ -305,12 +333,8 @@ export function ResultsTable({
                           .join(' · ') || 'Нет активных позиций'}
                       </span>
                       <span className="route-decision-count">
-                        Предложено:{' '}
-                        {
-                          doc.lines.filter((l) => l.decision === 'PROPOSED')
-                            .length
-                        }{' '}
-                        · Принято: {acceptedCount} из {summary.activeCount}
+                        Предложено: {fullRoute.proposedCount} · Принято:{' '}
+                        {fullRoute.acceptedCount} из {fullRoute.activeCount}
                       </span>
                       <dl className="route-money">
                         <div>
@@ -332,13 +356,9 @@ export function ResultsTable({
                           </dd>
                         </div>
                       </dl>
-                      {doc.lines.some((l) => l.decision === 'REJECTED') && (
-                        <span>
-                          Отклонено:{' '}
-                          {
-                            doc.lines.filter((l) => l.decision === 'REJECTED')
-                              .length
-                          }
+                      {fullRoute.rejectedCount > 0 && (
+                        <span className="danger-text">
+                          Отклонено: {fullRoute.rejectedCount}
                         </span>
                       )}
                       {doc.lines.some((l) => l.selected) && (
@@ -362,6 +382,12 @@ export function ResultsTable({
           onRevokeMany={onRevokeMany}
           onAccept={onAccept}
           onExport={() => onExport(opened.id)}
+          onExportWorkbook={
+            onExportWorkbook ? () => onExportWorkbook(opened.id) : undefined
+          }
+          onEditQuantity={onEditQuantity}
+          quantityDetails={quantityDetails}
+          directionsBySku={directionsBySku}
           exportCount={
             allDocs
               .find((doc) => doc.id === opened.id)

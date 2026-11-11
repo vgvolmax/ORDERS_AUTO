@@ -125,7 +125,7 @@ it('shows global and route amounts, keeps selection separate from rejection and 
     within(drawer).getByLabelText('Принято на сумму в перемещении'),
   ).toHaveTextContent('1 500,00');
 });
-it('opens a route document with product identity, exact units and both stock previews without quantity editing', () => {
+it('opens a route document with product identity, exact units and both stock previews', () => {
   const current = harness();
   const original = structuredClone(current());
   const cell = screen.getByRole('button', {
@@ -146,7 +146,9 @@ it('opens a route document with product identity, exact units and both stock pre
   expect(piece).toHaveTextContent('75 → 60');
   expect(piece).toHaveTextContent('10 → 25');
   expect(piece).toHaveTextContent('MIN 20 · MAX 60');
-  expect(within(drawer).queryByRole('spinbutton')).not.toBeInTheDocument();
+  expect(
+    within(drawer).getByRole('spinbutton', { name: 'Количество SKU1' }),
+  ).toHaveValue(15);
   expect(current()).toEqual(original);
 });
 it('closes the inspector with Escape and restores keyboard focus to the route cell', () => {
@@ -325,9 +327,27 @@ it('limits acceptance to the currently visible positions and preserves hidden se
   ).toHaveValue('');
 });
 
-it('allows inspecting an outdated proposal but disables selecting and accepting its positions', () => {
+it('keeps existing positions actionable when only the receiver target changes', () => {
   const state = initialState();
   state.rebalance.config.receiverPct = 95;
+  harness(state);
+  expect(screen.getByText(/Можно обработать найденные строки/)).toBeInTheDocument();
+  const { drawer } = openRoute();
+  const line = within(drawer).getByRole('checkbox', {
+    name: /Выбрать перемещение SKU1/,
+  });
+  expect(line).toBeEnabled();
+  fireEvent.click(line);
+  expect(
+    within(drawer).getByRole('button', {
+      name: 'Принять выбранные в перемещении (1)',
+    }),
+  ).toBeEnabled();
+});
+
+it('allows inspecting a legacy proposal but disables selecting and accepting its positions', () => {
+  const state = initialState();
+  state.rebalance.proposal!.algorithmVersion = 'legacy';
   const current = harness(state);
   const { drawer } = openRoute();
   expect(drawer).toHaveTextContent('Предложения устарели');
@@ -339,6 +359,29 @@ it('allows inspecting an outdated proposal but disables selecting and accepting 
     }),
   ).toBeDisabled();
   expect(current().rebalance.accepted).toHaveLength(0);
+});
+
+it('saves a manual quantity for only the open direction and keeps purchase unchanged before acceptance', async () => {
+  const state = initialState();
+  const before = derive(state).purchaseDemand;
+  const current = harness(state);
+  const { drawer } = openRoute();
+  const quantity = within(drawer).getByRole('spinbutton', { name: 'Количество SKU1' });
+  fireEvent.change(quantity, { target: { value: '20' } });
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Сохранить количество SKU1' }));
+  await waitFor(() =>
+    expect(current().rebalance.proposal!.transfers.find((line) => line.skuCode === 'SKU1' && line.fromBranchId === 'b0')).toMatchObject({
+      qty: 20,
+      originalQty: 15,
+    }),
+  );
+  expect(current().rebalance.proposal!.transfers.find((line) => line.skuCode === 'SKU1' && line.fromBranchId === 'b1')?.qty).toBe(35);
+  expect(derive(current()).purchaseDemand).toEqual(before);
+  expect(within(drawer).getByText('Вручную · расчёт 15')).toBeInTheDocument();
+  fireEvent.click(within(drawer).getByRole('button', { name: 'Направления 2 для SKU1' }));
+  expect(
+    within(screen.getByRole('dialog', { name: 'Направления товара SKU1' })).getByText(/Остаток отправителя ниже MAX/),
+  ).toBeInTheDocument();
 });
 
 it('selects the whole virtual composition and preserves selection while searching', () => {

@@ -10,12 +10,15 @@ import { hasIncompatibleTransferQuantities } from '../../app/quantityPolicies';
 import {
   createProposal,
   prepareAcceptedChange,
+  prepareTransferQuantityEdit,
+  validateTransferRestoration,
 } from '../../app/rebalanceActions';
 import {
   ALGORITHM_VERSION,
   branchParticipationFingerprint,
   rebalanceConfigFingerprint,
 } from '../../domain/rebalancing';
+import { describeTransferQuantity } from '../../domain/rebalancing/manualTransferQuantity';
 import { Alert, Button, MetricCard } from '../../components/ui';
 import { BrandIcon } from '../../components/BrandIcon';
 import { ConditionsPanel } from './ConditionsPanel';
@@ -32,6 +35,7 @@ import {
   save as download,
   downloadTransferCsv,
   downloadAcceptedTransfersCsv,
+  downloadAcceptedTransfersWorkbook,
 } from '../../export/download';
 import { AcceptTransfersDialog } from './AcceptTransfersDialog';
 import {
@@ -67,7 +71,11 @@ const messages: Record<string, string> = {
     'Условия или снимок изменились. Рассчитайте предложения заново. Принятые перемещения сохранены.',
   REVISION_CONFLICT: 'Решения изменились. Откройте подтверждение заново.',
   INVALID_TRANSFER_BATCH:
-    'Перемещения не приняты: проверьте количество и потребность получателя. Остаток донора должен оставаться не ниже MAX. Сумма каждого SKU от одного донора одному получателю должна быть не ниже порога; другие SKU и направления не складываются.',
+    'Проверьте количество, исходные данные и участие подразделений.',
+  INVALID_TRANSFER_QUANTITY: 'Введите целое количество больше нуля.',
+  TRANSFER_STOCK_RESERVED:
+    'Свободного остатка донора не хватает. Проверьте количества по другим направлениям этого товара.',
+  TRANSFER_ROUTE_UNAVAILABLE: 'Направление запрещено в текущих настройках маршрутов.',
 };
 export const rebalanceMessage = (e: unknown) =>
   e instanceof Error
@@ -186,7 +194,15 @@ export function RebalancingPage() {
   const [decisions, changeDecisions] = useDurableDraft(
     persistedDecisions,
     state.workspaceId,
-    (value) => save((s) => ({ rebalance: { ...s.rebalance, ...value } })),
+    (value) => save((s) => {
+      if (s.rebalance.proposal?.runId !== r.proposal?.runId)
+        throw new Error('STALE_PROPOSAL');
+      const nextRejected = new Set(value.rejectedLineIds);
+      for (const id of s.rebalance.rejectedLineIds) {
+        if (!nextRejected.has(id)) validateTransferRestoration(s, id, value.rejectedLineIds);
+      }
+      return { rebalance: { ...s.rebalance, ...value } };
+    }),
   );
   const totals = useMemo(
     () =>
@@ -217,7 +233,7 @@ export function RebalancingPage() {
     ...(r.proposal?.exclusions.filter((i) => !i.code.startsWith('ACCEPTED_')) ??
       []),
     ...d.acceptedSummary.diagnostics,
-  ];
+  ].sort((left, right) => d.compareSku(left.skuCode ?? '', right.skuCode ?? ''));
   const limitedSkuCount = r.proposal?.exclusions.filter(
     (issue) => issue.code === 'TRANSFER_SEARCH_LIMIT',
   ).length ?? 0;
@@ -230,10 +246,44 @@ export function RebalancingPage() {
         ) ||
         r.proposal.participationFingerprint !==
           branchParticipationFingerprint(registryDraft) ||
-        r.proposal.snapshotId !== state.snapshotId ||
-        r.proposal.configFingerprint !==
-          rebalanceConfigFingerprint(configDraft)),
+        r.proposal.snapshotId !== state.snapshotId),
   );
+  const searchConditionsChanged = Boolean(
+    !stale && r.proposal &&
+    r.proposal.configFingerprint !== rebalanceConfigFingerprint(configDraft),
+  );
+  const quantityDetails = (id: string, qty?: number) => {
+    if (!r.proposal || !d.snapshot) return null;
+    return describeTransferQuantity({
+      snapshot: d.snapshot.snapshot,
+      proposal: r.proposal,
+      accepted: r.accepted,
+      rejectedLineIds: decisions.rejectedLineIds,
+      config: configDraft,
+    }, id, qty);
+  };
+  async function editQuantity(id: string, qty: number) {
+    setError('');
+    try {
+      await save((s) => {
+        if (s.rebalance.proposal?.runId !== r.proposal?.runId)
+          throw new Error('STALE_PROPOSAL');
+        return prepareTransferQuantityEdit(s, id, qty);
+      });
+    } catch (error) {
+      throw new Error(rebalanceMessage(error));
+    }
+  }
+  function toggleRejection(id: string) {
+    setError('');
+    const rejectedLineIds = decisions.rejectedLineIds.includes(id)
+      ? decisions.rejectedLineIds.filter((value) => value !== id)
+      : [...decisions.rejectedLineIds, id];
+    void changeDecisions({
+      rejectedLineIds,
+      selectedLineIds: decisions.selectedLineIds.filter((value) => value !== id),
+    }).catch((error: unknown) => setError(rebalanceMessage(error)));
+  }
   function open(kind: 'accept' | 'revoke', ids: string[]) {
     if (busy) return;
     setError('');
@@ -495,6 +545,18 @@ export function RebalancingPage() {
       });
     }, 'Не удалось скачать CSV принятых перемещений. Повторите выгрузку.');
   }
+  function acceptedWorkbook(ids: string[]) {
+    void runExport(async () => {
+      const selected = new Set(ids);
+      const docs = acceptedDocuments.filter((doc) => selected.has(doc.id));
+      if (!docs.length || docs.length !== selected.size)
+        throw new Error('Состав принятых перемещений изменился. Повторите выбор.');
+      await downloadAcceptedTransfersWorkbook(docs, verifyExportRevision);
+      set({
+        toast: `Excel принятых перемещений сформирован · направлений: ${docs.length}.`,
+      });
+    }, 'Не удалось скачать Excel принятых перемещений. Повторите выгрузку.');
+  }
   return (
     <main
       className={
@@ -635,6 +697,11 @@ export function RebalancingPage() {
           Принятые перемещения продолжают учитываться.
         </Alert>
       )}
+      {searchConditionsChanged && tab === 'results' && (
+        <Alert tone="warning">
+          Настройки изменились. Можно обработать найденные строки на разрешённых маршрутах или выполнить новый расчёт.
+        </Alert>
+      )}
       {limitedSkuCount > 0 && !stale && (
         <Alert tone="warning">
           Достигнут лимит поиска для {limitedSkuCount} SKU. Для этих позиций
@@ -671,7 +738,8 @@ export function RebalancingPage() {
               busy={busy}
               saving={Boolean(saving)}
               error={confirmation ? '' : error}
-              onExport={acceptedCsv}
+              onExport={acceptedWorkbook}
+              onExportCsv={acceptedCsv}
             />
           )}
           {tab === 'results' && (
@@ -729,20 +797,14 @@ export function RebalancingPage() {
                     onSelection={(selectedLineIds) =>
                       changeDecisions({ ...decisions, selectedLineIds })
                     }
-                    onReject={(id) =>
-                      changeDecisions({
-                        rejectedLineIds: decisions.rejectedLineIds.includes(id)
-                          ? decisions.rejectedLineIds.filter((v) => v !== id)
-                          : [...decisions.rejectedLineIds, id],
-                        selectedLineIds: decisions.selectedLineIds.filter(
-                          (v) => v !== id,
-                        ),
-                      })
-                    }
+                    onReject={toggleRejection}
                     onRevoke={(id) => open('revoke', [id])}
                     onRevokeMany={(ids) => open('revoke', ids)}
                     onAccept={(ids) => open('accept', ids)}
                     onExport={csv}
+                    onExportWorkbook={(id) => acceptedWorkbook([id])}
+                    onEditQuantity={editQuantity}
+                    quantityDetails={quantityDetails}
                     stale={stale}
                     busy={busy}
                     acceptingDisabled={Boolean(saving)}
