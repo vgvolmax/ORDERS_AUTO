@@ -225,11 +225,13 @@ export function validateAcceptedLedger(
       !sku?.quantityStep ||
       t.fromBranchId === t.toBranchId ||
       !isStepQuantity(t.qty, sku.quantityStep) ||
+      (t.originalQty !== undefined && !isStepQuantity(t.originalQty, sku.quantityStep)) ||
       !routeAllows(t.acceptedConfig, t.fromBranchId, t.toBranchId)
     ) {
       issue(t, 'Недопустимы количество, шаг, стороны или маршрут');
       continue;
     }
+    if (t.operatorReviewed) continue;
     const threshold =
       t.acceptedConfig.recipientTrigger === 'BELOW_MIN' ? to.min! : to.max!;
     if (to.stock >= threshold)
@@ -245,14 +247,19 @@ export function validateAcceptedLedger(
   }
   if (issues.length) return issues;
   const totals = acceptedTotals(accepted);
+  // Historical plans still satisfy their captured search bounds. Explicit
+  // operator decisions share the same hard physical stock constraint.
+  const strict = acceptedTotals(accepted.filter((t) => !t.operatorReviewed));
   for (const s of snapshot.stocks) {
     const key = stockKey(s.skuCode, s.branchId),
       out = totals.outgoing.get(key) ?? 0,
-      incoming = totals.incoming.get(key) ?? 0;
+      strictOut = strict.outgoing.get(key) ?? 0,
+      strictIn = strict.incoming.get(key) ?? 0;
     if (
-      (out > 0 && sumQuantities([s.stock, -out]) < s.max!) ||
-      (incoming > 0 &&
-        sumQuantities([s.stock, incoming]) > (upper.get(key) ?? s.max!))
+      (out > 0 && out > s.stock) ||
+      (strictOut > 0 && sumQuantities([s.stock, -strictOut]) < s.max!) ||
+      (strictIn > 0 &&
+        sumQuantities([s.stock, strictIn]) > (upper.get(key) ?? s.max!))
     )
       issues.push({
         code: 'ACCEPTED_CAP_EXCEEDED',
