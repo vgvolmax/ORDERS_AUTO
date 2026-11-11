@@ -6,10 +6,11 @@ import type { WorkspaceMetadata } from '../../domain/workspace';
 import { listWorkspaces, loadWorkspace, readActiveWorkspaceRevision } from '../../persistence/workspaces';
 
 type ArchiveOrders =
-  | { id: string; orders: InvoiceOrder[]; error?: never }
-  | { id: string; orders?: never; error: string };
+  | { id: string; orders: InvoiceOrder[]; skuCodes: readonly string[]; error?: never }
+  | { id: string; orders?: never; skuCodes?: never; error: string };
 
 const noOrders: readonly InvoiceOrder[] = [];
+const noSkuCodes: readonly string[] = [];
 
 export function useInvoiceOrders() {
   const { state } = useStore();
@@ -43,8 +44,10 @@ export function useInvoiceOrders() {
     void loadWorkspace(archiveId)
       .then((workspace) => {
         if (!workspace) throw new Error('Сеанс не найден');
-        const orders = selectInvoiceOrders(stateFromWorkspace(workspace));
-        if (current) setArchive({ id: archiveId, orders });
+        const archivedState = stateFromWorkspace(workspace);
+        const orders = selectInvoiceOrders(archivedState);
+        const skuCodes = archivedState.minMax?.skus.map(({ code }) => code) ?? noSkuCodes;
+        if (current) setArchive({ id: archiveId, orders, skuCodes });
       })
       .catch(() => {
         if (current) setArchive({ id: archiveId, error: 'Не удалось открыть заказы этого сеанса. Выберите другой сеанс.' });
@@ -53,6 +56,7 @@ export function useInvoiceOrders() {
   }, [archiveId]);
 
   const currentOrders = useMemo(() => selectInvoiceOrders(state), [state]);
+  const currentSkuCodes = useMemo(() => state.minMax?.skus.map(({ code }) => code) ?? noSkuCodes, [state.minMax]);
   const selectedArchive = archive?.id === archiveId ? archive : null;
 
   return {
@@ -67,6 +71,7 @@ export function useInvoiceOrders() {
     sourceId,
     selectSource: (id: string) => setArchiveId(id === currentId ? null : id),
     orders: archiveId ? selectedArchive?.orders ?? noOrders : currentOrders,
+    skuCodes: archiveId ? selectedArchive?.skuCodes ?? noSkuCodes : currentSkuCodes,
     loading: Boolean(archiveId && !selectedArchive),
     error: selectedArchive?.error ?? '',
     historyError,

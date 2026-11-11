@@ -116,7 +116,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       buildNetworkGroups(derived.purchaseDemand, diagnosticStatus, showCovered),
       filters,
       orderLineKeys,
-    );
+    ).sort((left, right) => derived.compareSku(left.skuCode, right.skuCode));
     const amount = moneySum(groups.map((group) => group.totalDemandAmount));
     const missing = groups.reduce(
       (sum, group) => sum + group.missingPriceCount,
@@ -283,10 +283,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     filters,
     orderLineKeys,
     showCovered,
-  ).sort(
-    (left, right) =>
-      severity[right.purchaseStatus] - severity[left.purchaseStatus],
-  );
+  ).sort((left, right) => derived.compareSku(left.skuCode, right.skuCode));
   const amount = moneySum(rows.map((line) => line.purchaseAmount ?? 0));
   const missing = rows.filter(
     (line) => line.purchaseQty > 0 && line.purchaseAmount == null,

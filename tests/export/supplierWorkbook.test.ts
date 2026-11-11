@@ -75,6 +75,31 @@ const orders: Order[] = [
 ];
 
 describe('buildSupplierWorkbook', () => {
+  it('uses MIN/MAX order across the combined sheet and each branch sheet', async () => {
+    const supplierOrders = [
+      { ...orders[0]!, lines: ['SKU2', 'SKU1', 'SKU9'].map((skuCode) => ({
+        ...orders[0]!.lines[0]!, skuCode,
+      })) },
+      { ...orders[1]!, lines: ['SKU1', 'SKU3', 'SKU4'].map((skuCode) => ({
+        ...orders[1]!.lines[0]!, skuCode, orderQty: skuCode === 'SKU4' ? 0 : 1,
+      })) },
+    ];
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await buildSupplierWorkbook(
+      'Поставщик', supplierOrders, 'ALL', ['SKU4', 'SKU3', 'SKU1', 'SKU2', 'SKU3'],
+    ));
+
+    const summary = workbook.getWorksheet('Общий заказ')!;
+    const lenina = workbook.getWorksheet('Ленина')!;
+    const stupino = workbook.getWorksheet('Ступино')!;
+    expect(summary.getRows(9, 5)?.map((row) => row.getCell(1).value)).toEqual([
+      'SKU3', 'SKU1', 'SKU2', 'SKU9', 'ИТОГО',
+    ]);
+    expect(summary.getCell('D10').value).toBe(3);
+    expect(lenina.getRows(9, 3)?.map((row) => row.getCell(1).value)).toEqual(['SKU1', 'SKU2', 'SKU9']);
+    expect(stupino.getRows(9, 3)?.map((row) => row.getCell(1).value)).toEqual(['SKU3', 'SKU1', 'ИТОГО']);
+  });
+
   it('brands a reviewed supplier export and preserves its exact aggregated quantities and costs', async () => {
     const reviewedSubset = orders.slice(0, 2);
     const buffer = await buildSupplierWorkbook('Поставщик', reviewedSubset, 'REVIEWED');

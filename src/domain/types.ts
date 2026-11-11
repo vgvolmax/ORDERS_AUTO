@@ -103,6 +103,8 @@ export interface OrderQtyEdit {
   skuCode: string;
   branch: string;
   qty: number;
+  /** Explicit operator exclusion, preserved when accepted transfers change purchasing demand. */
+  excluded?: true;
 }
 
 export type ThresholdMode = 'SUPPLIER_TOTAL' | 'BRANCH_SUPPLIER';
@@ -137,6 +139,7 @@ export interface OrderLine {
   supplier: string;
   calculatedQty: number;
   orderQty: number;
+  excluded?: true;
   unit: string | null;
   unitPrice: number | null;
   priceSource: PriceSource;

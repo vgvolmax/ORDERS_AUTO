@@ -8,6 +8,7 @@ import { Alert, Button } from '../../components/ui';
 import { QuantitySummary } from '../../components/QuantitySummary';
 import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
 import { fmtQty, money, priceSourceLabel } from '../demand/DemandPage';
+import './OrderDrawer.css';
 
 const orderLineKey = (line: OrderLine) => line.skuCode;
 
@@ -16,6 +17,7 @@ export function OrderDrawer({
   exported,
   onClose,
   onEdit,
+  onSetExcluded,
   onReviewedChange,
   onExport,
   renderMovement,
@@ -35,6 +37,7 @@ export function OrderDrawer({
     branch: string,
     qty: number,
   ) => void | Promise<void>;
+  onSetExcluded: (skuCode: string, excluded: boolean) => void | Promise<void>;
   onReviewedChange: (reviewed: boolean) => void;
   onExport: (allowBelowThreshold: boolean) => void;
 }) {
@@ -50,9 +53,19 @@ export function OrderDrawer({
   const hardBlocked = order.blockers.some(
     (blocker) => blocker !== 'Ниже минимальной суммы',
   );
+  const codeWidth = order.lines.reduce(
+    (width, line) => Math.max(width, line.skuCode.length * 9 + 22),
+    130,
+  );
 
   const columns: VirtualColumn<OrderLine>[] = [
-    { key: 'sku', header: 'Код', width: '100px', render: (line) => <strong>{line.skuCode}</strong> },
+    {
+      key: 'sku',
+      header: 'Код',
+      width: `${codeWidth}px`,
+      className: 'order-drawer-code',
+      render: (line) => <strong>{line.skuCode}</strong>,
+    },
     { key: 'article', header: 'Артикул', width: '110px', render: (line) => line.article ?? '—' },
     { key: 'name', header: 'Наименование', width: 'minmax(170px, 1fr)', render: (line) => line.name },
     {
@@ -73,8 +86,22 @@ export function OrderDrawer({
             className={line.orderQty !== line.calculatedQty ? 'manual-qty' : ''}
             aria-label={`Количество ${line.skuCode}`}
             value={line.orderQty}
+            disabled={line.excluded}
             onCommit={(qty) => onEdit(line.skuCode, line.branch, qty)}
           />
+          <Button
+            type="button"
+            className="secondary order-line-action"
+            disabled={saving}
+            aria-label={
+              line.excluded
+                ? `Восстановить ${line.skuCode} в заказе`
+                : `Исключить ${line.skuCode} из заказа`
+            }
+            onClick={() => onSetExcluded(line.skuCode, !line.excluded)}
+          >
+            {line.excluded ? 'Восстановить' : 'Исключить'}
+          </Button>
           {line.warnings.map((warning) => (
             <small className="warning-text" key={warning}>{warning}</small>
           ))}
@@ -106,7 +133,7 @@ export function OrderDrawer({
       <aside
         ref={ref}
         tabIndex={-1}
-        className="drawer"
+        className="drawer order-drawer"
         role="dialog"
         aria-modal="true"
         aria-label="Состав заказа"
@@ -178,7 +205,7 @@ export function OrderDrawer({
           columns={columns}
           getRowKey={orderLineKey}
           maxHeight="calc(100vh - 260px)"
-          estimateRowHeight={52}
+          estimateRowHeight={78}
         />
 
         <div className="drawer-actions">

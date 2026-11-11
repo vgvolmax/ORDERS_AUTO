@@ -38,6 +38,7 @@ function signature(order: Order | undefined): string {
         l.skuCode,
         l.calculatedQty,
         l.orderQty,
+        l.excluded,
         l.unitPrice,
         l.amount,
         l.purchaseContext?.acceptedTransferIds,
@@ -70,7 +71,7 @@ export function buildAcceptedTransferStatePatch(
     ),
   );
   const edits = input.edits.filter(
-    (e) => !changed.has(key(e.skuCode, e.branch)),
+    (e) => e.excluded || !changed.has(key(e.skuCode, e.branch)),
   );
   const after = buildOrderProjection(
     input.nextDemand,

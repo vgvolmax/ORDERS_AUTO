@@ -11,11 +11,13 @@ import type { WorkflowOrder } from '../../app/selectors';
 import { QuantityInput } from '../../components/QuantityInput';
 import { Button } from '../../components/ui';
 import type { OrderLine } from '../../domain/types';
+import { buildSkuOrder } from '../../domain/skuOrder';
 import { fmtQty, money } from '../demand/DemandPage';
 
 const COLUMN_WIDTHS_STORAGE_KEY =
   'orders-auto:supplier-matrix-column-widths:v1';
 const RESIZE_KEYBOARD_STEP = 12;
+const defaultSkuOrder = buildSkuOrder([]);
 
 interface MatrixCell {
   order: WorkflowOrder;
@@ -28,6 +30,7 @@ interface MatrixRow {
   name: string;
   unitPrice: number | null;
   cells: Map<string, MatrixCell>;
+  allExcluded: boolean;
   totalQty: number;
   totalAmount: number | null;
 }
@@ -50,8 +53,10 @@ export function SupplierOrdersDrawer({
   orders,
   exportedOrderIds,
   branchOrder,
+  compareSku = defaultSkuOrder,
   onClose,
   onEdit,
+  onSetExcluded,
   onSetReviewed,
   onSetAllReviewed,
   renderMovement,
@@ -68,6 +73,7 @@ export function SupplierOrdersDrawer({
   orders: WorkflowOrder[];
   exportedOrderIds?: ReadonlySet<string>;
   branchOrder: string[];
+  compareSku?: (left: string, right: string) => number;
   onClose: () => void;
   onReconcile?: (() => void) | undefined;
   onEdit: (
@@ -75,14 +81,19 @@ export function SupplierOrdersDrawer({
     skuCode: string,
     qty: number,
   ) => void | Promise<void>;
+  onSetExcluded: (
+    orderIds: string[],
+    skuCode: string,
+    excluded: boolean,
+  ) => void | Promise<void>;
   onSetReviewed: (orderId: string, reviewed: boolean) => void;
   onSetAllReviewed: (orderIds: string[], reviewed: boolean) => void;
 }) {
   const modalRef = useRef<HTMLElement>(null);
   useModalLayer(modalRef, onClose);
   const model = useMemo(
-    () => buildMatrixModel(orders, branchOrder),
-    [orders, branchOrder],
+    () => buildMatrixModel(orders, branchOrder, compareSku),
+    [orders, branchOrder, compareSku],
   );
   const defaultWidths = useMemo(() => buildDefaultColumnWidths(model), [model]);
   const [widthOverrides, setWidthOverrides] = useState<Record<string, number>>(
@@ -429,6 +440,25 @@ export function SupplierOrdersDrawer({
                     <span className="supplier-name-cell" title={row.name}>
                       {row.name}
                     </span>
+                    <Button
+                      type="button"
+                      className="secondary order-line-action"
+                      disabled={saving}
+                      aria-label={
+                        row.allExcluded
+                          ? `Восстановить ${row.skuCode} во всех подразделениях`
+                          : `Исключить ${row.skuCode} во всех подразделениях`
+                      }
+                      onClick={() =>
+                        onSetExcluded(
+                          Array.from(row.cells.values(), (cell) => cell.order.id),
+                          row.skuCode,
+                          !row.allExcluded,
+                        )
+                      }
+                    >
+                      {row.allExcluded ? 'Восстановить везде' : 'Исключить везде'}
+                    </Button>
                   </td>
                   <td className="num" style={sizedStyle(priceWidth)}>
                     {row.unitPrice == null ? '—' : money(row.unitPrice)}
@@ -452,10 +482,14 @@ export function SupplierOrdersDrawer({
                               }
                               aria-label={`Количество ${row.skuCode} ${branch}`}
                               value={cell.line.orderQty}
+                              disabled={cell.line.excluded}
                               onCommit={(qty) =>
                                 onEdit(cell.order, row.skuCode, qty)
                               }
                             />
+                            {cell.line.excluded && (
+                              <small className="matrix-excluded">Исключено</small>
+                            )}
                             {renderMovement?.(cell.line)}
                           </>
                         ) : (
@@ -494,6 +528,7 @@ export function SupplierOrdersDrawer({
 export function buildMatrixModel(
   orders: WorkflowOrder[],
   branchOrder: string[],
+  compareSku = defaultSkuOrder,
 ): MatrixModel {
   const orderByBranch = new Map(orders.map((order) => [order.branch, order]));
   const rank = new Map(branchOrder.map((branch, index) => [branch, index]));
@@ -506,7 +541,7 @@ export function buildMatrixModel(
 
   const rowsBySku = new Map<
     string,
-    Omit<MatrixRow, 'totalQty' | 'totalAmount'>
+    Omit<MatrixRow, 'allExcluded' | 'totalQty' | 'totalAmount'>
   >();
 
   for (const order of orders) {
@@ -532,17 +567,14 @@ export function buildMatrixModel(
       );
       return {
         ...row,
+        allExcluded: cells.every((cell) => cell.line.excluded),
         totalQty: cells.reduce((sum, cell) => sum + cell.line.orderQty, 0),
         totalAmount: hasMissingAmount
           ? null
           : moneySum(positiveCells.map((cell) => cell.line.amount ?? 0)),
       };
     })
-    .sort(
-      (left, right) =>
-        left.skuCode.localeCompare(right.skuCode, 'ru', { numeric: true }) ||
-        left.name.localeCompare(right.name, 'ru'),
-    );
+    .sort((left, right) => compareSku(left.skuCode, right.skuCode));
 
   return { branches, orderByBranch, rows };
 }

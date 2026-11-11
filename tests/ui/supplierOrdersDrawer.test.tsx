@@ -70,6 +70,7 @@ describe('SupplierOrdersDrawer', () => {
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
         onEdit={() => undefined}
+        onSetExcluded={() => undefined}
         onSetReviewed={() => undefined}
         onSetAllReviewed={() => undefined}
       />,
@@ -102,6 +103,7 @@ describe('SupplierOrdersDrawer', () => {
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
         onEdit={onEdit}
+        onSetExcluded={() => undefined}
         onSetReviewed={() => undefined}
         onSetAllReviewed={() => undefined}
       />,
@@ -125,6 +127,7 @@ describe('SupplierOrdersDrawer', () => {
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
         onEdit={() => undefined}
+        onSetExcluded={() => undefined}
         onSetReviewed={onSetReviewed}
         onSetAllReviewed={onSetAllReviewed}
       />,
@@ -160,6 +163,7 @@ describe('SupplierOrdersDrawer', () => {
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
         onEdit={() => undefined}
+        onSetExcluded={() => undefined}
         onSetReviewed={() => undefined}
         onSetAllReviewed={() => undefined}
       />,
@@ -193,6 +197,7 @@ describe('SupplierOrdersDrawer', () => {
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
         onEdit={() => undefined}
+        onSetExcluded={() => undefined}
         onSetReviewed={() => undefined}
         onSetAllReviewed={() => undefined}
       />,
@@ -222,6 +227,7 @@ describe('SupplierOrdersDrawer', () => {
         branchOrder={['Ленина', 'Ступино']}
         onClose={() => undefined}
         onEdit={() => undefined}
+        onSetExcluded={() => undefined}
         onSetReviewed={() => undefined}
         onSetAllReviewed={() => undefined}
       />,
@@ -256,6 +262,7 @@ it('waits for quantity persistence before review while allowing the operator to 
       saving
       onClose={() => undefined}
       onEdit={() => undefined}
+      onSetExcluded={() => undefined}
       onSetReviewed={() => undefined}
       onSetAllReviewed={() => undefined}
     />,

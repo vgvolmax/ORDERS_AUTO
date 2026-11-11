@@ -1,10 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InvoicesPage } from '../../src/features/invoices/InvoicesPage';
 import type { WorkflowOrder } from '../../src/app/selectors';
 
 const { source, verifySource, save, parseInvoiceWorkbook } = vi.hoisted(() => ({
-  source: { orders: [] as (WorkflowOrder & { exported: boolean })[] },
+  source: { orders: [] as (WorkflowOrder & { exported: boolean })[], skuCodes: [] as string[] },
   verifySource: vi.fn(async () => {}),
   save: vi.fn(),
   parseInvoiceWorkbook: vi.fn(() => ({
@@ -28,6 +28,7 @@ vi.mock('../../src/features/invoices/useInvoiceOrders', () => ({
     sources: [{ id: 'current', label: 'Текущий сеанс' }, { id: 'archive', label: 'Архив' }],
     selectSource: vi.fn(),
     orders: source.orders,
+    skuCodes: source.skuCodes,
     loading: false,
     error: '',
     verifySource,
@@ -69,6 +70,37 @@ describe('InvoicesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     source.orders = [order('a', 'Склад 1'), order('b', 'Склад 2'), order('c', 'Склад 3', 'Бета')];
+    source.skuCodes = ['001'];
+  });
+
+  it('shows comparison and adjustment rows in source order across branches', async () => {
+    const second = order('b', 'Склад 2');
+    Object.assign(second.lines[0]!, { skuCode: '002', article: 'NEXT', name: 'Шайба' });
+    source.orders = [order('a', 'Склад 1'), second];
+    source.skuCodes = ['002', '001'];
+    const item = parseInvoiceWorkbook().items[0]!;
+    parseInvoiceWorkbook.mockReturnValueOnce({
+      items: [
+        { ...item, skuCode: '000', article: 'EXTRA', name: 'Лишний товар' },
+        { ...item, sourceRow: 3 },
+        { ...item, skuCode: '002', article: 'NEXT', name: 'Шайба', sourceRow: 4 },
+      ],
+      warnings: [],
+    });
+    const view = render(<InvoicesPage initialOrderIds={['a', 'b']} />);
+    selectFile();
+    await compare();
+
+    for (const name of ['Результат сверки', 'Корректировка и экспорт в 1С']) {
+      const table = within(screen.getByRole('region', { name })).getByRole('table');
+      expect(within(table).getAllByText(/Код 1С [0-9]+/).map((cell) => cell.textContent)).toEqual([
+        'Код 1С 002', 'Код 1С 001', 'Код 1С 000',
+      ]);
+    }
+
+    source.skuCodes = ['001', '002'];
+    view.rerender(<InvoicesPage initialOrderIds={['a', 'b']} />);
+    expect(screen.queryByRole('heading', { name: 'Результат сверки' })).not.toBeInTheDocument();
   });
 
   it('selects multiple branch orders of one supplier and exports only after comparing', async () => {

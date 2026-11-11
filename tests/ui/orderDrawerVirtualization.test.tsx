@@ -15,6 +15,7 @@ it('represents a long order without mounting every editable line', () => {
     exported={false}
     onClose={() => undefined}
     onEdit={() => undefined}
+    onSetExcluded={() => undefined}
     onReviewedChange={() => undefined}
     onExport={() => undefined}
   />);

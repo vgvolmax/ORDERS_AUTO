@@ -35,7 +35,10 @@ it('selects checked and previously exported positive orders, including threshold
 });
 
 it('reads an archived order without restoring its workspace and detects a stale current source', async () => {
+  const archivedMinMax = baseState().minMax!;
+  archivedMinMax.skus.unshift({ ...archivedMinMax.skus[0]!, code: 'SKU2' });
   const historical = baseState({
+    minMax: archivedMinMax,
     workspaceRevision: 0,
     minMaxFileName: 'прошлая неделя.xlsx',
     reviewedOrderIds: [lenina],
@@ -53,8 +56,10 @@ it('reads an archived order without restoring its workspace and detects a stale 
   const { result } = renderHook(useInvoiceOrders, { wrapper });
   await waitFor(() => expect(result.current.sources).toHaveLength(2));
   expect(result.current.orders[0]?.lines[0]?.orderQty).toBe(7);
+  expect(result.current.skuCodes).toEqual(['SKU1']);
   act(() => result.current.selectSource(historical.workspaceId));
   await waitFor(() => expect(result.current.orders[0]?.lines[0]?.orderQty).toBe(2));
+  expect(result.current.skuCodes).toEqual(['SKU2', 'SKU1']);
   await expect(result.current.verifySource()).resolves.toBeUndefined();
   act(() => result.current.selectSource(current.workspaceId));
   await expect(result.current.verifySource()).resolves.toBeUndefined();

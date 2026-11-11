@@ -36,7 +36,7 @@ export function InvoicesPage({
   initialOrderIds?: readonly string[];
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const { sources, sourceId, selectSource, orders, loading, error, historyError, verifySource } =
+  const { sources, sourceId, selectSource, orders, skuCodes, loading, error, historyError, verifySource } =
     useInvoiceOrders();
   const [selectedIds, setSelectedIds] = useState(() => [...new Set(initialOrderIds)]);
   const [orderQuery, setOrderQuery] = useState('');
@@ -69,8 +69,8 @@ export function InvoicesPage({
     selectedOrders.every((order) => order.supplier === supplier);
   const context = JSON.stringify([sourceId, supplier]);
   const scope = useMemo(
-    () => completeSelection ? orderFingerprint(sourceId, selectedOrders) : null,
-    [completeSelection, sourceId, selectedOrders],
+    () => completeSelection ? orderFingerprint(sourceId, selectedOrders, skuCodes) : null,
+    [completeSelection, sourceId, selectedOrders, skuCodes],
   );
   const activeFile = file?.context === context ? file : null;
   const readyFile = activeFile?.status === 'ready' ? activeFile : null;
@@ -241,7 +241,7 @@ export function InvoicesPage({
       () => void runVerified(
         'Сверка…',
         () => {
-          const rows = compareInvoice(selectedOrders, readyFile.data.items);
+          const rows = compareInvoice(selectedOrders, readyFile.data.items, skuCodes);
           const adjustments = buildInvoiceAdjustments(rows, 'invoice');
           setComparison({ scope, rows, adjustments, mode: 'invoice', drafts: new Map() });
           setExportedDraft(null);
@@ -465,9 +465,10 @@ export function InvoicesPage({
   );
 }
 
-function orderFingerprint(sourceId: string, orders: readonly EligibleOrder[]): string {
+function orderFingerprint(sourceId: string, orders: readonly EligibleOrder[], skuCodes: readonly string[]): string {
   return JSON.stringify([
     sourceId,
+    skuCodes,
     orders.map((order) => [
       order.id,
       order.supplier,

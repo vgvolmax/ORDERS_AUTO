@@ -1,0 +1,20 @@
+.drawer.order-drawer {
+  width: min(1260px, 100vw);
+}
+
+.order-drawer .virtual-row > .order-drawer-code {
+  white-space: nowrap;
+}
+
+.order-drawer-code strong {
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.button.secondary.order-line-action {
+  margin-top: 4px;
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}

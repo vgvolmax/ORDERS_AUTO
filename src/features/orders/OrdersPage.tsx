@@ -20,6 +20,7 @@ import {
 } from '../../components/ui';
 import {
   applyOrderQtyChange,
+  applyOrderSkuExclusion,
   setOrderReviewed,
   setOrdersReviewed,
 } from '../../domain/orderWorkflow';
@@ -215,7 +216,12 @@ export function OrdersPage({
     setExportError('');
     setBusy(`Создание Excel для ${supplier}…`);
     try {
-      const buffer = await buildSupplierWorkbook(supplier, supplierOrders, mode);
+      const buffer = await buildSupplierWorkbook(
+        supplier,
+        supplierOrders,
+        mode,
+        state.minMax?.skus.map(({ code }) => code),
+      );
       await verifyExportRevision();
       save(
         new Blob([buffer], {
@@ -279,6 +285,47 @@ export function OrdersPage({
       console.error('Failed to edit order quantity', error);
       set({ toast: 'Не удалось изменить количество в заказе.' });
       throw error;
+    }
+  }
+
+  async function setSkuExcluded(
+    orderIds: string[],
+    skuCode: string,
+    excluded: boolean,
+  ): Promise<void> {
+    const targetIds = new Set(orderIds);
+    try {
+      const patch = (current: typeof state) => {
+        const targets = derive(current).projection.orders.filter(
+          (order) =>
+            targetIds.has(order.id) &&
+            order.lines.some((line) => line.skuCode === skuCode),
+        );
+        if (
+          current.workspaceId !== state.workspaceId ||
+          current.snapshotId !== state.snapshotId ||
+          targets.length !== targetIds.size
+        ) {
+          throw new Error('Состав заказов изменился.');
+        }
+        return applyOrderSkuExclusion({
+          edits: current.edits,
+          reviewedOrderIds: current.reviewedOrderIds,
+          exportedOrderIds: current.exportedOrderIds,
+          orders: targets,
+          skuCode,
+          excluded,
+        });
+      };
+      if (commit) await commit(patch);
+      else set(patch);
+    } catch (error) {
+      console.error('Failed to change order SKU exclusion', error);
+      set({
+        toast: excluded
+          ? 'Не удалось исключить позицию из заказа.'
+          : 'Не удалось восстановить позицию в заказе.',
+      });
     }
   }
 
@@ -650,6 +697,9 @@ export function OrdersPage({
           renderMovement={renderOrderMovement}
           onClose={() => setSelectedId(null)}
           onEdit={(skuCode, _branch, qty) => editOrder(selected, skuCode, qty)}
+          onSetExcluded={(skuCode, excluded) =>
+            setSkuExcluded([selected.id], skuCode, excluded)
+          }
           onReviewedChange={(reviewed) => setReviewed(selected.id, reviewed)}
           onReconcile={
             onReconcile && canReconcileOrder(selected, exportedIds.has(selected.id))
@@ -668,6 +718,7 @@ export function OrdersPage({
           saving={Boolean(busy || saving)}
           renderMovement={renderOrderMovement}
           orders={selectedSupplierOrders}
+          compareSku={derived.compareSku}
           exportedOrderIds={exportedIds}
           branchOrder={branches}
           widthPreferences={
@@ -682,6 +733,7 @@ export function OrdersPage({
           }
           onClose={() => setSelectedSupplier(null)}
           onEdit={editOrder}
+          onSetExcluded={setSkuExcluded}
           onSetReviewed={setReviewed}
           onSetAllReviewed={setAllReviewed}
           onReconcile={
