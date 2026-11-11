@@ -34,6 +34,24 @@ function noNormState() {
 }
 
 describe('DemandPage', () => {
+  it('keeps the MIN/MAX product order when branch stock statuses differ', () => {
+    const state = baseState({
+      minMax: {
+        skus: ['Z-first', 'A-second'].map((code) => ({
+          code, article: null, name: code, referencePrice: 100, reportedTotalStock: null,
+        })),
+        branchStocks: [
+          { skuCode: 'Z-first', branch: 'Ленина', stock: 7, min: 3, max: 10 },
+          { skuCode: 'A-second', branch: 'Ленина', stock: 0, min: 3, max: 10 },
+        ],
+        branches: ['Ленина'],
+      },
+    });
+    renderWithStore(<DemandPage branch="Ленина" />, state);
+    const rows = screen.getAllByRole('row').filter((row) => row.textContent?.includes('-'));
+    expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual(['Z-first', 'A-second']);
+  });
+
   it('shows local and network need, money and price source for a branch', () => {
     renderWithStore(<DemandPage branch="Ленина" />, baseState());
 

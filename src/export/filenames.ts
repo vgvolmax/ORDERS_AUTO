@@ -10,9 +10,12 @@ function trimSheetName(raw: string, limit: number): string {
   return raw.slice(0, limit).replace(/[\uD800-\uDBFF]$/u, '').replace(/[\s']+$/u, '');
 }
 
+function cleanSheetName(raw: string): string {
+  return raw.replace(/[\u0000-\u001f\[\]:*?/\\]/g, '').replace(/^[\s']+/u, '');
+}
+
 export function uniqueSheetName(raw: string, used: Set<string>): string {
-  const clean = raw.replace(/[\u0000-\u001f\[\]:*?/\\]/g, '').replace(/^[\s']+/u, '');
-  const base = trimSheetName(clean, 31) || 'Лист';
+  const base = trimSheetName(cleanSheetName(raw), 31) || 'Лист';
   const taken = new Set(Array.from(used, (name) => name.toLowerCase()));
   taken.add('history');
 
@@ -26,4 +29,24 @@ export function uniqueSheetName(raw: string, used: Set<string>): string {
 
   used.add(candidate);
   return candidate;
+}
+
+export function directedSheetName(
+  from: string,
+  to: string,
+  used: Set<string>,
+): string {
+  const sideBudget = 31 - ' → '.length;
+  const half = sideBudget / 2;
+  const sender = trimSheetName(cleanSheetName(from), sideBudget) || 'Отправитель';
+  const recipient = trimSheetName(cleanSheetName(to), sideBudget) || 'Получатель';
+  const senderLabel = trimSheetName(
+    sender,
+    Math.max(half, sideBudget - recipient.length),
+  );
+  const recipientLabel = trimSheetName(
+    recipient,
+    Math.max(half, sideBudget - sender.length),
+  );
+  return uniqueSheetName(`${senderLabel} → ${recipientLabel}`, used);
 }

@@ -1,6 +1,7 @@
 import { addDecimal, decimal, multiplyDecimal } from './decimal';
 import { moneyProduct, moneySum } from './money';
 import { normalizeKey, normalizeText } from './normalize';
+import { buildSkuOrder } from './skuOrder';
 import type { Order, OrderLine } from './types';
 
 export interface InvoiceItem {
@@ -323,7 +324,11 @@ function compareMatchedGroup(group: OrderGroup): InvoiceComparisonRow[] {
   ];
 }
 
-export function compareInvoice(orders: readonly Order[], items: readonly InvoiceItem[]): InvoiceComparisonRow[] {
+export function compareInvoice(
+  orders: readonly Order[],
+  items: readonly InvoiceItem[],
+  skuCodes?: readonly string[],
+): InvoiceComparisonRow[] {
   if (new Set(orders.map((order) => order.supplier)).size > 1) {
     throw new Error('Для сверки нужны заказы одного поставщика.');
   }
@@ -368,11 +373,16 @@ export function compareInvoice(orders: readonly Order[], items: readonly Invoice
     }
   }
 
-  return [
+  const rows = [
     ...groups.flatMap(compareMatchedGroup),
     ...unresolved,
     ...[...extras.values()].map((lines) => invoiceOnlyRow(lines, 'extra')),
   ];
+  if (skuCodes) {
+    const compareSku = buildSkuOrder(skuCodes);
+    rows.sort((left, right) => compareSku(left.skuCode ?? '', right.skuCode ?? ''));
+  }
+  return rows;
 }
 
 export function adjustmentAmount(adjustment: InvoiceAdjustment, original: InvoiceComparisonRow): number | null {

@@ -1,0 +1,204 @@
+.transfer-matrix button.order-cell.is-reviewed {
+  background: #eef9f2;
+  border-color: #78b88b;
+}
+
+.transfer-matrix button.order-cell.is-reviewed:hover {
+  background: #e2f3e8;
+  border-color: var(--success);
+}
+
+.transfer-matrix button.order-cell.is-rejected {
+  background: #fff2f0;
+  border-color: #d7a2a5;
+}
+
+.transfer-matrix button.order-cell.is-rejected:hover {
+  background: #fce8e7;
+  border-color: var(--danger);
+}
+
+.transfer-matrix .route-decision-count + .danger-text {
+  font-weight: 600;
+}
+
+.transfer-directions-trigger {
+  min-height: 24px;
+  max-width: 100%;
+  padding: 1px 2px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.transfer-directions-trigger:hover,
+.transfer-directions-trigger[aria-expanded='true'] {
+  background: var(--blue-soft);
+  text-decoration: underline;
+}
+
+.transfer-quantity {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.transfer-quantity > .input {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 6px;
+}
+
+.transfer-quantity > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.transfer-quantity > .transfer-manual-qty {
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.transfer-quantity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+}
+
+.transfer-quantity-actions > .button,
+.transfer-quantity-actions > .link {
+  min-height: 24px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.transfer-quantity-actions > .link:hover:enabled {
+  text-decoration: underline;
+}
+
+.transfer-quantity-feedback {
+  font-size: 11px;
+}
+
+.transfer-quantity-feedback > ul {
+  margin: 0;
+  padding-inline-start: 14px;
+}
+
+.transfer-quantity-feedback li + li {
+  margin-top: 3px;
+}
+
+.transfer-directions-popover {
+  position: fixed;
+  z-index: 5;
+  width: min(420px, calc(100vw - 40px));
+  max-height: 360px;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0b253f2b;
+  font-size: 12px;
+}
+
+.transfer-directions-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.transfer-directions-heading > h3 {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.transfer-directions-popover .close {
+  flex-basis: 26px;
+  width: 26px;
+  height: 26px;
+  font-size: 17px;
+}
+
+.transfer-direction-summary {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--blue-soft);
+}
+
+.transfer-direction-summary > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 3px 8px;
+}
+
+.transfer-direction-summary dd {
+  margin: 0;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.transfer-direction-warnings {
+  margin: 8px 0;
+  padding-inline-start: 16px;
+}
+
+.transfer-direction-list,
+.transfer-direction-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transfer-direction-list {
+  margin-top: 8px;
+}
+
+.transfer-direction-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.transfer-direction-list > li:last-child {
+  border-bottom: 0;
+}
+
+.transfer-direction-list > li[aria-current='true'] {
+  border-radius: 6px;
+  background: var(--blue-soft);
+}
+
+.transfer-direction-list small {
+  display: block;
+  color: var(--blue);
+}
+
+.transfer-direction-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.transfer-drawer [data-decision='ACCEPTED'] {
+  color: var(--success);
+}
+
+.transfer-drawer [data-decision='REJECTED'] {
+  color: var(--danger);
+}

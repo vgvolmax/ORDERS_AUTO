@@ -5,6 +5,8 @@ import {
   acceptedTotals,
   branchParticipationFingerprint,
   rebalanceConfigFingerprint,
+  routeAllows,
+  routeRules,
   validateAcceptedLedger,
 } from './constraints';
 import { receiverTarget, sumQuantities } from './numbers';
@@ -16,6 +18,7 @@ import {
   transferSkuKey,
 } from './transferAmounts';
 import { acceptedEconomicDiagnostics } from './economics';
+import { assertTransferReservations } from './manualTransferQuantity';
 import {
   RebalanceError,
   stockKey,
@@ -70,6 +73,8 @@ export function acceptTransfers(
   revision(input.currentRevision, input.expectedRevision);
   assertLedger(input);
   const p = input.currentProposal;
+  const review = input.operatorReview;
+  const acceptedConfig = review?.config ?? p.config;
   if (
     p.snapshotId !== input.snapshot.snapshotId ||
     !p.runId ||
@@ -79,9 +84,10 @@ export function acceptTransfers(
   const proposalById = new Map(p.transfers.map((t) => [t.sourceLineId, t]));
   if (proposalById.size !== p.transfers.length)
     throw new RebalanceError('STALE_PROPOSAL');
+  const rejected = new Set(review?.rejectedLineIds);
   const selected = [...new Set(input.selectedLineIds)].map((id) => {
     const line = proposalById.get(id);
-    if (!line) throw new RebalanceError('STALE_PROPOSAL');
+    if (!line || rejected.has(id)) throw new RebalanceError('STALE_PROPOSAL');
     return line;
   });
   const existingBySource = new Map(
@@ -118,11 +124,13 @@ export function acceptTransfers(
       fromBranchId: t.fromBranchId,
       toBranchId: t.toBranchId,
       qty: t.qty,
+      ...(t.originalQty === undefined ? {} : { originalQty: t.originalQty }),
+      ...(review ? { operatorReviewed: true as const } : {}),
       snapshotId: input.snapshot.snapshotId,
       acceptedAt: input.acceptedAt,
       acceptedConfig: structuredClone({
-        ...p.config,
-        transferAmountFilter: getTransferAmountFilter(p.config),
+        ...acceptedConfig,
+        transferAmountFilter: getTransferAmountFilter(acceptedConfig),
       }),
     });
   }
@@ -151,44 +159,58 @@ export function acceptTransfers(
     throw new RebalanceError('INVALID_TRANSFER_BATCH');
   assertConfig(p.config);
   if (
-    p.configFingerprint !== input.currentConfigFingerprint ||
+    (!review && p.configFingerprint !== input.currentConfigFingerprint) ||
     p.configFingerprint !== rebalanceConfigFingerprint(p.config)
   )
     throw new RebalanceError('STALE_PROPOSAL');
   const eligible = new Set(p.eligibleRecipientKeys);
   if (additions.some((t) => !eligible.has(stockKey(t.skuCode, t.toBranchId))))
     throw new RebalanceError('INVALID_TRANSFER_BATCH');
+  if (review) {
+    assertConfig(acceptedConfig);
+    const currentRules = routeRules(acceptedConfig);
+    const originalRules = routeRules(p.config);
+    if (additions.some((t) =>
+      !routeAllows(acceptedConfig, t.fromBranchId, t.toBranchId, currentRules) ||
+      !routeAllows(p.config, t.fromBranchId, t.toBranchId, originalRules),
+    )) throw new RebalanceError('TRANSFER_ROUTE_UNAVAILABLE');
+    assertTransferReservations({
+      snapshot: input.snapshot, proposal: p, accepted: input.currentAccepted,
+      rejectedLineIds: review.rejectedLineIds, config: acceptedConfig,
+    }, additions);
+  }
   const next = [...input.currentAccepted, ...additions];
   const issues = validateAcceptedLedger(input.snapshot, next);
   if (issues.length) throw new RebalanceError('INVALID_TRANSFER_BATCH', issues);
-  const totals = acceptedTotals(next);
-  const stocks = new Map(
-    input.snapshot.stocks.map((s) => [stockKey(s.skuCode, s.branchId), s]),
-  );
-  for (const t of additions) {
-    const key = stockKey(t.skuCode, t.toBranchId),
-      to = stocks.get(key)!;
-    if (
-      sumQuantities([to.stock, totals.incoming.get(key) ?? 0]) >
-      receiverTarget(to.min!, to.max!, p.config.receiverPct)
-    )
-      throw new RebalanceError('INVALID_TRANSFER_BATCH');
-  }
-  const amountFilter = getTransferAmountFilter(p.config);
-  if (amountFilter.enabled) {
-    if (p.config.stockAmountException?.enabled) {
-      // Lines already accepted from this plan share the same starting stock.
-      const earlier = input.currentAccepted.filter((t) => t.sourceRunId !== p.runId);
-      const exemptDonors = getAmountExemptDonors(
-        input.snapshot,
-        p.config,
-        acceptedTotals(earlier).outgoing,
-      );
-      for (const t of additions) {
-        if (exemptDonors.has(stockKey(t.skuCode, t.fromBranchId)))
-          t.amountExemptByStock = true;
-      }
+  if (!review) {
+    const totals = acceptedTotals(next);
+    const stocks = new Map(
+      input.snapshot.stocks.map((s) => [stockKey(s.skuCode, s.branchId), s]),
+    );
+    for (const t of additions) {
+      const key = stockKey(t.skuCode, t.toBranchId);
+      const to = stocks.get(key)!;
+      if (
+        sumQuantities([to.stock, totals.incoming.get(key) ?? 0]) >
+        receiverTarget(to.min!, to.max!, p.config.receiverPct)
+      ) throw new RebalanceError('INVALID_TRANSFER_BATCH');
     }
+  }
+  const amountFilter = getTransferAmountFilter(acceptedConfig);
+  if (amountFilter.enabled && acceptedConfig.stockAmountException?.enabled) {
+    // Lines already accepted from this plan share the same starting stock.
+    const earlier = input.currentAccepted.filter((t) => t.sourceRunId !== p.runId);
+    const exemptDonors = getAmountExemptDonors(
+      input.snapshot,
+      acceptedConfig,
+      acceptedTotals(earlier).outgoing,
+    );
+    for (const t of additions) {
+      if (exemptDonors.has(stockKey(t.skuCode, t.fromBranchId)))
+        t.amountExemptByStock = true;
+    }
+  }
+  if (!review && amountFilter.enabled) {
     const changedRoutes = new Set(additions.map(transferSkuKey));
     const sameRun = next.filter(
       (t) => t.sourceRunId === p.runId && changedRoutes.has(transferSkuKey(t)),

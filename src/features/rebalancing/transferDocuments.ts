@@ -1,4 +1,5 @@
 import { moneyProduct, moneySum } from '../../domain/money';
+import { buildSkuOrder } from '../../domain/skuOrder';
 import type { Sku } from '../../domain/types';
 import type { RebalanceResultScope } from '../../domain/workspace';
 import {
@@ -39,6 +40,7 @@ export interface TransferDocumentLine {
   article: string | null;
   name: string;
   qty: number;
+  originalQty?: number | undefined;
   unit: string | null;
   unitPrice: number | null;
   amount: number | null;
@@ -47,6 +49,12 @@ export interface TransferDocumentLine {
   from: TransferStockView | null;
   to: TransferStockView | null;
 }
+export const transferDecisionLabel = {
+  PROPOSED: 'Предложено',
+  REJECTED: 'Отклонено',
+  ACCEPTED: 'Принято',
+} satisfies Record<TransferDocumentLine['decision'], string>;
+
 export interface TransferDocument {
   id: string;
   fromBranchId: string;
@@ -57,6 +65,32 @@ export interface TransferDocument {
   skuCount: number;
   totalAmount: number | null;
   totalsByUnit: { unit: string | null; skuCode?: string; qty: number }[];
+}
+
+export interface TransferDirection {
+  id: string;
+  fromName: string;
+  toName: string;
+  lines: TransferDocumentLine[];
+}
+
+export function buildTransferDirections(docs: TransferDocument[]) {
+  const directionsBySku = new Map<string, TransferDirection[]>();
+  for (const { id, fromName, toName, lines } of docs) {
+    const directionBySku = new Map<string, TransferDirection>();
+    for (const line of lines) {
+      let direction = directionBySku.get(line.skuCode);
+      if (!direction) {
+        direction = { id, fromName, toName, lines: [] };
+        directionBySku.set(line.skuCode, direction);
+        const directions = directionsBySku.get(line.skuCode);
+        if (directions) directions.push(direction);
+        else directionsBySku.set(line.skuCode, [direction]);
+      }
+      direction.lines.push(line);
+    }
+  }
+  return directionsBySku;
 }
 
 export function summarizeTransferDocuments(docs: TransferDocument[]) {
@@ -87,6 +121,7 @@ export function buildTransferDocuments(
   const { proposal, accepted, snapshot, scope } = input;
   const names = new Map(input.registry.map((b) => [b.id, b.name]));
   const skus = new Map(input.skus.map((s) => [s.code, s]));
+  const compareSku = buildSkuOrder(input.skus.map((sku) => sku.code));
   const policies = new Map(input.policies.map((p) => [p.skuCode, p]));
   const stocks = new Map(
     snapshot?.stocks.map((s) => [stockKey(s.skuCode, s.branchId), s]),
@@ -183,6 +218,7 @@ export function buildTransferDocuments(
       article: sku?.article ?? null,
       name: sku?.name ?? t.skuCode,
       qty: t.qty,
+      originalQty: t.originalQty,
       unit: policies.get(t.skuCode)?.unit ?? null,
       unitPrice,
       amount,
@@ -196,8 +232,7 @@ export function buildTransferDocuments(
   for (const doc of groups.values()) {
     doc.lines.sort(
       (a, b) =>
-        a.skuCode.localeCompare(b.skuCode, 'ru', { numeric: true }) ||
-        a.id.localeCompare(b.id),
+        compareSku(a.skuCode, b.skuCode) || a.id.localeCompare(b.id),
     );
     doc.skuCount = new Set(doc.lines.map((l) => l.skuCode)).size;
     const active = doc.lines.filter((l) => l.decision !== 'REJECTED');

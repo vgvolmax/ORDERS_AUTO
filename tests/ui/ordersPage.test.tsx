@@ -12,6 +12,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import type { StatePatch } from '../../src/app/appStore';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrdersPage } from '../../src/features/orders/OrdersPage';
+import { derive } from '../../src/app/selectors';
+import { orderToCsv } from '../../src/export/csv';
 import { baseState, renderWithStore } from './renderWithStore';
 import { StoreContext, type AppState } from '../../src/app/appStore';
 
@@ -31,6 +33,27 @@ function StatefulOrders({ initial }: { initial: AppState }) {
       <OrdersPage />
     </StoreContext.Provider>
   );
+}
+
+function twoSkuState(): AppState {
+  const { minMax, suppliers } = baseState();
+  return baseState({
+    minMax: {
+      ...minMax!,
+      skus: [{ ...minMax!.skus[0]!, code: 'SKU10' }, ...minMax!.skus],
+      branchStocks: [
+        ...minMax!.branchStocks,
+        { skuCode: 'SKU10', branch: 'Ленина', stock: 8, min: 5, max: 10 },
+      ],
+    },
+    suppliers: {
+      ...suppliers!,
+      history: [
+        ...suppliers!.history,
+        { ...suppliers!.history[0]!, skuCode: 'SKU10' },
+      ],
+    },
+  });
 }
 
 const mocks = vi.hoisted(() => ({
@@ -98,6 +121,127 @@ describe('OrdersPage', () => {
     });
     expect(within(dialog).getByText('Ленина')).toBeInTheDocument();
     expect(within(dialog).getByText('Ступино')).toBeInTheDocument();
+  });
+
+  it('uses source SKU order in both order drawers and the branch CSV', () => {
+    const state = twoSkuState();
+    const order = derive(state).projection.orders.find(
+      (item) => item.branch === 'Ленина',
+    )!;
+    expect(
+      orderToCsv(order).trim().split('\r\n').slice(1).map((row) => row.split(';')[0]),
+    ).toEqual(['SKU10', 'SKU1']);
+    render(<StatefulOrders initial={state} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /900,00.*Готов/ }));
+    const single = screen.getByRole('dialog', { name: 'Состав заказа' });
+    expect(
+      within(single).getAllByRole('spinbutton').map((input) => input.getAttribute('aria-label')),
+    ).toEqual(['Количество SKU10', 'Количество SKU1']);
+    fireEvent.click(within(single).getByRole('button', { name: 'Закрыть' }));
+
+    const matrixName = /все заказы ип баранов роман борисович/i;
+    fireEvent.click(screen.getByRole('button', { name: matrixName }));
+    const matrix = within(screen.getByRole('dialog', { name: matrixName }));
+    expect(
+      matrix.getAllByRole('row').slice(1).map(
+        (row) => within(row).getAllByRole('cell')[0]?.textContent,
+      ),
+    ).toEqual(['SKU10', 'SKU1']);
+  });
+
+  it('excludes a line from a branch and restores its calculated quantity', () => {
+    const orderId = 'Ленина\0ИП Баранов Роман Борисович';
+    render(
+      <StatefulOrders initial={baseState({
+        edits: [{ skuCode: 'SKU1', branch: 'Ленина', qty: 8 }],
+        reviewedOrderIds: [orderId],
+        exportedOrderIds: [orderId],
+      })} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /800,00.*Выгружен/ }));
+    const drawer = within(screen.getByRole('dialog', { name: 'Состав заказа' }));
+    const qty = drawer.getByRole('spinbutton', { name: 'Количество SKU1' });
+    expect(drawer.getAllByRole('spinbutton')).toEqual([qty]);
+    expect(qty).toHaveValue(8);
+    expect(drawer.getByRole('checkbox', { name: 'Заказ проверен' })).toBeChecked();
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Исключить SKU1 из заказа' }));
+    expect(qty).toHaveValue(0);
+    expect(qty).toBeDisabled();
+    expect(drawer.getByRole('checkbox', { name: 'Заказ проверен' })).not.toBeChecked();
+    expect(drawer.queryByText('Выгружен')).not.toBeInTheDocument();
+    expect(drawer.getByRole('button', { name: 'Скачать CSV заказа' })).toBeDisabled();
+
+    fireEvent.click(drawer.getByRole('button', { name: 'Восстановить SKU1 в заказе' }));
+    expect(qty).toHaveValue(7);
+    expect(qty).toBeEnabled();
+    expect(drawer.getByRole('button', { name: 'Скачать CSV заказа' })).toBeEnabled();
+  });
+
+  it('excludes a matrix SKU in all displayed branch orders in one durable write', async () => {
+    const writes: AppState['edits'][] = [];
+    const initial = twoSkuState();
+    initial.settings = { minimumOrderAmount: 500, thresholdMode: 'SUPPLIER_TOTAL' };
+    initial.edits = [{ skuCode: 'SKU1', branch: 'Ступино', qty: 0 }];
+    initial.reviewedOrderIds = ['Ленина\0ИП Баранов Роман Борисович'];
+    initial.exportedOrderIds = [...initial.reviewedOrderIds];
+    function DurableOrders() {
+      const [state, publish] = useState(initial);
+      const session = useRef<ReturnType<typeof createWorkspaceSession> | null>(null);
+      if (!session.current) {
+        session.current = createWorkspaceSession({
+          initial,
+          publish,
+          save: async (workspace) => { writes.push(workspace.data.edits); },
+        });
+      }
+      return (
+        <StoreContext.Provider value={{
+          state,
+          commit: (patch) => session.current!.commit(patch),
+          set: (patch) => { void session.current!.commit(patch); },
+        }}>
+          <OrdersPage />
+        </StoreContext.Provider>
+      );
+    }
+    render(<DurableOrders />);
+    const matrixName = /все заказы ип баранов роман борисович/i;
+    fireEvent.click(screen.getByRole('button', { name: matrixName }));
+    const matrix = within(screen.getByRole('dialog', { name: matrixName }));
+    const leninaQty = matrix.getByRole('spinbutton', { name: 'Количество SKU1 Ленина' });
+    const stupinoQty = matrix.getByRole('spinbutton', { name: 'Количество SKU1 Ступино' });
+    const leninaHeader = within(matrix.getByRole('columnheader', { name: /Ленина/ }));
+    expect(stupinoQty).toHaveValue(0);
+    expect(stupinoQty).toBeEnabled();
+    expect(leninaHeader.getByText('Выгружен')).toBeVisible();
+
+    fireEvent.click(matrix.getByRole('button', {
+      name: 'Исключить SKU1 во всех подразделениях',
+    }));
+    await waitFor(() => expect(leninaQty).toHaveValue(0));
+    expect(leninaQty).toBeDisabled();
+    expect(stupinoQty).toBeDisabled();
+    expect(matrix.getByRole('spinbutton', { name: 'Количество SKU10 Ленина' })).toHaveValue(2);
+    expect(leninaHeader.getByText('Ниже порога')).toBeVisible();
+    expect(leninaHeader.getByRole('checkbox')).not.toBeChecked();
+    expect(leninaHeader.queryByText('Выгружен')).not.toBeInTheDocument();
+    expect(writes).toEqual([[
+      { skuCode: 'SKU1', branch: 'Ленина', qty: 0, excluded: true },
+      { skuCode: 'SKU1', branch: 'Ступино', qty: 0, excluded: true },
+    ]]);
+    const excludedOrder = derive({ ...initial, edits: writes[0]! })
+      .projection.orders.find((order) => order.branch === 'Ленина')!;
+    const csvLines = orderToCsv(excludedOrder).trim().split('\r\n').slice(1);
+    expect(csvLines.map((row) => row.split(';')[0])).toEqual(['SKU10']);
+
+    fireEvent.click(matrix.getByRole('button', {
+      name: 'Восстановить SKU1 во всех подразделениях',
+    }));
+    await waitFor(() => expect(stupinoQty).toHaveValue(4));
+    expect(leninaQty).toHaveValue(7);
+    expect(writes[1]).toEqual([]);
   });
 
   it('shows a confirmed CSV export separately from the order threshold', async () => {

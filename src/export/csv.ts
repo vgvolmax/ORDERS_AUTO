@@ -45,7 +45,7 @@ export function orderToCsv(order: Order): string {
 export function rowsToCsv(
   headers: string[],
   rows: unknown[][],
-  { protectFormulas = false } = {},
+  { protectFormulas = false, decimalComma = false } = {},
 ): string {
   return (
     '\ufeff' +
@@ -53,7 +53,9 @@ export function rowsToCsv(
       .map((row) => row.map((value) => {
         const text = protectFormulas && typeof value === 'string'
           ? protectSpreadsheetText(value)
-          : String(value ?? '');
+          : decimalComma && typeof value === 'number'
+            ? String(value).replace('.', ',')
+            : String(value ?? '');
         return escapeCell(text);
       }).join(';'))
       .join('\r\n') +

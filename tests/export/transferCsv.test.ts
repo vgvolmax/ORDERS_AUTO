@@ -38,8 +38,8 @@ it('exports multiple directed documents under one header with only their accepte
       line({
         skuCode: '00002',
         name: 'Второй товар',
-        unitPrice: 100,
-        amount: 25,
+        unitPrice: 100.25,
+        amount: 25.0625,
       }),
     ]),
     id: 'second',
@@ -48,8 +48,8 @@ it('exports multiple directed documents under one header with only their accepte
   };
   const csv = transfersToCsv([first, second]);
   expect(csv.match(/Код;Артикул;/g)).toHaveLength(1);
-  expect(csv).toContain(';Донор / А;Ленина;0.25;м;0;0');
-  expect(csv).toContain(';Другой донор;Другой получатель;0.25;м;100;25');
+  expect(csv).toContain(';Донор / А;Ленина;0,25;м;0;0');
+  expect(csv).toContain(';Другой донор;Другой получатель;0,25;м;100,25;25,0625');
   expect(csv).not.toContain('PROPOSAL');
 });
 const doc = (lines: TransferDocumentLine[]): TransferDocument => ({
@@ -77,13 +77,13 @@ it('exports only accepted positive quantities with exact identity, decimal units
   ]);
   const before = structuredClone(data);
   expect(transferToCsv(data)).toBe(
-    '\ufeffКод;Артикул;Номенклатура;Отправитель;Получатель;Количество;Ед.;Цена MIN/MAX;Сумма\r\n00001;"A;1";"Труба ""PPR""\nметровая";Донор / А;Ленина;0.25;м;;\r\n',
+    '\ufeffКод;Артикул;Номенклатура;Отправитель;Получатель;Количество;Ед.;Цена MIN/MAX;Сумма\r\n00001;"A;1";"Труба ""PPR""\nметровая";Донор / А;Ленина;0,25;м;;\r\n',
   );
   expect(data).toEqual(before);
 });
 it('preserves known zero price and exports accepted lines without depending on selection', () => {
   const csv = transferToCsv(doc([line({ unitPrice: 0, amount: 0 })]));
-  expect(csv).toContain(';0.25;м;0;0\r\n');
+  expect(csv).toContain(';0,25;м;0;0\r\n');
   expect(
     transferToCsv(doc([line({ decision: 'PROPOSED' })])).split('\r\n'),
   ).toHaveLength(2);
@@ -100,5 +100,5 @@ it('protects formula-like movement identities without altering numeric quantitie
     fromName: '+100',
   });
 
-  expect(csv.split('\r\n')[1]).toBe("00001;'@SUM(A1);'\t=2+2;'+100;Ленина;0.25;м;-10;-2.5");
+  expect(csv.split('\r\n')[1]).toBe("00001;'@SUM(A1);'\t=2+2;'+100;Ленина;0,25;м;-10;-2,5");
 });

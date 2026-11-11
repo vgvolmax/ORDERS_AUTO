@@ -141,9 +141,10 @@ it('keeps decimal units separate and an incomplete amount unknown, preserving kn
   const doc = buildTransferDocuments(data)[0]!;
   expect(doc.skuCount).toBe(2);
   expect(doc.totalAmount).toBeNull();
+  expect(doc.lines.map((line) => line.skuCode)).toEqual(['SKU1', '00001']);
   expect(doc.totalsByUnit).toEqual([
-    { unit: 'м', qty: 0.3 },
     { unit: 'шт', qty: 15 },
+    { unit: 'м', qty: 0.3 },
   ]);
   data.skus[1]!.referencePrice = 0;
   expect(buildTransferDocuments(data)[0]!.totalAmount).toBe(1500);

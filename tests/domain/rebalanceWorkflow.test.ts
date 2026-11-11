@@ -109,6 +109,23 @@ describe('accepted transfer purchasing invalidation', () => {
       clearedEditCount: 0,
     });
   });
+  it('keeps an explicit exclusion through full transfer coverage and later revocation', () => {
+    const before = state();
+    const excluded = { skuCode: 'SKU1', branch: 'Ленина', qty: 0, excluded: true } as const;
+    before.edits = [excluded, before.edits[1]!];
+    const covered = changed(before, 7);
+    const coveredPatch = patch(before, covered);
+    expect(coveredPatch.edits).toContainEqual(excluded);
+    expect(coveredPatch.clearedEditCount).toBe(0);
+
+    const committed = { ...covered, ...coveredPatch };
+    const revoked = { ...committed, rebalance: { ...committed.rebalance, accepted: [] } };
+    const revokedPatch = patch(committed, revoked);
+    const restoredProjection = derive({ ...revoked, ...revokedPatch });
+    expect(restoredProjection.purchaseDemand.find((line) => line.branch === 'Ленина')?.purchaseQty).toBe(7);
+    expect(restoredProjection.projection.orders.find((order) => order.branch === 'Ленина')?.lines[0])
+      .toMatchObject({ calculatedQty: 7, orderQty: 0, excluded: true });
+  });
   it('invalidates marker signatures on price-only changes without clearing physical movements', () => {
     const before = changed(state(), 3),
       after = {

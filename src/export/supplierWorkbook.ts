@@ -3,6 +3,7 @@ import companyLogo from '../styles/brand/volmax-company.png?inline';
 import type { Order, OrderLine } from '../domain/types';
 import { uniqueSheetName } from './filenames';
 import { moneySum } from '../domain/money';
+import { buildSkuOrder } from '../domain/skuOrder';
 
 interface AggregatedLine {
   sample: OrderLine;
@@ -49,7 +50,9 @@ export async function buildSupplierWorkbook(
   supplier: string,
   orders: Order[],
   mode: SupplierWorkbookMode = 'ALL',
+  skuCodes?: readonly string[],
 ): Promise<ArrayBuffer> {
+  const compareSku = skuCodes ? buildSkuOrder(skuCodes) : undefined;
   const supplierOrders = orders.filter((order) => order.supplier === supplier);
   const positiveLines = supplierOrders.flatMap((order) =>
     order.lines.filter((line) => line.orderQty > 0),
@@ -100,7 +103,9 @@ export async function buildSupplierWorkbook(
   sectionTitle(dashboard, 'СОСТАВ ОБЩЕГО ЗАКАЗА', 'Единиц по строкам: ' + formatQty(totalQty));
   appendTableHeader(dashboard);
 
-  for (const { sample, qty, amounts } of aggregated.values()) {
+  const summaryLines = [...aggregated.values()];
+  if (compareSku) summaryLines.sort((left, right) => compareSku(left.sample.skuCode, right.sample.skuCode));
+  for (const { sample, qty, amounts } of summaryLines) {
     addProductRow(dashboard, [
       sample.skuCode,
       sample.article,
@@ -127,7 +132,8 @@ export async function buildSupplierWorkbook(
     ]);
     sectionTitle(sheet, 'ПОЗИЦИИ ПОДРАЗДЕЛЕНИЯ', order.branch);
     appendTableHeader(sheet);
-    for (const line of lines) {
+    const sheetLines = compareSku ? [...lines].sort((left, right) => compareSku(left.skuCode, right.skuCode)) : lines;
+    for (const line of sheetLines) {
       addProductRow(sheet, [
         line.skuCode,
         line.article,

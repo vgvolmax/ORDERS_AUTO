@@ -17,6 +17,7 @@ export function buildOrderProjection(
   edits: OrderQtyEdit[],
   settings: OrderSettings,
   dataIssues: ValidationIssue[] = [],
+  compareSku?: (left: string, right: string) => number,
 ): OrderProjection {
   const blockedSku = new Set<string>();
   const blockedSlice = new Set<string>();
@@ -32,7 +33,7 @@ export function buildOrderProjection(
     resolutions.map((resolution) => [resolution.skuCode, resolution]),
   );
   const editBySkuBranch = new Map(
-    edits.map((edit) => [`${edit.skuCode}\0${edit.branch}`, edit.qty]),
+    edits.map((edit) => [`${edit.skuCode}\0${edit.branch}`, edit]),
   );
   const groups = new Map<string, Order>();
   const unassigned: OrderProjection['unassigned'] = [];
@@ -84,8 +85,8 @@ export function buildOrderProjection(
       blockers: [],
     };
 
-    const orderQty =
-      editBySkuBranch.get(`${line.skuCode}\0${line.branch}`) ?? calculatedQty;
+    const edit = editBySkuBranch.get(`${line.skuCode}\0${line.branch}`);
+    const orderQty = edit?.excluded ? 0 : (edit?.qty ?? calculatedQty);
     if (orderQty < 0) {
       throw new Error('Количество не может быть отрицательным');
     }
@@ -127,6 +128,7 @@ export function buildOrderProjection(
       supplier: resolution.selectedSupplier,
       calculatedQty,
       orderQty,
+      ...(edit?.excluded ? { excluded: edit.excluded } : {}),
       unit: line.unit,
       unitPrice: line.unitPrice,
       priceSource: line.priceSource,
@@ -143,6 +145,8 @@ export function buildOrderProjection(
 
   const orders = [...groups.values()];
   for (const order of orders) {
+    if (compareSku)
+      order.lines.sort((left, right) => compareSku(left.skuCode, right.skuCode));
     const positiveLines = order.lines.filter((line) => line.orderQty > 0);
     order.totalQty = positiveLines.reduce(
       (sum, line) => sum + line.orderQty,

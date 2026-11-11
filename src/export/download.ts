@@ -8,6 +8,10 @@ import {
   transferCsvFilename,
   transfersToCsv,
 } from './transferCsv';
+import {
+  acceptedTransfersWorkbookFilename,
+  buildAcceptedTransfersWorkbook,
+} from './transferWorkbook';
 import { formatLocalDate } from './date';
 
 export function save(blob: Blob, name: string): void {
@@ -51,6 +55,21 @@ export function downloadAcceptedTransfersCsv(
   save(
     new Blob([transfersToCsv(documents)], { type: 'text/csv;charset=utf-8' }),
     `Принятые_перемещения__${formatLocalDate(new Date())}.csv`,
+  );
+}
+
+export async function downloadAcceptedTransfersWorkbook(
+  documents: TransferDocument[],
+  beforeDownload?: () => Promise<void>,
+): Promise<void> {
+  const name = acceptedTransfersWorkbookFilename(documents);
+  const buffer = await buildAcceptedTransfersWorkbook(documents);
+  await beforeDownload?.();
+  save(
+    new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    name,
   );
 }
 

@@ -2,7 +2,9 @@ import type { AppState } from './appStore';
 import { derive } from './selectors';
 import { hasIncompatibleTransferQuantities } from './quantityPolicies';
 import {
+  ALGORITHM_VERSION,
   acceptTransfers,
+  branchParticipationFingerprint,
   revokeTransfers,
   calculateRebalance,
   rebalanceConfigFingerprint,
@@ -10,6 +12,10 @@ import {
   type RebalanceProposal,
 } from '../domain/rebalancing';
 import { buildAcceptedTransferStatePatch } from '../domain/rebalanceWorkflow';
+import {
+  assertEditableTransferQuantity,
+  type TransferQuantityInput,
+} from '../domain/rebalancing/manualTransferQuantity';
 
 export function createProposal(state: AppState): RebalanceProposal {
   const snapshot = derive(state).snapshot?.snapshot;
@@ -24,6 +30,54 @@ export function createProposal(state: AppState): RebalanceProposal {
     configFingerprint: rebalanceConfigFingerprint(config),
     config,
   };
+}
+
+function editableTransfer(state: AppState, sourceLineId: string) {
+  const derived = derive(state);
+  const snapshot = derived.snapshot?.snapshot;
+  const { proposal, accepted, rejectedLineIds, config } = state.rebalance;
+  const line = proposal?.transfers.find((t) => t.sourceLineId === sourceLineId);
+  if (
+    !snapshot || !proposal || !line ||
+    proposal.snapshotId !== snapshot.snapshotId ||
+    proposal.algorithmVersion !== ALGORITHM_VERSION ||
+    proposal.participationFingerprint !== branchParticipationFingerprint(snapshot.branches) ||
+    hasIncompatibleTransferQuantities([line], derived.snapshot!.issues)
+  ) throw new RebalanceError('STALE_PROPOSAL');
+  const input: TransferQuantityInput = { snapshot, proposal, accepted, rejectedLineIds, config };
+  return { input, line };
+}
+
+export function prepareTransferQuantityEdit(
+  state: AppState,
+  sourceLineId: string,
+  qty: number,
+): Partial<AppState> {
+  const { input, line } = editableTransfer(state, sourceLineId);
+  if (input.rejectedLineIds.includes(sourceLineId))
+    throw new RebalanceError('STALE_PROPOSAL');
+  assertEditableTransferQuantity(input, sourceLineId, qty);
+  if (line.qty === qty) return {};
+  const { originalQty = line.qty, ...base } = line;
+  const updated = qty === originalQty ? { ...base, qty } : { ...base, qty, originalQty };
+  return {
+    rebalance: {
+      ...state.rebalance,
+      proposal: {
+        ...input.proposal,
+        transfers: input.proposal.transfers.map((t) => t === line ? updated : t),
+      },
+    },
+  };
+}
+
+export function validateTransferRestoration(
+  state: AppState,
+  sourceLineId: string,
+  rejectedLineIds: readonly string[],
+): void {
+  const { input, line } = editableTransfer(state, sourceLineId);
+  assertEditableTransferQuantity({ ...input, rejectedLineIds }, sourceLineId, line.qty);
 }
 
 export function prepareAcceptedChange(
@@ -68,6 +122,10 @@ export function prepareAcceptedChange(
           currentConfigFingerprint: rebalanceConfigFingerprint(
             state.rebalance.config,
           ),
+          operatorReview: {
+            config: state.rebalance.config,
+            rejectedLineIds: state.rebalance.rejectedLineIds,
+          },
           acceptedAt: new Date().toISOString(),
           transferIdBySourceLineId: Object.fromEntries(
             command.ids.map((id) => [id, crypto.randomUUID()]),

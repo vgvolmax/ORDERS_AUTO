@@ -197,6 +197,12 @@
   color: #9aa3ad;
 }
 
+.matrix-excluded {
+  display: block;
+  margin-top: 3px;
+  color: #526173;
+}
+
 .supplier-orders-drawer .supplier-order-matrix .sticky-total {
   position: sticky;
   z-index: 4;

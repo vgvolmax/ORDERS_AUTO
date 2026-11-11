@@ -35,7 +35,7 @@ export function transfersToCsv(documents: TransferDocument[]): string {
           line.amount,
         ]),
     ),
-    { protectFormulas: true },
+    { protectFormulas: true, decimalComma: true },
   );
 }
 

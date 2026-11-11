@@ -73,6 +73,7 @@ export function buildPurchaseDemand(
   }
   if (snapshots.size > 1) throw new RebalanceError('INVALID_ACCEPTED_LEDGER');
   const totals = acceptedTotals(accepted);
+  const strict = acceptedTotals(accepted.filter((t) => !t.operatorReviewed));
   const rows = demand.map((line, i): PurchaseDemandLine => {
     const key = keys[i]!,
       incoming = totals.incoming.get(key) ?? 0,
@@ -81,6 +82,8 @@ export function buildPurchaseDemand(
     if (incoming > 0 || outgoing > 0) {
       // Explicit zero norms permit donating surplus, while procurement keeps NO_NORM/zero need.
       const zeroNormDonor = line.min === 0 && line.max === 0 && incoming === 0;
+      const strictOutgoing = strict.outgoing.get(key) ?? 0;
+      const strictIncoming = strict.incoming.get(key) ?? 0;
       if (
         line.min === null ||
         !Number.isFinite(line.min) ||
@@ -90,8 +93,9 @@ export function buildPurchaseDemand(
         line.max < line.min ||
         line.status === 'INVALID_NORM' ||
         (line.status === 'NO_NORM' && !zeroNormDonor) ||
-        (outgoing > 0 && subtractQuantity(line.stock, outgoing) < line.max) ||
-        (incoming > 0 && projectedStock > line.max)
+        (outgoing > 0 && outgoing > line.stock) ||
+        (strictOutgoing > 0 && subtractQuantity(line.stock, strictOutgoing) < line.max) ||
+        (strictIncoming > 0 && sumQuantities([line.stock, strictIncoming, -strictOutgoing]) > line.max)
       )
         throw new RebalanceError('INVALID_ACCEPTED_LEDGER');
     }

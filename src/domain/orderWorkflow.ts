@@ -1,18 +1,21 @@
 import type { Order, OrderQtyEdit } from './types';
 
-interface ApplyOrderQtyChangeInput {
+interface OrderEditState {
   edits: OrderQtyEdit[];
   reviewedOrderIds: string[];
   exportedOrderIds: string[];
+}
+
+interface ApplyOrderQtyChangeInput extends OrderEditState {
   order: Order;
   skuCode: string;
   qty: number;
 }
 
-interface ApplyOrderQtyChangeResult {
-  edits: OrderQtyEdit[];
-  reviewedOrderIds: string[];
-  exportedOrderIds: string[];
+interface ApplyOrderSkuExclusionInput extends OrderEditState {
+  orders: readonly Order[];
+  skuCode: string;
+  excluded: boolean;
 }
 
 export function applyOrderQtyChange({
@@ -22,7 +25,7 @@ export function applyOrderQtyChange({
   order,
   skuCode,
   qty,
-}: ApplyOrderQtyChangeInput): ApplyOrderQtyChangeResult {
+}: ApplyOrderQtyChangeInput): OrderEditState {
   if (!Number.isFinite(qty) || qty < 0) {
     throw new Error('Количество не может быть отрицательным или нечисловым');
   }
@@ -32,7 +35,7 @@ export function applyOrderQtyChange({
     throw new Error(`Позиция ${skuCode} отсутствует в заказе ${order.id}`);
   }
 
-  if (qty === line.orderQty) {
+  if (line.excluded || qty === line.orderQty) {
     return { edits, reviewedOrderIds, exportedOrderIds };
   }
 
@@ -48,6 +51,39 @@ export function applyOrderQtyChange({
     edits: nextEdits,
     reviewedOrderIds: reviewedOrderIds.filter((id) => id !== order.id),
     exportedOrderIds: exportedOrderIds.filter((id) => id !== order.id),
+  };
+}
+
+export function applyOrderSkuExclusion({
+  edits,
+  reviewedOrderIds,
+  exportedOrderIds,
+  orders,
+  skuCode,
+  excluded,
+}: ApplyOrderSkuExclusionInput): OrderEditState {
+  const changedBranches = new Set<string>();
+  const changedOrderIds = new Set<string>();
+  for (const order of orders) {
+    const line = order.lines.find((item) => item.skuCode === skuCode);
+    if (!line || Boolean(line.excluded) === excluded) continue;
+    changedBranches.add(order.branch);
+    changedOrderIds.add(order.id);
+  }
+  if (!changedBranches.size) return { edits, reviewedOrderIds, exportedOrderIds };
+
+  const nextEdits = edits.filter(
+    (edit) => edit.skuCode !== skuCode || !changedBranches.has(edit.branch),
+  );
+  if (excluded) {
+    for (const branch of changedBranches)
+      nextEdits.push({ skuCode, branch, qty: 0, excluded: true });
+  }
+
+  return {
+    edits: nextEdits,
+    reviewedOrderIds: reviewedOrderIds.filter((id) => !changedOrderIds.has(id)),
+    exportedOrderIds: exportedOrderIds.filter((id) => !changedOrderIds.has(id)),
   };
 }
 

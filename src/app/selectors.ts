@@ -14,6 +14,7 @@ import type {
 import { calculateDemand, priceDemandFromMinMax } from '../domain/demand';
 import { getManualEditCount } from '../domain/orderWorkflow';
 import { buildOrderProjection } from '../domain/orders';
+import { buildSkuOrder } from '../domain/skuOrder';
 import { changedOrderIds } from '../domain/rebalanceWorkflow';
 import { collectPurchasingIssues } from '../domain/purchasingIssues';
 import { resolveSupplierAssignments } from '../domain/supplierAssignments';
@@ -37,6 +38,7 @@ export interface WorkflowOrderProjection
 }
 
 export interface DerivedState {
+  compareSku: ReturnType<typeof buildSkuOrder>;
   quantityPolicies: SkuQuantityPolicy[];
   resolutions: SupplierResolution[];
   demand: PricedDemandLine[];
@@ -49,6 +51,7 @@ export interface DerivedState {
 }
 
 const EMPTY_DERIVED_STATE: DerivedState = {
+  compareSku: buildSkuOrder([]),
   quantityPolicies: [],
   resolutions: [],
   demand: [],
@@ -100,9 +103,10 @@ function samePurchasingInputs(previous: AppState, next: AppState): boolean {
 
 function buildPurchasingBasis(state: AppState): PurchasingBasis | null {
   if (!state.minMax || !state.supplierAssignments) return null;
+  const skuCodes = state.minMax.skus.map((sku) => sku.code);
   const resolutions = resolveSupplierAssignments(
     state.supplierAssignments,
-    state.minMax.skus.map((sku) => sku.code),
+    skuCodes,
     state.suppliers?.history ?? [],
   );
   const demand = priceDemandFromMinMax(
@@ -154,6 +158,7 @@ function buildPurchasingBasis(state: AppState): PurchasingBasis | null {
   }
   return {
     data: {
+      compareSku: buildSkuOrder(skuCodes),
       quantityPolicies,
       resolutions,
       demand,
@@ -191,6 +196,7 @@ function purchasingProjection(state: AppState): CachedPurchasing | null {
     state.edits,
     state.settings,
     basis.dataIssues,
+    basis.data.compareSku,
   );
   const result = { basis, projection };
   purchasingCache.set(state, result);
@@ -231,7 +237,13 @@ export function reconcileOrderQtyEdits(
   const afterEdits = byKey(next.edits);
   const suppliers = new Set<string>();
   for (const [key, edit] of new Map([...beforeEdits, ...afterEdits])) {
-    if (beforeEdits.get(key)?.qty === afterEdits.get(key)?.qty) continue;
+    const previousEdit = beforeEdits.get(key);
+    const nextEdit = afterEdits.get(key);
+    if (
+      previousEdit?.qty === nextEdit?.qty &&
+      previousEdit?.excluded === nextEdit?.excluded
+    )
+      continue;
     // A legacy composite key containing another delimiter can match multiple suppliers.
     if (key.indexOf('\0') !== key.lastIndexOf('\0')) return null;
     const supplier = basis.supplierBySku.get(edit.skuCode);
@@ -248,6 +260,7 @@ export function reconcileOrderQtyEdits(
       next.edits,
       next.settings,
       basis.dataIssues,
+      basis.data.compareSku,
     );
     for (const order of scoped.orders) replacements.set(order.id, order);
   }

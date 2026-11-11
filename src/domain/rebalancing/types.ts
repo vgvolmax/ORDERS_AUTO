@@ -97,6 +97,8 @@ export interface RebalanceTransfer {
   fromBranchId: string;
   toBranchId: string;
   qty: number;
+  /** Calculated quantity before an operator changed this proposal. */
+  originalQty?: number;
 }
 export interface AcceptedTransfer {
   transferId: string;
@@ -106,6 +108,9 @@ export interface AcceptedTransfer {
   fromBranchId: string;
   toBranchId: string;
   qty: number;
+  originalQty?: number;
+  /** Search constraints were advisory at operator acceptance. */
+  operatorReviewed?: true;
   snapshotId: string;
   acceptedAt: string;
   acceptedConfig: RebalanceConfig;
@@ -189,6 +194,10 @@ export interface AcceptTransfersInput {
   currentConfigFingerprint: string;
   acceptedAt: string;
   transferIdBySourceLineId: Readonly<Record<string, string>>;
+  operatorReview?: {
+    config: RebalanceConfig;
+    rejectedLineIds: readonly string[];
+  };
 }
 export interface RevokeTransfersInput {
   snapshot: RebalanceSnapshot;
@@ -210,6 +219,9 @@ export type RebalanceErrorCode =
   | 'REVISION_CONFLICT'
   | 'STALE_PROPOSAL'
   | 'TRANSFER_ID_CONFLICT'
+  | 'TRANSFER_STOCK_RESERVED'
+  | 'INVALID_TRANSFER_QUANTITY'
+  | 'TRANSFER_ROUTE_UNAVAILABLE'
   | 'INVALID_TRANSFER_BATCH'
   | 'PRIORITIES_REQUIRED';
 export class RebalanceError extends Error {

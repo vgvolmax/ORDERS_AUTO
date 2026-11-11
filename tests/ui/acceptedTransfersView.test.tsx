@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import {
@@ -89,8 +89,9 @@ it('projects only committed accepted movements even when the proposal contains o
   ]);
 });
 
-it('filters directions, retains hidden export selection and exports complete selected routes', () => {
+it('retains hidden selection for Excel and offers CSV as a separate export', () => {
   const docs = documents(),
+    exportWorkbook = vi.fn(),
     exportCsv = vi.fn();
   function Harness() {
     const [filters, setFilters] =
@@ -100,7 +101,8 @@ it('filters directions, retains hidden export selection and exports complete sel
         documents={docs}
         filters={filters}
         onFilters={setFilters}
-        onExport={exportCsv}
+        onExport={exportWorkbook}
+        onExportCsv={exportCsv}
       />
     );
   }
@@ -113,8 +115,16 @@ it('filters directions, retains hidden export selection and exports complete sel
     target: { value: docs[0]!.fromBranchId },
   });
   expect(screen.getByText(/Скрыто фильтрами: 1/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Excel выбранных (2)' }));
+  expect(exportWorkbook).toHaveBeenLastCalledWith(docs.map((d) => d.id));
   fireEvent.click(screen.getByRole('button', { name: 'CSV выбранных (2)' }));
   expect(exportCsv).toHaveBeenLastCalledWith(docs.map((d) => d.id));
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: `Excel ${docs[0]!.fromName} → ${docs[0]!.toName}`,
+    }),
+  );
+  expect(exportWorkbook).toHaveBeenLastCalledWith([docs[0]!.id]);
   fireEvent.click(
     screen.getByRole('button', {
       name: `CSV ${docs[0]!.fromName} → ${docs[0]!.toName}`,
@@ -129,6 +139,7 @@ it('filters directions, retains hidden export selection and exports complete sel
 
 it('opens a read-only composition and clears a search with keyboard focus retained', () => {
   const docs = documents();
+  const exportWorkbook = vi.fn();
   function Harness() {
     const [filters, setFilters] =
       useState<AcceptedTransferFilters>(emptyAcceptedFilters);
@@ -137,7 +148,8 @@ it('opens a read-only composition and clears a search with keyboard focus retain
         documents={docs}
         filters={filters}
         onFilters={setFilters}
-        onExport={() => undefined}
+        onExport={exportWorkbook}
+        onExportCsv={() => undefined}
       />
     );
   }
@@ -155,6 +167,8 @@ it('opens a read-only composition and clears a search with keyboard focus retain
   );
   const dialog = screen.getByRole('dialog');
   expect(within(dialog).getByText('SKU1', { exact: true })).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Скачать Excel принятых позиций (1)' }));
+  expect(exportWorkbook).toHaveBeenLastCalledWith([docs[0]!.id]);
   expect(
     within(dialog).queryByRole('button', { name: /Принять|Отменить принятие/ }),
   ).not.toBeInTheDocument();
@@ -175,13 +189,13 @@ it('shows accepted-only empty state with exports disabled', () => {
     ),
   ).toBeVisible();
   expect(
-    screen.getByRole('button', { name: 'CSV выбранных (0)' }),
+    screen.getByRole('button', { name: 'Excel выбранных (0)' }),
   ).toBeDisabled();
 });
-it('preserves export selection and shows a recoverable error when a download fails', () => {
+it('preserves export selection and shows a recoverable error when an Excel download fails', async () => {
   const docs = documents();
   let fail = true;
-  const download = () => {
+  const download = async () => {
     if (fail) throw new Error('download unavailable');
   };
   render(
@@ -193,17 +207,17 @@ it('preserves export selection and shows a recoverable error when a download fai
     />,
   );
   fireEvent.click(screen.getByLabelText('Выбрать все направления по фильтрам'));
-  fireEvent.click(screen.getByRole('button', { name: 'CSV выбранных (2)' }));
-  expect(screen.getByRole('alert')).toHaveTextContent('Не удалось скачать CSV');
+  fireEvent.click(screen.getByRole('button', { name: 'Excel выбранных (2)' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось скачать Excel');
   expect(
-    screen.getByRole('button', { name: 'CSV выбранных (2)' }),
+    screen.getByRole('button', { name: 'Excel выбранных (2)' }),
   ).toBeEnabled();
   expect(
     screen.getByLabelText('Выбрать все направления по фильтрам'),
   ).toBeChecked();
   fail = false;
-  fireEvent.click(screen.getByRole('button', { name: 'CSV выбранных (2)' }));
-  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Excel выбранных (2)' }));
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
 });
 
 it('keeps unknown route money distinct from known zero and removes vanished routes from selection', () => {
@@ -238,6 +252,6 @@ it('keeps unknown route money distinct from known zero and removes vanished rout
     />,
   );
   expect(
-    screen.getByRole('button', { name: 'CSV выбранных (1)' }),
+    screen.getByRole('button', { name: 'Excel выбранных (1)' }),
   ).toBeEnabled();
 });

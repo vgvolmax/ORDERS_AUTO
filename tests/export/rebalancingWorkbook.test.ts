@@ -167,3 +167,43 @@ it('exports exact decimal money for both proposals and uncovered quantities', as
   expect(wb.getWorksheet('Предложения')!.getCell('G2').value).toBe(0.435);
   expect(wb.getWorksheet('Не распределено')!.getCell('H2').value).toBe(0.435);
 });
+
+it('orders product rows in the report by their order in the MIN/MAX snapshot', async () => {
+  const s = state();
+  const d = derive(s);
+  const snapshot = d.snapshot!.snapshot;
+  const secondSku = { ...snapshot.skus[0]!, skuCode: 'SKU2' };
+  snapshot.skus[0]!.skuCode = 'SKU10';
+  snapshot.skus.push(secondSku);
+  const accepted = ['SKU2', 'SKU10'].map((skuCode) => ({
+    ...s.rebalance.accepted[0]!,
+    skuCode,
+    transferId: `accepted-${skuCode}`,
+    sourceLineId: `accepted-${skuCode}`,
+  }));
+  const proposal = s.rebalance.proposal!;
+  const transfers = ['SKU2', 'SKU10'].map((skuCode) => ({
+    ...proposal.transfers[0]!,
+    skuCode,
+    sourceLineId: `proposal-${skuCode}`,
+  }));
+  const purchaseDemand = ['SKU2', 'SKU10'].map((skuCode) => ({
+    ...d.purchaseDemand[0]!,
+    skuCode,
+  }));
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await buildRebalancingWorkbook({
+    snapshot,
+    config: s.rebalance.config,
+    proposal: { ...proposal, transfers },
+    accepted,
+    purchaseDemand,
+    issues: [],
+    workspaceId: s.workspaceId,
+    exportedAt: '2026-11-03T09:00:00Z',
+  }));
+  for (const name of ['Принятые', 'Предложения', 'Сводка']) {
+    const sheet = wb.getWorksheet(name)!;
+    expect([sheet.getCell('A2').value, sheet.getCell('A3').value]).toEqual(['SKU10', 'SKU2']);
+  }
+});

@@ -16,6 +16,7 @@ import {
 } from '../../domain/rebalancing';
 import { moneyProduct } from '../../domain/money';
 import type { Sku } from '../../domain/types';
+import { buildSkuOrder } from '../../domain/skuOrder';
 import type {
   SkuQuantityPolicy,
   SkippedRebalanceSku,
@@ -46,6 +47,7 @@ export function SkippedRebalanceList({
   const names = new Map(registry.map((b) => [b.id, b.name]));
   const units = new Map(policies.map((p) => [p.skuCode, p.unit]));
   const normalized = query.trim().toLocaleLowerCase('ru');
+  const compareSku = buildSkuOrder(skus.map((s) => s.code));
   const rows = (proposal?.skippedSkus ?? []).filter((r) =>
     [
       r.skuCode,
@@ -55,7 +57,7 @@ export function SkippedRebalanceList({
       .join(' ')
       .toLocaleLowerCase('ru')
       .includes(normalized),
-  );
+  ).sort((left, right) => compareSku(left.skuCode, right.skuCode));
   const current =
     proposal?.algorithmVersion === ALGORITHM_VERSION &&
     proposal.skippedSkus !== undefined;
