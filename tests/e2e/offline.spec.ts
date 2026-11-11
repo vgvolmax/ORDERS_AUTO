@@ -3701,6 +3701,9 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
   await page.getByRole('combobox', { name: 'Наличие в MIN/MAX', exact: true }).selectOption('all');
   await page.reload();
   await expect(page.getByRole('row').filter({ has: supplierLinks(page, '0002') })).toContainText(second);
+  const linkBounds = await supplierLinks(page, '0002').boundingBox();
+  expect(linkBounds).not.toBeNull();
+  expect(linkBounds!.x + linkBounds!.width).toBeLessThanOrEqual(1280);
   await page.screenshot({ path: testInfo.outputPath('28-independent-catalog.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 

@@ -209,12 +209,6 @@ export function SupplierProducts({
               name: { width: 'minmax(210px,1.25fr)' },
             }),
             {
-              key: 'presence',
-              header: 'Текущий MIN/MAX',
-              width: '135px',
-              render: (sku) => currentCodes.has(sku.code) ? 'Есть в MIN/MAX' : 'Нет в MIN/MAX',
-            },
-            {
               key: 'primary',
               header: 'Основной поставщик',
               width: 'minmax(165px,1fr)',
@@ -228,9 +222,14 @@ export function SupplierProducts({
             },
             {
               key: 'demand',
-              header: 'Потребность',
-              width: '105px',
-              render: (sku) => demandCodes.has(sku.code) ? 'Есть' : 'Нет',
+              header: 'Текущий MIN/MAX',
+              width: '120px',
+              render: (sku) => (
+                <>
+                  <div>{currentCodes.has(sku.code) ? 'Есть в MIN/MAX' : 'Нет в MIN/MAX'}</div>
+                  {currentCodes.has(sku.code) && <small>{demandCodes.has(sku.code) ? 'Есть потребность' : 'Без потребности'}</small>}
+                </>
+              ),
             },
             {
               key: 'links',
