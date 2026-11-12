@@ -100,7 +100,7 @@ function samePurchasingInputs(previous: AppState, next: AppState): boolean {
     (input, index) => input === inputs[index],
   );
   if (!unchanged) return false;
-  if ((previous.supplierContext ?? previous.catalog) === (next.supplierContext ?? next.catalog)) return true;
+  if ((previous.catalog ?? previous.supplierContext) === (next.catalog ?? next.supplierContext)) return true;
   // Legacy initialization can add a catalog/context without changing any resolved
   // units. Keep the purchasing basis in that case; changed units still invalidate it.
   return JSON.stringify(resolveAssignments(previous)) === JSON.stringify(resolveAssignments(next)) &&
@@ -108,9 +108,9 @@ function samePurchasingInputs(previous: AppState, next: AppState): boolean {
 }
 
 function resolveAssignments(state: AppState): SupplierResolution[] {
-  const context = state.supplierContext ?? state.catalog;
+  const context = state.catalog ?? state.supplierContext;
   return resolveSupplierAssignments(
-    state.supplierAssignments ?? [],
+    state.catalog?.assignments ?? state.supplierAssignments ?? [],
     state.minMax?.skus.map(sku => sku.code) ?? [],
     state.suppliers?.history ?? [],
     context?.suppliers,

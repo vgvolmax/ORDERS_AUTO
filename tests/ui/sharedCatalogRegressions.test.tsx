@@ -47,7 +47,9 @@ it('R1 allows a fresh operator to open the shared JSON without a private supplie
   fireEvent.change(screen.getByLabelText('Выбрать файл Отчёт MIN/MAX'), { target: { files: [minMax] } });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Перейти к потребности' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Перейти к потребности' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Заказы' }));
+  const orders = await screen.findByRole('button', { name: 'Заказы' });
+  await waitFor(() => expect(orders).toBeEnabled());
+  fireEvent.click(orders);
   expect(await screen.findByRole('button', { name: `Все заказы ${first}` })).toHaveTextContent('200,00');
 });
 

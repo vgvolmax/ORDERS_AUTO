@@ -1,17 +1,28 @@
 import { createSupplierCatalog, mergeAssignmentChanges, mergeCatalogProducts, type SupplierCatalog } from '../domain/supplierCatalog';
 import type { AppState } from './appStore';
+import { snapshotSupplierContext } from '../domain/supplierContext';
+import { freezeAcceptedDocuments } from './acceptedDocumentContext';
+import { derive } from './selectors';
+import { changedOrderIds } from '../domain/rebalanceWorkflow';
 
 export function attachSupplierCatalog(state: AppState, catalog: SupplierCatalog | null): AppState {
-  return {
-    ...state, catalog,
-    ...(catalog && state.supplierAssignments === undefined ? {
-      supplierAssignments: catalog.assignments,
-      ...(catalog.source ? {
+  const accepted = freezeAcceptedDocuments(state);
+  const next = {
+    ...state, catalog, rebalance: accepted === state.rebalance.accepted ? state.rebalance : { ...state.rebalance, accepted },
+    ...(catalog ? {
+      supplierAssignments: catalog.assignments, supplierContext: snapshotSupplierContext(catalog),
+      ...(state.supplierAssignments === undefined && catalog.source ? {
         suppliers: catalog.source.data, supplierIssues: catalog.source.issues,
         supplierFileName: catalog.source.fileName,
         rawImports: { ...state.rawImports, suppliers: catalog.source.ref },
       } : {}),
     } : {}),
+  };
+  if (!catalog || !state.minMax || (!state.reviewedOrderIds.length && !state.exportedOrderIds.length)) return next;
+  const affected = changedOrderIds(derive(state).projection.orders, derive(next).projection.orders);
+  return { ...next,
+    reviewedOrderIds: next.reviewedOrderIds.filter(id => !affected.has(id)),
+    exportedOrderIds: next.exportedOrderIds.filter(id => !affected.has(id)),
   };
 }
 
@@ -34,7 +45,7 @@ export function prepareCatalogState(previous: AppState, next: AppState): AppStat
   }
   if (next.catalog && next.catalog !== catalog) return {
     ...next,
-    supplierAssignments: mergeAssignmentChanges(next.supplierAssignments ?? [], catalog.assignments, next.catalog.assignments),
+    supplierAssignments: next.catalog.assignments,
   };
   if (next.supplierAssignments !== previous.supplierAssignments) {
     const assignments = mergeAssignmentChanges(catalog.assignments, previous.supplierAssignments ?? [], next.supplierAssignments ?? []);

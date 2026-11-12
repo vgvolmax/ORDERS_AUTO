@@ -150,8 +150,9 @@ export function buildTransferDocuments(
   ];
   for (const t of transfers) {
     const sku = skus.get(t.skuCode);
-    const fromName = names.get(t.fromBranchId) ?? t.fromBranchId;
-    const toName = names.get(t.toBranchId) ?? t.toBranchId;
+    const frozen = 'document' in t ? t.document : undefined;
+    const fromName = frozen ? frozen.fromName : names.get(t.fromBranchId) ?? t.fromBranchId;
+    const toName = frozen ? frozen.toName : names.get(t.toBranchId) ?? t.toBranchId;
     if (
       (scope.skuCode && t.skuCode !== scope.skuCode) ||
       (scope.branchId &&
@@ -185,7 +186,7 @@ export function buildTransferDocuments(
       };
     };
     const price = sku?.referencePrice;
-    const unitPrice =
+    const unitPrice = frozen ? frozen.unitPrice :
       price !== undefined &&
       price !== null &&
       Number.isFinite(price) &&
@@ -215,11 +216,11 @@ export function buildTransferDocuments(
       transferId: t.transferId,
       sourceLineId: t.sourceLineId,
       skuCode: t.skuCode,
-      article: sku?.article ?? null,
-      name: sku?.name ?? t.skuCode,
+      article: frozen ? frozen.article : sku?.article ?? null,
+      name: frozen ? frozen.name : sku?.name ?? t.skuCode,
       qty: t.qty,
       originalQty: t.originalQty,
-      unit: policies.get(t.skuCode)?.unit ?? null,
+      unit: frozen ? frozen.unit : policies.get(t.skuCode)?.unit ?? null,
       unitPrice,
       amount,
       decision: t.decision,

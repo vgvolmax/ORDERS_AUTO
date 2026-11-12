@@ -111,7 +111,7 @@ export function resolveSupplierAssignments(
         return row
           // A null historical unit may encode mixed units. It requires review,
           // even when another operator's catalog contains an apparent fallback.
-          ? { ...row, supplier }
+          ? { ...row, supplier, unit: row.unit === null ? null : units.get(skuCode) ?? row.unit }
           : {
               skuCode,
               supplier,
