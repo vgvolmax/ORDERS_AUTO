@@ -630,7 +630,7 @@ export function RebalancingPage() {
           <Button
             onClick={() => void calculate()}
             aria-busy={busy}
-            disabled={busy || saving || !state.minMax || !state.suppliers}
+            disabled={busy || saving || !d.snapshot}
           >
             <BrandIcon name="play" />{' '}
             {busy ? 'Сохранение…' : 'Рассчитать перемещения'}
