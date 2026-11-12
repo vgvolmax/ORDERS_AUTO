@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { derive } from '../../app/selectors';
 import { RebalanceError } from '../../domain/rebalancing/types';
-import { isSupplierInPool, supplierKey } from '../../domain/supplierPool';
+import { isSupplierInPool, supplierKey, SUPPLIER_POOL } from '../../domain/supplierPool';
 import type { ValidationIssue } from '../../domain/types';
 import { MIN_MAX_PARSER_VERSION, parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
@@ -10,6 +10,7 @@ import { Alert, Button } from '../../components/ui';
 import { ImportIssues } from './ImportIssues';
 import { loadWorkspaceFile } from '../../persistence/workspaces';
 import { collectPurchasingIssues } from '../../domain/purchasingIssues';
+import { SharedCatalogPanel } from '../suppliers/SharedCatalogPanel';
 
 export function ImportPage() {
   const { state, set, commit, saving } = useStore();
@@ -21,7 +22,7 @@ export function ImportPage() {
   const resumeSetup = !configured && Boolean(state.minMax && state.suppliers);
   const anyLoading = state.minMaxLoading || state.supplierLoading;
   const supplierPoolCount = new Set(
-    state.suppliers?.suppliers.filter(isSupplierInPool).map(supplierKey),
+    state.suppliers?.suppliers.filter((supplier) => isSupplierInPool(supplier, state.catalog?.suppliers ?? SUPPLIER_POOL)).map(supplierKey),
   ).size;
   const minMaxIssues = useMemo(() => {
     if (!state.minMax) return state.minMaxIssues;
@@ -179,7 +180,7 @@ export function ImportPage() {
               ? 'Оба отчёта сохранены. Нажмите «Перейти к потребности», чтобы подготовить связи поставщиков.'
               : configured
                 ? 'Для следующей недели загрузите только отчёт MIN/MAX.'
-                : 'Для начала загрузите отчёты MIN/MAX и поставщиков в любом порядке.'}{' '}
+                : 'Загрузите MIN/MAX и подключите справочник JSON либо стартовый отчёт поставщиков.'}{' '}
             Файлы обрабатываются только в браузере.
           </p>
         </div>
@@ -190,6 +191,7 @@ export function ImportPage() {
           Перейти к потребности
         </Button>
       </header>
+      {(!configured || !state.minMax) && <SharedCatalogPanel />}
       <details className="import-help">
         <summary>Какие отчёты загрузить</summary>
         <p>
@@ -213,7 +215,7 @@ export function ImportPage() {
         <p>Осталось загрузить отчёт MIN/MAX.</p>
       )}
       {!configured && state.minMax && !state.suppliers && (
-        <p>Осталось загрузить отчёт поставщиков.</p>
+        <p>Осталось подключить справочник JSON или загрузить отчёт поставщиков.</p>
       )}
 
       <div className="upload-grid">
@@ -238,6 +240,7 @@ export function ImportPage() {
           ready={Boolean(state.suppliers)}
           busy={state.supplierLoading}
           locked={configured}
+          catalogReady={configured && !state.suppliers}
           summary={
             state.suppliers
               ? `${supplierPoolCount} поставщиков в рабочем пуле · ${state.suppliers.history.length} связок в исходном отчёте`
@@ -284,6 +287,7 @@ function FileCard({
   ready,
   busy,
   locked = false,
+  catalogReady = false,
   summary,
   issues,
   onFile,
@@ -294,6 +298,7 @@ function FileCard({
   ready: boolean;
   busy: boolean;
   locked?: boolean;
+  catalogReady?: boolean;
   summary: string | null;
   issues: ValidationIssue[];
   onFile: (file: File) => void;
@@ -307,10 +312,10 @@ function FileCard({
       aria-busy={busy}
     >
       <div className="upload-icon" aria-hidden="true">
-        {busy ? '⇧' : ready && (errors.length || warnings.length) ? '!' : ready ? '✓' : '⇧'}
+        {busy ? '⇧' : ready && (errors.length || warnings.length) ? '!' : ready || catalogReady ? '✓' : '⇧'}
       </div>
-      <h2>{title}</h2>
-      <p>{accept.replaceAll(',', ' / ')} · отчёт из 1С</p>
+      <h2>{catalogReady ? 'Связи поставщиков' : title}</h2>
+      <p>{catalogReady ? 'Связи из справочника JSON' : `${accept.replaceAll(',', ' / ')} · отчёт из 1С`}</p>
       {fileName && <div className="file-name">{fileName}</div>}
 
       {!locked && (
@@ -334,13 +339,13 @@ function FileCard({
       )}
 
       <strong
-        className={busy ? '' : errors.length ? 'danger-text' : ready && warnings.length ? 'warning-text' : ready ? 'success' : ''}
+        className={busy ? '' : errors.length ? 'danger-text' : ready && warnings.length ? 'warning-text' : ready || catalogReady ? 'success' : ''}
       >
-        {busy ? 'Обработка файла…' : ready
+        {catalogReady ? 'Справочник подключён. Отчёт поставщиков не требуется.' : busy ? 'Обработка файла…' : ready
           ? errors.length ? 'Прочитан с ошибками' : warnings.length ? 'Прочитан с предупреждениями' : 'Успешно распознан'
           : errors.length ? 'Файл требует исправления' : 'Файл не загружен'}
       </strong>
-      {locked && <small>Использован при первичной настройке</small>}
+      {locked && !catalogReady && <small>Использован при первичной настройке</small>}
       {summary && <small>{summary}</small>}
       {(warnings.length > 0 || errors.length > 0) && (
         <ImportIssues title={title} issues={issues} />

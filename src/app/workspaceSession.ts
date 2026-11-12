@@ -19,6 +19,7 @@ import type { WorkspaceSaveOptions } from '../persistence/workspaces';
 import { createInitialState, reconcileRegistry } from './initialState';
 import { attachSupplierCatalog, prepareCatalogState } from './catalogSession';
 import { createSupplierCatalog, type SupplierCatalog } from '../domain/supplierCatalog';
+import { snapshotSupplierContext } from '../domain/supplierContext';
 export function workspaceFromState(state: AppState): StoredWorkspace {
   const {
     minMax,
@@ -52,6 +53,9 @@ export function workspaceFromState(state: AppState): StoredWorkspace {
       minMaxIssues,
       supplierIssues,
       ...(supplierAssignments === undefined ? {} : { supplierAssignments }),
+      ...(state.supplierContext || state.catalog ? {
+        supplierContext: state.supplierContext ?? snapshotSupplierContext(state.catalog!),
+      } : {}),
       edits,
       settings,
       reviewedOrderIds,
@@ -172,9 +176,12 @@ export function createWorkspaceSession({
             next.suppliers.history,
           );
         next = prepareCatalogState(previous, next);
-        if (!previous.catalog && next.catalog) {
+        if (!previous.catalog && next.catalog && !update.catalog) {
           next.catalog = await recoverCatalog(next);
           if (!next.catalog) throw new Error('CATALOG_INITIALIZATION: не удалось подготовить справочник');
+        }
+        if (next.catalog && (next.catalog !== previous.catalog || minMaxChanged)) {
+          next = { ...next, supplierContext: snapshotSupplierContext(next.catalog) };
         }
         const viewChanged = hasViewChanges(previous, next);
         if (
@@ -230,7 +237,9 @@ export function createWorkspaceSession({
           !minMaxChanged &&
           (previous.edits !== next.edits ||
             previous.settings !== next.settings ||
-            previous.supplierAssignments !== next.supplierAssignments)
+            previous.supplierAssignments !== next.supplierAssignments ||
+            previous.supplierContext !== next.supplierContext ||
+            previous.catalog !== next.catalog)
         ) {
           const scoped = previous.edits !== next.edits
             ? reconcileOrderQtyEdits(previous, next)

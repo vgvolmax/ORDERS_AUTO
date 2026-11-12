@@ -32,6 +32,7 @@ export function SupplierProducts({
   active,
   products,
   currentCodes,
+  suppliers = SUPPLIER_POOL,
   assignmentsByCode,
   demandCodes,
   filters,
@@ -44,6 +45,7 @@ export function SupplierProducts({
   active: boolean;
   products: CatalogProduct[];
   currentCodes: ReadonlySet<string>;
+  suppliers?: readonly string[];
   assignmentsByCode: ReadonlyMap<string, SupplierAssignment>;
   demandCodes: ReadonlySet<string>;
   filters: ProductFilters;
@@ -138,7 +140,7 @@ export function SupplierProducts({
             onFiltersChange({ ...filters, supplier: event.target.value, role: event.target.value ? filters.role : 'any' })
           }>
             <option value="">Все поставщики</option>
-            {SUPPLIER_POOL.map((supplier) => <option key={supplier}>{supplier}</option>)}
+            {suppliers.map((supplier) => <option key={supplier}>{supplier}</option>)}
           </Select>
         </label>
         <label>

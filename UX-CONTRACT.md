@@ -173,3 +173,8 @@ Runtime owners: SuppliersPage — справочник/долговременн�
 ### Исправления доверия к данным и feedback · 11.11.2026
 
 Источники: SPEC.md «Исправления аудита 11.11.2026» и DATA_CONTRACTS.md «Диагностика нормативов и суммы сверки». FileCard отражает качество принятого файла, InvoiceResults/CSV показывают реальные суммы и денежную разницу без изменения допуска цены или корректировки. Полные итоги не зависят от фильтров; неизвестные данные не становятся нулём. WorkspaceMasthead постоянно резервирует 36px под AppToast, в том числе при отсутствии сообщения. Runtime owners: domain/stockNorms, purchasingIssues, domain/invoiceAmounts, прежние FileCard/MetricCard/VirtualTable/WorkspaceMasthead. Evidence: demand/minMaxParser/calculationIntegrity/importQualityStatus/invoiceAmounts/invoicesPage/invoiceExport и E2E-29/30.
+
+
+### Подтверждение замены общего каталога · 12.11.2026
+
+Источник — SPEC и план 2026-11-12-shared-catalog-review-fixes. SharedCatalogPanel доступен на старте, до MIN/MAX и supplier-history. При отсутствии transient связи отличие входящего каталога от локального требует явного подтверждения; отмена не меняет локальное состояние и association. Проверенные заказы отдельно защищены тем же Dialog при смене связей/единиц. App навигация не открывает закупочные экраны до MIN/MAX. Архивные единицы берутся из supplierContext; изменение единицы сбрасывает затронутые проверки и выгрузки только после успешного durable save.

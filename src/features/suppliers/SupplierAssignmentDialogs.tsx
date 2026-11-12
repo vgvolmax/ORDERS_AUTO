@@ -6,6 +6,7 @@ import { SUPPLIER_POOL } from '../../domain/supplierPool';
 import type { CatalogProduct } from '../../domain/supplierCatalog';
 
 interface SaveProps {
+  suppliers?: readonly string[];
   saving: boolean;
   error: string;
   onSave: (command: SupplierAssignmentCommand, success: string) => Promise<boolean>;
@@ -40,6 +41,7 @@ export function ProductSupplierDialog({
   product,
   assignment,
   saving,
+  suppliers = SUPPLIER_POOL,
   error,
   onDismissError,
   onSave,
@@ -54,7 +56,7 @@ export function ProductSupplierDialog({
   const [confirmClear, setConfirmClear] = useState(false);
   const currentPrimary = assignment?.primary;
   const extras = assignment?.additional ?? [];
-  const extraChoices = SUPPLIER_POOL.filter((supplier) => supplier !== currentPrimary && !extras.includes(supplier));
+  const extraChoices = suppliers.filter((supplier) => supplier !== currentPrimary && !extras.includes(supplier));
 
   async function changePrimary(supplier: string | null) {
     const saved = await onSave(
@@ -89,7 +91,7 @@ export function ProductSupplierDialog({
             <h3>Основной</h3>
             <p>{currentPrimary ?? 'Не назначен'}</p>
             <div className="supplier-dialog-controls">
-              <SupplierChoice label="Основной поставщик" value={primary} onChange={setPrimary} disabled={saving} />
+              <SupplierChoice label="Основной поставщик" value={primary} onChange={setPrimary} options={suppliers} disabled={saving} />
               <Button disabled={saving || !primary || primary === currentPrimary} onClick={() => void changePrimary(primary)}>
                 Сделать основным
               </Button>
@@ -176,6 +178,7 @@ export function ProductSupplierDialog({
 export function BulkSupplierDialog({
   skuCodes,
   assignmentsByCode,
+  suppliers = SUPPLIER_POOL,
   saving,
   error,
   onSave,
@@ -210,7 +213,7 @@ export function BulkSupplierDialog({
     >
       <div className="supplier-dialog-content" aria-busy={saving}>
         <p>Выбрано товаров: {skuCodes.length}</p>
-        <SupplierChoice label="Основной поставщик" value={supplier} onChange={setSupplier} disabled={saving} />
+        <SupplierChoice label="Основной поставщик" value={supplier} onChange={setSupplier} options={suppliers} disabled={saving} />
         {supplier && (
           <div role="status">
             <p>Будет назначено товарам без основного: {firstAssignments}</p>

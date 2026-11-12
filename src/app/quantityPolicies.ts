@@ -41,6 +41,9 @@ export function resolveQuantityPolicies(state: AppState): SkuQuantityPolicy[] {
     values.set(normalizeKey(unit), unit);
     units.set(row.skuCode, values);
   }
+  const context = state.supplierContext ?? state.catalog;
+  const catalogUnits = new Map(context?.products.flatMap((product) =>
+    product.unit ? [[product.code, product.unit] as const] : []) ?? []);
   const saved = new Map(state.rebalance.policies.map((p) => [p.skuCode, p]));
   const fractional = new Set(
     state.rebalance.accepted
@@ -62,7 +65,7 @@ export function resolveQuantityPolicies(state: AppState): SkuQuantityPolicy[] {
           ? [...candidates.values()][0]!
           : candidates?.size
             ? 'ед.'
-            : (validUnit(old?.unit) ?? 'ед.'),
+            : (validUnit(catalogUnits.get(sku.code)) ?? validUnit(old?.unit) ?? 'ед.'),
       quantityStep: legacyStep,
     };
   });

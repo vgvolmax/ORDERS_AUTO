@@ -6,6 +6,7 @@ import type {
   OrderSettings,
 } from './types';
 import type { SupplierAssignment } from './supplierAssignments';
+import type { SupplierContext } from './supplierContext';
 import type {
   BranchRegistry,
   SkuQuantityPolicy,
@@ -56,6 +57,8 @@ export interface WorkspaceData {
   supplierIssues: ValidationIssue[];
   /** Undefined until both startup reports are accepted; an empty array is initialized. */
   supplierAssignments?: SupplierAssignment[];
+  /** Frozen unit/pool context for archived orders; absent in legacy snapshots. */
+  supplierContext?: SupplierContext;
   edits: OrderQtyEdit[];
   settings: OrderSettings;
   reviewedOrderIds: string[];

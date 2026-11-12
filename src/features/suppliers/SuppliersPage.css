@@ -108,3 +108,28 @@
   overflow: clip;
   visibility: hidden;
 }
+
+/* Shared catalog actions remain compact in the purchasing workspace. */
+.shared-catalog-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+.shared-catalog-heading,
+.shared-catalog-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.shared-catalog-heading {
+  justify-content: space-between;
+}
+.shared-catalog-heading h2,
+.shared-catalog-heading p,
+.shared-catalog-panel > p {
+  margin: 0;
+}
+.shared-catalog-actions > button {
+  flex: 0 1 auto;
+}

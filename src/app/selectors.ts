@@ -96,19 +96,32 @@ function purchasingInputs(state: AppState) {
 
 function samePurchasingInputs(previous: AppState, next: AppState): boolean {
   const inputs = purchasingInputs(next);
-  return purchasingInputs(previous).every(
+  const unchanged = purchasingInputs(previous).every(
     (input, index) => input === inputs[index],
+  );
+  if (!unchanged) return false;
+  if ((previous.supplierContext ?? previous.catalog) === (next.supplierContext ?? next.catalog)) return true;
+  // Legacy initialization can add a catalog/context without changing any resolved
+  // units. Keep the purchasing basis in that case; changed units still invalidate it.
+  return JSON.stringify(resolveAssignments(previous)) === JSON.stringify(resolveAssignments(next)) &&
+    JSON.stringify(resolveQuantityPolicies(previous)) === JSON.stringify(resolveQuantityPolicies(next));
+}
+
+function resolveAssignments(state: AppState): SupplierResolution[] {
+  const context = state.supplierContext ?? state.catalog;
+  return resolveSupplierAssignments(
+    state.supplierAssignments ?? [],
+    state.minMax?.skus.map(sku => sku.code) ?? [],
+    state.suppliers?.history ?? [],
+    context?.suppliers,
+    new Map(context?.products.flatMap((product) => product.unit ? [[product.code, product.unit] as const] : []) ?? []),
   );
 }
 
 function buildPurchasingBasis(state: AppState): PurchasingBasis | null {
   if (!state.minMax || !state.supplierAssignments) return null;
-  const skuCodes = state.minMax.skus.map((sku) => sku.code);
-  const resolutions = resolveSupplierAssignments(
-    state.supplierAssignments,
-    skuCodes,
-    state.suppliers?.history ?? [],
-  );
+  const skuCodes = state.minMax.skus.map(sku => sku.code);
+  const resolutions = resolveAssignments(state);
   const demand = priceDemandFromMinMax(
     calculateDemand(state.minMax),
     state.minMax.skus,

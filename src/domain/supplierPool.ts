@@ -43,10 +43,11 @@ const approvedNames = new Map(
   SUPPLIER_POOL.map((supplier) => [supplierKey(supplier), supplier]),
 );
 
-export function canonicalSupplierName(supplier: string): string | undefined {
-  return approvedNames.get(supplierKey(supplier));
+export function canonicalSupplierName(supplier: string, pool: readonly string[] = SUPPLIER_POOL): string | undefined {
+  const key = supplierKey(supplier);
+  return pool === SUPPLIER_POOL ? approvedNames.get(key) : pool.find((name) => supplierKey(name) === key);
 }
 
-export function isSupplierInPool(supplier: string): boolean {
-  return canonicalSupplierName(supplier) !== undefined;
+export function isSupplierInPool(supplier: string, pool: readonly string[] = SUPPLIER_POOL): boolean {
+  return canonicalSupplierName(supplier, pool) !== undefined;
 }
