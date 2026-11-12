@@ -95,9 +95,11 @@ test('E2E-33 accepted documents freeze fields while restored working weeks use t
   await openFixed();
   await expect(fixed).toContainText('Ед. изм.: шт');
   await fixed.getByRole('button', { name: 'Отменить принятие SKU1 Донор А → Получатель', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Отменить принятие перемещения', exact: true })
-    .getByRole('button', { name: 'Отменить принятие', exact: true }).click();
-  await page.keyboard.press('Escape');
+  const revoke = page.getByRole('dialog', { name: 'Отменить принятие перемещения', exact: true });
+  await revoke.getByRole('button', { name: 'Отменить принятие', exact: true }).click();
+  await expect(revoke).toHaveCount(0);
+  await fixed.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(fixed).toHaveCount(0);
   await page.getByRole('button', { name: 'Рассчитать перемещения', exact: true }).click();
   await acceptA();
   await page.getByRole('tab', { name: 'Принятые', exact: true }).click();
