@@ -101,8 +101,9 @@ test('E2E-32 shared catalog bootstraps a clean workstation and protects drafts, 
   await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
   const result = page.getByRole('region', { name: 'Результат сверки', exact: true });
   await expect(result.getByRole('row').filter({ hasText: 'Товар 1' })).not.toContainText('Единицы');
-  await expect(result.getByRole('button', { name: 'Excel для 1С', exact: true })).toBeEnabled();
-  await page.screenshot({ path: testInfo.outputPath('32-shared-catalog-archived-units.png') });
+  const correction = page.getByRole('region', { name: 'Корректировка и экспорт в 1С', exact: true });
+  await expect(correction.getByRole('button', { name: 'Excel для 1С', exact: true })).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath('32-shared-catalog-archived-units.png'), fullPage: true });
   expect(errors).toEqual([]);
   expect(remote).toEqual([]);
 });
