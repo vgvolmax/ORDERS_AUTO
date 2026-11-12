@@ -18,7 +18,9 @@ export function attachSupplierCatalog(state: AppState, catalog: SupplierCatalog 
 /** Catalog lifecycle belongs here, outside the session queue and React wiring. */
 export function prepareCatalogState(previous: AppState, next: AppState): AppState {
   const catalog = previous.catalog;
-  if (!catalog) return { ...next, catalog: createSupplierCatalog(next) };
+  if (!catalog) return next.catalog
+    ? { ...next, supplierAssignments: next.catalog.assignments }
+    : { ...next, catalog: createSupplierCatalog(next) };
   if (next.minMax && next.minMax !== previous.minMax) {
     const updated = mergeCatalogProducts(next.catalog ?? catalog, next.minMax.skus);
     const source = updated.source;
