@@ -172,7 +172,7 @@ export function createWorkspaceSession({
             next.suppliers.history,
           );
         next = prepareCatalogState(previous, next);
-        if (!previous.catalog && next.catalog) {
+        if (!previous.catalog && next.catalog && !update.catalog) {
           next.catalog = await recoverCatalog(next);
           if (!next.catalog) throw new Error('CATALOG_INITIALIZATION: не удалось подготовить справочник');
         }
