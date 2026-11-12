@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { derive } from '../../app/selectors';
 import { RebalanceError } from '../../domain/rebalancing/types';
-import { isSupplierInPool, supplierKey } from '../../domain/supplierPool';
+import { isSupplierInPool, supplierKey, SUPPLIER_POOL } from '../../domain/supplierPool';
 import type { ValidationIssue } from '../../domain/types';
 import { MIN_MAX_PARSER_VERSION, parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
@@ -21,7 +21,7 @@ export function ImportPage() {
   const resumeSetup = !configured && Boolean(state.minMax && state.suppliers);
   const anyLoading = state.minMaxLoading || state.supplierLoading;
   const supplierPoolCount = new Set(
-    state.suppliers?.suppliers.filter(isSupplierInPool).map(supplierKey),
+    state.suppliers?.suppliers.filter((supplier) => isSupplierInPool(supplier, state.catalog?.suppliers ?? SUPPLIER_POOL)).map(supplierKey),
   ).size;
   const minMaxIssues = useMemo(() => {
     if (!state.minMax) return state.minMaxIssues;
