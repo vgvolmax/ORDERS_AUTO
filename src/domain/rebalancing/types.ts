@@ -116,6 +116,18 @@ export interface AcceptedTransfer {
   acceptedConfig: RebalanceConfig;
   /** Frozen eligibility for the amount exception when this line was accepted. */
   amountExemptByStock?: true;
+  /** Immutable document fields captured at acceptance; optional in older sessions. */
+  document?: AcceptedTransferDocument;
+}
+export interface AcceptedTransferDocument {
+  schemaVersion: 1;
+  article: string | null;
+  name: string;
+  unit: string | null;
+  unitPrice: number | null;
+  supplier: string | null;
+  fromName: string;
+  toName: string;
 }
 export interface RebalanceBalance {
   skuCode: string;

@@ -1,4 +1,5 @@
 import type { AppState } from './appStore';
+import { freezeAcceptedDocuments } from './acceptedDocumentContext';
 import { derive } from './selectors';
 import { hasIncompatibleTransferQuantities } from './quantityPolicies';
 import {
@@ -141,7 +142,7 @@ export function prepareAcceptedChange(
     };
   const rebalance = {
     ...state.rebalance,
-    accepted: change.nextAccepted,
+    accepted: freezeAcceptedDocuments(state, change.nextAccepted),
     acceptedRevision: change.nextRevision,
     selectedLineIds:
       command.kind === 'accept'

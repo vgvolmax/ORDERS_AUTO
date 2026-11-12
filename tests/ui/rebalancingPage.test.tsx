@@ -4,6 +4,14 @@ import { expect, it, vi } from 'vitest';
 import { RebalancingPage } from '../../src/features/rebalancing/RebalancingPage';
 import { renderWithStore } from './renderWithStore';
 import { rebalanceAppState } from '../fixtures/rebalanceAppState';
+import { createSupplierCatalog } from '../../src/domain/supplierCatalog';
+it('allows calculating transfers with MIN/MAX and a JSON catalog without the old supplier report', () => {
+  const state = rebalanceAppState();
+  state.catalog = createSupplierCatalog(state);
+  state.suppliers = null;
+  renderWithStore(<RebalancingPage />, state);
+  expect(screen.getByRole('button', { name: 'Рассчитать перемещения' })).toBeEnabled();
+});
 it('identifies both ends of an excluded transfer document', async () => {
   const { createProposal } = await import('../../src/app/rebalanceActions');
   const state = rebalanceAppState();

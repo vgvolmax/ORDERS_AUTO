@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { selectInvoiceOrders, type InvoiceOrder } from '../../app/invoiceOrders';
 import { stateFromWorkspace } from '../../app/workspaceSession';
+import { attachSupplierCatalog } from '../../app/catalogSession';
+import { loadSupplierCatalog } from '../../persistence/supplierCatalog';
 import type { WorkspaceMetadata } from '../../domain/workspace';
 import { listWorkspaces, loadWorkspace, readActiveWorkspaceRevision } from '../../persistence/workspaces';
 
@@ -44,7 +46,7 @@ export function useInvoiceOrders() {
     void loadWorkspace(archiveId)
       .then((workspace) => {
         if (!workspace) throw new Error('Сеанс не найден');
-        const archivedState = stateFromWorkspace(workspace);
+        const archivedState = attachSupplierCatalog(stateFromWorkspace(workspace), state.catalog);
         const orders = selectInvoiceOrders(archivedState);
         const skuCodes = archivedState.minMax?.skus.map(({ code }) => code) ?? noSkuCodes;
         if (current) setArchive({ id: archiveId, orders, skuCodes });
@@ -53,7 +55,7 @@ export function useInvoiceOrders() {
         if (current) setArchive({ id: archiveId, error: 'Не удалось открыть заказы этого сеанса. Выберите другой сеанс.' });
       });
     return () => { current = false; };
-  }, [archiveId]);
+  }, [archiveId, state.catalog]);
 
   const currentOrders = useMemo(() => selectInvoiceOrders(state), [state]);
   const currentSkuCodes = useMemo(() => state.minMax?.skus.map(({ code }) => code) ?? noSkuCodes, [state.minMax]);
@@ -76,6 +78,9 @@ export function useInvoiceOrders() {
     error: selectedArchive?.error ?? '',
     historyError,
     verifySource: async () => {
+      if (state.catalog && (await loadSupplierCatalog())?.revision !== state.catalog.revision) {
+        throw new Error('Справочник изменился. Обновите страницу и повторите сверку.');
+      }
       if (archiveId) return;
       const active = await readActiveWorkspaceRevision();
       if (active?.workspaceId !== currentId || active.revision !== currentRevision) {

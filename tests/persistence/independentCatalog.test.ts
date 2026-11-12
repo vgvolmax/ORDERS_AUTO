@@ -21,14 +21,14 @@ async function setup() {
   return createWorkspaceSession({ initial: state, save: saveWorkspace, publish: noop });
 }
 
-it('keeps current catalog across restore, preserves archived orders and uses current links for the next MIN/MAX', async () => {
+it('keeps current catalog across restore and applies its links to the restored working copy and next MIN/MAX', async () => {
   const session = await setup();
   const archived = (await loadActiveWorkspace())!;
   await session.commit({ minMax: structuredClone(session.getState().minMax) });
   await session.commit((s) => ({ catalog: changeCatalogAssignment(s.catalog!, { kind: 'set-primary', skuCodes: ['SKU1'], supplier: second }) }));
   expect(derive(session.getState()).projection.orders[0]?.supplier).toBe(second);
   await session.restore(archived);
-  expect(derive(session.getState()).projection.orders[0]?.supplier).toBe(first);
+  expect(derive(session.getState()).projection.orders[0]?.supplier).toBe(second);
   expect(session.getState().catalog?.assignments[0]?.primary).toBe(second);
   expect((await loadSupplierCatalog())?.assignments[0]?.primary).toBe(second);
   expect(derive(stateFromWorkspace((await loadWorkspace(archived.workspaceId))!)).projection.orders[0]?.supplier).toBe(first);

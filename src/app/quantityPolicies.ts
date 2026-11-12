@@ -41,7 +41,7 @@ export function resolveQuantityPolicies(state: AppState): SkuQuantityPolicy[] {
     values.set(normalizeKey(unit), unit);
     units.set(row.skuCode, values);
   }
-  const context = state.supplierContext ?? state.catalog;
+  const context = state.catalog ?? state.supplierContext;
   const catalogUnits = new Map(context?.products.flatMap((product) =>
     product.unit ? [[product.code, product.unit] as const] : []) ?? []);
   const saved = new Map(state.rebalance.policies.map((p) => [p.skuCode, p]));
@@ -61,6 +61,8 @@ export function resolveQuantityPolicies(state: AppState): SkuQuantityPolicy[] {
       skuCode: sku.code,
       unit: mixedUnits.has(sku.code)
         ? 'ед.'
+        : validUnit(catalogUnits.get(sku.code))
+          ? validUnit(catalogUnits.get(sku.code))!
         : candidates?.size === 1
           ? [...candidates.values()][0]!
           : candidates?.size

@@ -62,7 +62,7 @@ function state() {
   };
   return s;
 }
-it('separates accepted from remaining proposals and exports current purchase totals and unknown money as blank', async () => {
+it('freezes accepted money while exporting current purchase totals and unknown pending money as blank', async () => {
   const s = state(),
     d = derive(s);
   d.snapshot!.snapshot.skus[0]!.referencePrice = null;
@@ -89,8 +89,10 @@ it('separates accepted from remaining proposals and exports current purchase tot
   ]);
   expect(wb.getWorksheet('Принятые')!.getCell('D2').value).toBe(15);
   expect(wb.getWorksheet('Предложения')!.getCell('D2').value).toBe(35);
-  expect(wb.getWorksheet('Принятые')!.getCell('F2').value).toBeNull();
-  expect(wb.getWorksheet('Принятые')!.getCell('G2').value).toBeNull();
+  expect(wb.getWorksheet('Принятые')!.getCell('F2').value).toBe(100);
+  expect(wb.getWorksheet('Принятые')!.getCell('G2').value).toBe(1500);
+  expect(wb.getWorksheet('Предложения')!.getCell('F2').value).toBeNull();
+  expect(wb.getWorksheet('Предложения')!.getCell('G2').value).toBeNull();
   const summary = wb.getWorksheet('Сводка')!;
   expect(summary.getRow(4).values).toEqual(
     expect.arrayContaining(['Получатель', 50, 35]),

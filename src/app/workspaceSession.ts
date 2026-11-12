@@ -20,6 +20,7 @@ import { createInitialState, reconcileRegistry } from './initialState';
 import { attachSupplierCatalog, prepareCatalogState } from './catalogSession';
 import { createSupplierCatalog, type SupplierCatalog } from '../domain/supplierCatalog';
 import { snapshotSupplierContext } from '../domain/supplierContext';
+import { freezeAcceptedDocuments } from './acceptedDocumentContext';
 export function workspaceFromState(state: AppState): StoredWorkspace {
   const {
     minMax,
@@ -160,6 +161,10 @@ export function createWorkspaceSession({
           workspaceRevision: state.workspaceRevision + 1,
         };
         const minMaxChanged = next.minMax !== previous.minMax;
+        if (!minMaxChanged) {
+          const accepted = freezeAcceptedDocuments(previous, next.rebalance.accepted);
+          if (accepted !== next.rebalance.accepted) next = { ...next, rebalance: { ...next.rebalance, accepted } };
+        }
         const replaced =
           minMaxChanged &&
           previous.minMax !== null &&

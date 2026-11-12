@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 import './orderEditing';
 import './sharedCatalog';
+import './acceptedCatalog';
 
 function supplierLinks(page: Page, skuCode: string) {
   return page.getByRole('button', { name: `Связи ${skuCode}`, exact: true });
@@ -3790,7 +3791,7 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
     .getByRole('button', { name: 'Восстановить', exact: true }).click();
   await page.getByRole('button', { name: 'Восстановить копию', exact: true }).click();
   await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
-  await expect(page.getByRole('button', { name: `Все заказы ${first}`, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: `Все заказы ${second}`, exact: true })).toBeVisible();
   await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
   await expect(page.getByRole('row').filter({ has: supplierLinks(page, '0001') })).toContainText(second);
 
@@ -3807,7 +3808,8 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
   const source = page.getByRole('combobox', { name: 'Рабочий сеанс', exact: true });
   const old = source.locator('option').filter({ hasText: 'catalog-week-1.xlsx' }).first();
   await source.selectOption((await old.getAttribute('value'))!);
-  await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${first} — Ленина`, exact: true })).toBeVisible();
+  // Neither reviewed nor exported means accepted: the changed supplier invalidates old review markers.
+  await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${first} — Ленина`, exact: true })).toHaveCount(0);
   await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${second} — Ленина`, exact: true })).toHaveCount(0);
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);

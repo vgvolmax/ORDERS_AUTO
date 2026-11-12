@@ -81,15 +81,17 @@ export async function buildRebalancingWorkbook(
     fromBranchId: string;
     toBranchId: string;
     qty: number;
+    document?: AcceptedTransfer['document'];
   }) => {
     const sku = skus.get(t.skuCode),
-      price = sku?.referencePrice ?? null;
+      frozen = t.document,
+      price = frozen ? frozen.unitPrice : sku?.referencePrice ?? null;
     return [
       t.skuCode,
-      branches.get(t.fromBranchId) ?? t.fromBranchId,
-      branches.get(t.toBranchId) ?? t.toBranchId,
+      frozen ? frozen.fromName : branches.get(t.fromBranchId) ?? t.fromBranchId,
+      frozen ? frozen.toName : branches.get(t.toBranchId) ?? t.toBranchId,
       t.qty,
-      sku?.unit ?? null,
+      frozen ? frozen.unit : sku?.unit ?? null,
       price,
       price === null ? null : moneyProduct(t.qty, price),
     ];
