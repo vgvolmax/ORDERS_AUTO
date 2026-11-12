@@ -86,8 +86,6 @@ function purchasingInputs(state: AppState) {
     state.minMaxIssues,
     state.supplierIssues,
     state.supplierAssignments,
-    state.catalog?.suppliers,
-    state.catalog?.products,
     state.settings,
     state.snapshotId,
     state.rebalance.registry,
