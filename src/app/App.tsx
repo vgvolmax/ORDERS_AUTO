@@ -183,7 +183,7 @@ export function App() {
   };
   const navigation = {
     page: state.page,
-    branches: state.catalog || state.supplierAssignments ? state.minMax?.branches ?? [] : undefined,
+    branches: state.minMax && (state.catalog || state.supplierAssignments) ? state.minMax.branches : undefined,
     onNavigate: (page: AppState['page']) => {
       if (page === 'invoices' && state.page === 'invoices') return;
       leaveInvoice(() => {

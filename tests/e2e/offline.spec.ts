@@ -5,6 +5,7 @@ import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import axe from 'axe-core';
 import './orderEditing';
+import './sharedCatalog';
 
 function supplierLinks(page: Page, skuCode: string) {
   return page.getByRole('button', { name: `Связи ${skuCode}`, exact: true });

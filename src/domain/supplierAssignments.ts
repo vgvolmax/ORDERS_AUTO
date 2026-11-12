@@ -109,7 +109,9 @@ export function resolveSupplierAssignments(
       (supplier): SupplierHistory => {
         const row = historyBySku.get(skuCode)?.get(supplier);
         return row
-          ? { ...row, supplier, unit: row.unit ?? units.get(skuCode) ?? null }
+          // A null historical unit may encode mixed units. It requires review,
+          // even when another operator's catalog contains an apparent fallback.
+          ? { ...row, supplier }
           : {
               skuCode,
               supplier,

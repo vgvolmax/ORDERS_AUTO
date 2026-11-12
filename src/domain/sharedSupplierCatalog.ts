@@ -17,7 +17,7 @@ export interface SharedSupplierCatalog {
 const nonBlank = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0;
 
-export function sharedCatalogFromLocal(catalog: SupplierCatalog): SharedSupplierCatalog {
+export function sharedCatalogFromLocal(catalog: Pick<SupplierCatalog, 'suppliers' | 'products' | 'assignments'>): SharedSupplierCatalog {
   return {
     kind: 'volmax-supplier-catalog',
     schemaVersion: 1,
@@ -32,7 +32,7 @@ export function sharedCatalogFromLocal(catalog: SupplierCatalog): SharedSupplier
 }
 
 export function sharedCatalogJson(document: SharedSupplierCatalog): string {
-  return JSON.stringify(document, null, 2);
+  return JSON.stringify(sharedCatalogFromLocal(document), null, 2);
 }
 
 export function ensureAppBoxSize(document: SharedSupplierCatalog): void {

@@ -41,7 +41,8 @@ export function resolveQuantityPolicies(state: AppState): SkuQuantityPolicy[] {
     values.set(normalizeKey(unit), unit);
     units.set(row.skuCode, values);
   }
-  const catalogUnits = new Map(state.catalog?.products.flatMap((product) =>
+  const context = state.supplierContext ?? state.catalog;
+  const catalogUnits = new Map(context?.products.flatMap((product) =>
     product.unit ? [[product.code, product.unit] as const] : []) ?? []);
   const saved = new Map(state.rebalance.policies.map((p) => [p.skuCode, p]));
   const fractional = new Set(

@@ -40,6 +40,7 @@ function signature(order: Order | undefined): string {
         l.orderQty,
         l.excluded,
         l.unitPrice,
+        l.unit,
         l.amount,
         l.purchaseContext?.acceptedTransferIds,
       ])

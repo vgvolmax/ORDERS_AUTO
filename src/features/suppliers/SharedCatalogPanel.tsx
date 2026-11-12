@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { Button } from '../../components/ui';
 import { Dialog } from '../../components/Dialog';
+import { snapshotSupplierContext } from '../../domain/supplierContext';
 import { save } from '../../export/download';
 import {
   applySharedCatalog,
@@ -62,11 +63,23 @@ export function SharedCatalogPanel() {
 
   async function adopt(document: SharedSupplierCatalog, reference: AppBoxDocumentRef | null) {
     if (!commit) throw new Error('Локальное хранилище недоступно.');
-    if (dirty && !(await approve('Есть локальные изменения справочника, не сохранённые в общий JSON. Заменить их?'))) return;
+    const incoming = applySharedCatalog(state.catalog, document, state.minMax?.skus ?? []);
+    const replacesUnlinked = !link && state.catalog && currentJson !== sharedCatalogJson(sharedCatalogFromLocal(incoming));
     const existingLinks = JSON.stringify(state.catalog?.assignments ?? []);
     const incomingLinks = JSON.stringify(document.assignments);
-    if ((state.reviewedOrderIds.length || state.exportedOrderIds.length) && existingLinks !== incomingLinks &&
-        !(await approve('Связи поставщиков изменятся. Это может снять проверку с затронутых заказов. Продолжить?'))) return;
+    const previousContext = state.supplierContext ?? (state.catalog ? snapshotSupplierContext(state.catalog) : null);
+    const incomingContext = snapshotSupplierContext(incoming);
+    const affectsReviewed = (state.reviewedOrderIds.length || state.exportedOrderIds.length) &&
+      (existingLinks !== incomingLinks || JSON.stringify(previousContext) !== JSON.stringify(incomingContext));
+    if (dirty || replacesUnlinked || affectsReviewed) {
+      const warning = [
+        dirty || replacesUnlinked
+          ? 'Открываемый JSON отличается от локального справочника. В нём могут быть неопубликованные изменения. Заменить локальный справочник?'
+          : '',
+        affectsReviewed ? 'Связи поставщиков или единицы изменятся. Проверка и отметки выгрузки затронутых заказов будут сняты.' : '',
+      ].filter(Boolean).join(' ');
+      if (!(await approve(warning))) return;
+    }
     const workspaceId = state.workspaceId;
     const catalog = state.catalog;
     await commit((current) => {
