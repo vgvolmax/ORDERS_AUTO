@@ -104,6 +104,7 @@ export function SharedCatalogPanel() {
     if (!api || !state.catalog) return;
     void run(async () => {
       if (link?.document?.canEdit === false) throw new Error('У документа нет права редактирования.');
+      if (!link && !(await approve('Общий документ не подключён. Сохранение создаст новый JSON в AppBox, а не обновит старый. Продолжить?'))) return;
       const snapshot = sharedCatalogFromLocal(state.catalog!);
       ensureAppBoxSize(snapshot);
       const content = sharedCatalogJson(snapshot);
@@ -112,10 +113,11 @@ export function SharedCatalogPanel() {
         document: link?.document ?? null,
       });
       if (!result) return;
-      if (result.destination !== 'appbox' || !result.document) {
-        setNotice('Файл выгружен на компьютер. Общий справочник AppBox НЕ обновлён.');
+      if (result.destination === 'computer') {
+        setNotice('Запрошено скачивание на компьютер. Общий справочник AppBox НЕ обновлён.');
         return;
       }
+      if (!result.document) throw new Error('AppBox не вернул ссылку на сохранённый документ. Проверьте библиотеку файлов.');
       const next = { document: result.document, baseline: content };
       rememberCatalogLink(next);
       setLink(next);
