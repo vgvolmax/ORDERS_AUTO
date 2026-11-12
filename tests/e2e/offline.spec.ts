@@ -57,7 +57,9 @@ test('E2E-30 invalid norms are visible and a kopeck price tolerance cannot hide 
   await page.locator('.order-cell').click();
   const drawer = page.getByRole('dialog', { name: 'Состав заказа' });
   await expect(drawer).not.toContainText('Неверный норматив');
-  await drawer.getByRole('checkbox', { name: 'Заказ проверен' }).check();
+  // Review state is published after IndexedDB saves it, not synchronously on click.
+  // Let the assertion below wait for that committed state.
+  await drawer.getByRole('checkbox', { name: 'Заказ проверен' }).click();
   await expect(drawer.getByRole('checkbox', { name: 'Заказ проверен' })).toBeChecked();
   await drawer.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.locator('.sidebar').getByRole('button', { name: 'Счета', exact: true }).click();
