@@ -31,7 +31,9 @@ test('E2E-31 order quantities stay in their cells and matrix metadata never move
   await page.locator('.order-cell').first().click();
   const drawer = page.getByRole('dialog', { name: 'Состав заказа', exact: true });
   const quantity = drawer.getByRole('spinbutton', { name: 'Количество A', exact: true });
-  const row = drawer.getByRole('row').filter({ has: quantity });
+  const row = drawer.getByRole('row').filter({
+    has: page.getByRole('spinbutton', { name: 'Количество A', exact: true }),
+  });
   for (const width of [1280, 1024]) {
     await page.setViewportSize({ width, height: 720 });
     await quantity.scrollIntoViewIfNeeded();
