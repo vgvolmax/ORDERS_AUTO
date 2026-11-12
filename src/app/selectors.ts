@@ -86,6 +86,8 @@ function purchasingInputs(state: AppState) {
     state.minMaxIssues,
     state.supplierIssues,
     state.supplierAssignments,
+    state.catalog?.suppliers,
+    state.catalog?.products,
     state.settings,
     state.snapshotId,
     state.rebalance.registry,
@@ -108,6 +110,8 @@ function buildPurchasingBasis(state: AppState): PurchasingBasis | null {
     state.supplierAssignments,
     skuCodes,
     state.suppliers?.history ?? [],
+    state.catalog?.suppliers,
+    new Map(state.catalog?.products.flatMap((product) => product.unit ? [[product.code, product.unit] as const] : []) ?? []),
   );
   const demand = priceDemandFromMinMax(
     calculateDemand(state.minMax),
