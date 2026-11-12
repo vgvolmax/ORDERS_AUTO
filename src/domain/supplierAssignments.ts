@@ -1,5 +1,5 @@
 import { normalizeKey } from './normalize';
-import { canonicalSupplierName } from './supplierPool';
+import { canonicalSupplierName, SUPPLIER_POOL } from './supplierPool';
 import type { SupplierHistory, SupplierResolution } from './types';
 
 export interface SupplierAssignment {
@@ -18,10 +18,11 @@ export type SupplierAssignmentCommand =
 
 export function seedSupplierAssignments(
   history: readonly SupplierHistory[],
+  pool: readonly string[] = SUPPLIER_POOL,
 ): SupplierAssignment[] {
   const suppliersBySku = new Map<string, Set<string>>();
   for (const row of history) {
-    const supplier = canonicalSupplierName(row.supplier);
+    const supplier = canonicalSupplierName(row.supplier, pool);
     if (!supplier) continue;
     const suppliers = suppliersBySku.get(row.skuCode) ?? new Set<string>();
     suppliers.add(supplier);
@@ -40,9 +41,10 @@ export function seedSupplierAssignments(
 export function applySupplierAssignmentChange(
   assignments: readonly SupplierAssignment[],
   command: SupplierAssignmentCommand,
+  pool: readonly string[] = SUPPLIER_POOL,
 ): SupplierAssignment[] {
   const supplier =
-    command.supplier == null ? null : canonicalSupplierName(command.supplier);
+    command.supplier == null ? null : canonicalSupplierName(command.supplier, pool);
   if (supplier === undefined) return assignments as SupplierAssignment[];
 
   const bySku = new Map(assignments.map((item) => [item.skuCode, item]));
@@ -81,11 +83,13 @@ export function resolveSupplierAssignments(
   assignments: readonly SupplierAssignment[],
   skuCodes: readonly string[],
   history: readonly SupplierHistory[],
+  pool: readonly string[] = SUPPLIER_POOL,
+  units: ReadonlyMap<string, string> = new Map(),
 ): SupplierResolution[] {
   const bySku = new Map(assignments.map((item) => [item.skuCode, item]));
   const historyBySku = new Map<string, Map<string, SupplierHistory>>();
   for (const row of history) {
-    const name = canonicalSupplierName(row.supplier);
+    const name = canonicalSupplierName(row.supplier, pool);
     if (!name) continue;
     const suppliers =
       historyBySku.get(row.skuCode) ?? new Map<string, SupplierHistory>();
@@ -110,7 +114,7 @@ export function resolveSupplierAssignments(
               skuCode,
               supplier,
               skuName: null,
-              unit: null,
+              unit: units.get(skuCode) ?? null,
               purchaseQty: 0,
               purchaseAmount: 0,
               weightedUnitCost: null,
