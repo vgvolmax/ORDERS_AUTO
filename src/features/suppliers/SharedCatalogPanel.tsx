@@ -140,7 +140,7 @@ export function SharedCatalogPanel() {
               : 'Автономный режим: импорт и резервная копия JSON на компьютере.'}
           </p>
         </div>
-        <span role="status" className={dirty ? 'warning-text' : 'muted'}>
+        <span className={dirty ? 'warning-text' : 'muted'}>
           {link ? (readOnly ? 'Только чтение' : dirty ? 'Есть локальные изменения' : 'Подключён') : 'Общий документ не подключён'}
         </span>
       </div>
