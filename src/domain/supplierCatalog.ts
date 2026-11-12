@@ -1,13 +1,16 @@
 import { applySupplierAssignmentChange, type SupplierAssignment, type SupplierAssignmentCommand } from './supplierAssignments';
 import type { Sku, SupplierDataset, ValidationIssue } from './types';
 import type { ImportFileRef, WorkspaceData } from './workspace';
+import { SUPPLIER_POOL } from './supplierPool';
 
-export type CatalogProduct = Pick<Sku, 'code' | 'article' | 'name'>;
+export type CatalogProduct = Pick<Sku, 'code' | 'article' | 'name'> & { unit?: string };
 export interface SupplierCatalog {
   schemaVersion: 1;
   revision: number;
   products: CatalogProduct[];
   assignments: SupplierAssignment[];
+  /** Optional in legacy IndexedDB catalogs. */
+  suppliers?: string[];
   source: {
     data: SupplierDataset;
     issues: ValidationIssue[];
@@ -33,8 +36,20 @@ export function createSupplierCatalog(data: WorkspaceData, history: readonly Pic
   for (const { skuCode } of data.supplierAssignments) {
     if (!products.has(skuCode)) products.set(skuCode, { code: skuCode, article: null, name: skuCode });
   }
+  const units = new Map<string, Set<string>>();
+  for (const row of data.suppliers?.history ?? []) {
+    if (!row.unit) continue;
+    const set = units.get(row.skuCode) ?? new Set<string>();
+    set.add(row.unit);
+    units.set(row.skuCode, set);
+  }
+  for (const [code, product] of products) {
+    const values = units.get(code);
+    if (values?.size === 1) products.set(code, { ...product, unit: [...values][0] });
+  }
   return {
     schemaVersion: 1, revision: 0, products: [...products.values()],
+    suppliers: [...SUPPLIER_POOL],
     assignments: data.supplierAssignments,
     source: data.suppliers ? {
       data: data.suppliers, issues: data.supplierIssues,
@@ -49,7 +64,7 @@ export function mergeCatalogProducts(catalog: SupplierCatalog, incoming: readonl
   for (const { code, article, name } of incoming) {
     const previous = products.get(code);
     if (previous?.article === article && previous?.name === name) continue;
-    products.set(code, { code, article, name });
+    products.set(code, { code, article, name, ...(previous?.unit ? { unit: previous.unit } : {}) });
     changed = true;
   }
   return changed ? { ...catalog, revision: catalog.revision + 1, products: [...products.values()] } : catalog;
@@ -59,7 +74,7 @@ export function changeCatalogAssignment(catalog: SupplierCatalog, command: Suppl
   const codes = command.kind === 'set-primary' ? command.skuCodes : [command.skuCode];
   const known = new Set(catalog.products.map((product) => product.code));
   if (codes.some((code) => !known.has(code))) throw new Error('Товар не найден в справочнике. Обновите страницу.');
-  const assignments = applySupplierAssignmentChange(catalog.assignments, command);
+  const assignments = applySupplierAssignmentChange(catalog.assignments, command, catalog.suppliers ?? SUPPLIER_POOL);
   return assignments === catalog.assignments ? catalog : { ...catalog, assignments, revision: catalog.revision + 1 };
 }
 
