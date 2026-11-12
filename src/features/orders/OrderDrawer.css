@@ -11,6 +11,41 @@
   font-variant-numeric: tabular-nums;
 }
 
+.order-drawer .order-drawer-quantity .input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.order-review-strip {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.order-service-flags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.order-service-flags .manual-indicator {
+  white-space: nowrap;
+}
+
+.order-blocker-details {
+  display: grid;
+  gap: 8px;
+}
+
+.order-blocker-details p {
+  margin: 4px 0;
+}
+
 .button.secondary.order-line-action {
   margin-top: 4px;
   min-height: 28px;

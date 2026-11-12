@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, useModalLayer } from '../../components/Dialog';
-import type { OrderLine } from '../../domain/types';
+import type { OrderLine, ValidationIssue } from '../../domain/types';
 import type { WorkflowOrder } from '../../app/selectors';
 import { QuantityInput } from '../../components/QuantityInput';
 import { Alert, Button } from '../../components/ui';
@@ -9,6 +9,7 @@ import { QuantitySummary } from '../../components/QuantitySummary';
 import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
 import { fmtQty, money, priceSourceLabel } from '../demand/DemandPage';
 import './OrderDrawer.css';
+import { OrderBlockerDetails } from './OrderBlockerDetails';
 
 const orderLineKey = (line: OrderLine) => line.skuCode;
 
@@ -24,11 +25,13 @@ export function OrderDrawer({
   onReconcile,
   saving = false,
   exportError = '',
+  dataIssues,
 }: {
   order: WorkflowOrder;
   exported: boolean;
   saving?: boolean | undefined;
   exportError?: string;
+  dataIssues?: ValidationIssue[] | undefined;
   renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   onClose: () => void;
   onReconcile?: (() => void) | undefined;
@@ -79,7 +82,7 @@ export function OrderDrawer({
       render: (line) => <>{fmtQty(line.calculatedQty)}{renderMovement?.(line)}</>,
     },
     {
-      key: 'quantity', header: 'К заказу', width: '115px',
+      key: 'quantity', header: 'К заказу', width: '125px', className: 'order-drawer-quantity',
       render: (line) => (
         <>
           <QuantityInput
@@ -175,12 +178,12 @@ export function OrderDrawer({
                   {order.reviewed ? '✓ Заказ проверен' : 'Заказ не проверен'}
                 </span>
               </label>
-              {exported && <span className="badge OK">Выгружен</span>}
-              {order.manualEditCount > 0 && (
-                <span className="manual-indicator">
-                  ✋ {order.manualEditCount} изменено
-                </span>
-              )}
+              <div className="order-service-flags">
+                {exported && <span className="badge OK">Выгружен</span>}
+                {order.manualEditCount > 0 && (
+                  <span className="manual-indicator">✋ {order.manualEditCount} изменено</span>
+                )}
+              </div>
             </div>
           </div>
           <button className="close" onClick={onClose} aria-label="Закрыть">
@@ -195,7 +198,7 @@ export function OrderDrawer({
                 ? 'Заказ ниже минимального порога.'
                 : 'Заказ заблокирован.'}
             </strong>{' '}
-            {order.blockers.join('. ')}
+            <OrderBlockerDetails order={order} dataIssues={dataIssues} />
           </Alert>
         )}
         {exportError && <Alert tone="danger">{exportError}</Alert>}
