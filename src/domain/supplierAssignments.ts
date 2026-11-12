@@ -109,7 +109,7 @@ export function resolveSupplierAssignments(
       (supplier): SupplierHistory => {
         const row = historyBySku.get(skuCode)?.get(supplier);
         return row
-          ? { ...row, supplier }
+          ? { ...row, supplier, unit: row.unit ?? units.get(skuCode) ?? null }
           : {
               skuCode,
               supplier,
