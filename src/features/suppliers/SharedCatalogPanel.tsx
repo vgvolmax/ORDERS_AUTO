@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { Button } from '../../components/ui';
+import { Dialog } from '../../components/Dialog';
 import { save } from '../../export/download';
 import {
   applySharedCatalog,
@@ -25,10 +26,24 @@ export function SharedCatalogPanel() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const resolveConfirmation = useRef<((approved: boolean) => void) | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const inFlight = useRef(false);
   const latestCatalog = useRef(state.catalog);
   latestCatalog.current = state.catalog;
+  useEffect(() => () => { resolveConfirmation.current?.(false); resolveConfirmation.current = null; }, []);
+  function approve(message: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      resolveConfirmation.current = resolve;
+      setConfirmation(message);
+    });
+  }
+  function answerConfirmation(approved: boolean) {
+    resolveConfirmation.current?.(approved);
+    resolveConfirmation.current = null;
+    setConfirmation(null);
+  }
   const bridge = appBoxFiles();
   const currentJson = state.catalog ? sharedCatalogJson(sharedCatalogFromLocal(state.catalog)) : null;
   const dirty = link && currentJson !== link.baseline;
@@ -47,11 +62,11 @@ export function SharedCatalogPanel() {
 
   async function adopt(document: SharedSupplierCatalog, reference: AppBoxDocumentRef | null) {
     if (!commit) throw new Error('Локальное хранилище недоступно.');
-    if (dirty && !window.confirm('Есть локальные изменения справочника, не сохранённые в общий JSON. Заменить их?')) return;
+    if (dirty && !(await approve('Есть локальные изменения справочника, не сохранённые в общий JSON. Заменить их?'))) return;
     const existingLinks = JSON.stringify(state.catalog?.assignments ?? []);
     const incomingLinks = JSON.stringify(document.assignments);
     if ((state.reviewedOrderIds.length || state.exportedOrderIds.length) && existingLinks !== incomingLinks &&
-        !window.confirm('Связи поставщиков изменятся. Это может снять проверку с затронутых заказов. Продолжить?')) return;
+        !(await approve('Связи поставщиков изменятся. Это может снять проверку с затронутых заказов. Продолжить?'))) return;
     const workspaceId = state.workspaceId;
     const catalog = state.catalog;
     await commit((current) => {
@@ -177,6 +192,20 @@ export function SharedCatalogPanel() {
       {readOnly && <p className="muted">Редактирование связей недоступно: у общего документа права только на чтение.</p>}
       {error && <p role="alert" className="danger-text">{error}</p>}
       {notice && <p role="status" className="muted">{notice}</p>}
+      {confirmation && (
+        <Dialog
+          title="Подтвердить обновление справочника"
+          onClose={() => answerConfirmation(false)}
+          actions={
+            <>
+              <Button className="secondary" onClick={() => answerConfirmation(false)}>Отмена</Button>
+              <Button onClick={() => answerConfirmation(true)}>Продолжить</Button>
+            </>
+          }
+        >
+          <p>{confirmation}</p>
+        </Dialog>
+      )}
     </section>
   );
 }
