@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowOrder } from '../../src/app/selectors';
 import { SupplierOrdersDrawer } from '../../src/features/orders/SupplierOrdersDrawer';
@@ -62,6 +62,39 @@ beforeEach(() => {
 });
 
 describe('SupplierOrdersDrawer', () => {
+  it.each([
+    ['Не хватает цены', 'Добавьте цену в отчёт MIN/MAX и загрузите обновлённый отчёт.'],
+    ['Нет позиций с количеством больше нуля', 'Восстановите исключённую позицию или укажите количество больше нуля. Пустой заказ выгружать не нужно.'],
+    ['Ошибка данных MIN/MAX: SKU1 / Ленина', 'Исправьте указанные строки в исходном MIN/MAX и загрузите обновлённый отчёт.'],
+  ])('explains the blocker %s and gives a recovery path', (blocker, hint) => {
+    const orders = makeOrders();
+    orders[0] = { ...orders[0]!, status: 'BLOCKED', blockers: [blocker] };
+    if (blocker === 'Не хватает цены') {
+      orders[0].lines[0] = { ...orders[0].lines[0]!, unitPrice: null, amount: null };
+      orders[0].totalAmount = null;
+    }
+    render(<SupplierOrdersDrawer
+      supplier="ИП Баранов Роман Борисович"
+      orders={orders}
+      branchOrder={['Ленина', 'Ступино']}
+      onClose={() => undefined}
+      onEdit={() => undefined}
+      onSetExcluded={() => undefined}
+      onSetReviewed={() => undefined}
+      onSetAllReviewed={() => undefined}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: 'Почему заблокирован заказ Ленина' }));
+    const details = within(screen.getByRole('dialog', { name: 'Почему заказ заблокирован — Ленина' }));
+    expect(details.getByText(blocker, { exact: true })).toBeInTheDocument();
+    expect(details.getByText(hint, { exact: true })).toBeInTheDocument();
+    if (blocker === 'Не хватает цены') {
+      expect(details.getByText(/SKU1.*ART-SKU1.*Товар SKU1/)).toBeInTheDocument();
+      expect(details.queryByText(/Товар SKU2/)).not.toBeInTheDocument();
+    }
+    fireEvent.click(details.getByRole('button', { name: 'Закрыть окно' }));
+    expect(screen.queryByRole('dialog', { name: 'Почему заказ заблокирован — Ленина' })).not.toBeInTheDocument();
+  });
+
   it('renders SKU rows with branch columns and cross-branch SKU totals', () => {
     render(
       <SupplierOrdersDrawer
