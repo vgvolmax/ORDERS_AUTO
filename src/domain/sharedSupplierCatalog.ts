@@ -1,7 +1,7 @@
 import type { CatalogProduct, SupplierCatalog } from './supplierCatalog';
 import type { SupplierAssignment } from './supplierAssignments';
 import type { Sku } from './types';
-import { supplierKey } from './supplierPool';
+import { supplierKey, SUPPLIER_POOL } from './supplierPool';
 
 export const SHARED_CATALOG_FILENAME = 'volmax-supplier-catalog.json';
 export const APPBOX_JSON_LIMIT = 2 * 1024 * 1024;
@@ -21,7 +21,7 @@ export function sharedCatalogFromLocal(catalog: SupplierCatalog): SharedSupplier
   return {
     kind: 'volmax-supplier-catalog',
     schemaVersion: 1,
-    suppliers: [...(catalog.suppliers ?? [])],
+    suppliers: [...(catalog.suppliers ?? SUPPLIER_POOL)],
     products: catalog.products.map(({ code, article, name, unit }) => ({
       code, article, name, ...(unit ? { unit } : {}),
     })),
