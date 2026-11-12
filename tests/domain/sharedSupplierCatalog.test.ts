@@ -66,7 +66,7 @@ describe('portable shared supplier catalog', () => {
 
   it('checks AppBox 2 MiB limit instead of truncating real data', () => {
     const doc = sample();
-    const big = { ...doc, products: [{ code: 'ABC', article: null, name: 'X'.repeat(2 * 1024 * 1024) }] };
+    const big = { ...doc, products: [{ code: '000123', article: null, name: 'X'.repeat(2 * 1024 * 1024) }] };
     expect(() => ensureAppBoxSize(big)).toThrow(/2 МиБ/);
     expect(() => parseSharedCatalog(big)).toThrow(/2 МиБ/);
   });
