@@ -40,6 +40,9 @@ test('E2E-33 accepted documents freeze fields while restored working weeks use t
   await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
   const nav = page.getByRole('navigation', { name: 'Основная навигация' });
   await nav.getByRole('button', { name: 'Перемещения', exact: true }).click();
+  await page.getByRole('tab', { name: 'Условия', exact: true }).click();
+  // Keep the residual recipient eligible after the first transfer raises it above MIN.
+  await page.getByLabel('Получатель', { exact: true }).selectOption('BELOW_MAX');
   await page.getByRole('button', { name: 'Рассчитать перемещения', exact: true }).click();
   const drawer = page.getByRole('dialog', { name: 'Состав перемещения', exact: true });
   const acceptA = async () => {
