@@ -45,7 +45,7 @@ export function createSupplierCatalog(data: WorkspaceData, history: readonly Pic
   }
   for (const [code, product] of products) {
     const values = units.get(code);
-    if (values?.size === 1) products.set(code, { ...product, unit: [...values][0] });
+    if (values?.size === 1) products.set(code, { ...product, unit: [...values][0]! });
   }
   return {
     schemaVersion: 1, revision: 0, products: [...products.values()],
