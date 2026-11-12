@@ -82,6 +82,11 @@ test('E2E-33 accepted documents freeze fields while restored working weeks use t
   await expect(fixed).toContainText('1 500,00');
   await page.screenshot({ path: testInfo.outputPath('33-frozen-accepted.png') });
   await fixed.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  const overviewReady = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Excel перемещений', exact: true }).click();
+  const overview = XLSX.read(await readFile((await (await overviewReady).path())!), { type: 'buffer' });
+  const acceptedRows = XLSX.utils.sheet_to_json(overview.Sheets['Принятые']!, { header: 1 }) as unknown[][];
+  expect(acceptedRows.find(row => row[0] === 'SKU1')?.slice(3, 7)).toEqual([15, 'шт', 100, 1500]);
   const csvReady = page.waitForEvent('download');
   await page.getByRole('button', { name: 'CSV Донор А → Получатель', exact: true }).click();
   const csv = await readFile((await (await csvReady).path())!, 'utf8');

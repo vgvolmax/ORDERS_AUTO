@@ -7,6 +7,7 @@ import { buildTransferDocuments } from '../../src/features/rebalancing/transferD
 import { buildAcceptedDocuments } from '../../src/features/rebalancing/acceptedTransfersViewModel';
 import { transfersToCsv } from '../../src/export/transferCsv';
 import { buildAcceptedTransfersWorkbook } from '../../src/export/transferWorkbook';
+import { buildRebalancingWorkbook } from '../../src/export/rebalancingWorkbook';
 
 function accept(price: number | null = 100) {
   let state = rebalanceAppState();
@@ -21,6 +22,14 @@ function documents(state: ReturnType<typeof accept>, onlyAccepted = false) {
     policies: derive(state).quantityPolicies, skus: state.minMax!.skus, snapshot: derive(state).snapshot!.snapshot };
   return onlyAccepted ? buildAcceptedDocuments(input) : buildTransferDocuments({ ...input, proposal: state.rebalance.proposal,
     selected: [], rejected: [], query: '', scope: {} });
+}
+async function overview(state: ReturnType<typeof accept>) {
+  const d = derive(state);
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(await buildRebalancingWorkbook({ snapshot: d.snapshot!.snapshot, config: state.rebalance.config,
+    proposal: state.rebalance.proposal, accepted: state.rebalance.accepted, purchaseDemand: d.purchaseDemand,
+    issues: [], workspaceId: state.workspaceId, exportedAt: '2026-11-12T10:00:00Z' }));
+  return book;
 }
 
 it('freezes accepted identity, unit, price and branch names while pending rows use current data', async () => {
@@ -42,13 +51,18 @@ it('freezes accepted identity, unit, price and branch names while pending rows u
   const book = new ExcelJS.Workbook();
   await book.xlsx.load(await buildAcceptedTransfersWorkbook(fixed));
   expect(book.worksheets[1]!.getRow(6).values).toEqual(expect.arrayContaining(['A1', 'Товар для перемещения', 'шт', 100, 1500]));
+  const report = await overview({ ...state });
+  expect(report.getWorksheet('Принятые')!.getRow(2).values).toEqual(expect.arrayContaining(['Донор А', 'шт', 100, 1500]));
+  expect(report.getWorksheet('Предложения')!.getRow(2).values).toEqual(expect.arrayContaining(['упак', 200, 7000]));
   expect(state.rebalance.accepted).toEqual(original);
 });
 
-it.each([0, null])('preserves a frozen price of %s instead of taking a later known price', price => {
+it.each([0, null])('preserves a frozen price of %s instead of taking a later known price', async price => {
   const state = accept(price);
   state.minMax!.skus[0]!.referencePrice = 999;
   expect(documents({ ...state }, true)[0]!.lines[0]!.unitPrice).toBe(price);
+  const report = await overview({ ...state });
+  expect(report.getWorksheet('Принятые')!.getRow(2).getCell(6).value).toBe(price);
 });
 
 it('captures current fields after revoke and reaccept, while preserving the original accepted record', () => {
