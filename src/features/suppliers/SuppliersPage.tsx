@@ -10,6 +10,8 @@ import {
   type SupplierAssignmentCommand,
 } from '../../domain/supplierAssignments';
 import { SUPPLIER_POOL } from '../../domain/supplierPool';
+import { currentCatalogLink } from '../../appbox/supplierCatalogBridge';
+import { SharedCatalogPanel } from './SharedCatalogPanel';
 import { changeCatalogAssignment } from '../../domain/supplierCatalog';
 import { BulkSupplierDialog, ProductSupplierDialog } from './SupplierAssignmentDialogs';
 import {
@@ -36,6 +38,7 @@ export function SuppliersPage() {
         <h1>Поставщики</h1>
         <p>Постоянный справочник товаров и поставщиков. Назначения сохраняются независимо от рабочих сеансов.</p>
       </header>
+      <SharedCatalogPanel />
       {!state.catalog && state.supplierAssignments === undefined ? (
         <EmptyState>Загрузите отчёты, чтобы открыть каталог и связи поставщиков.</EmptyState>
       ) : (
@@ -67,6 +70,7 @@ function SupplierWorkspace({
   const savingRef = useRef(false);
   const productTab = useRef<HTMLButtonElement>(null);
   const products = state.catalog?.products ?? state.minMax?.skus;
+  const suppliers = state.catalog?.suppliers ?? SUPPLIER_POOL;
   const currentCodes = useMemo(() => new Set(state.minMax?.skus.map((sku) => sku.code)), [state.minMax]);
   const productsByCode = useMemo(
     () => new Map(products?.map((sku) => [sku.code, sku])),
@@ -104,6 +108,10 @@ function SupplierWorkspace({
 
   async function save(command: SupplierAssignmentCommand, success: string) {
     if (savingRef.current) return false;
+    if (currentCatalogLink()?.document?.canEdit === false) {
+      setError('Общий документ доступен только для чтения. Изменение связей запрещено.');
+      return false;
+    }
     savingRef.current = true;
     setSaving(true);
     setError('');
@@ -173,6 +181,7 @@ function SupplierWorkspace({
           active={view === 'products'}
           products={products ?? []}
           currentCodes={currentCodes}
+          suppliers={suppliers}
           assignmentsByCode={assignmentsByCode}
           demandCodes={demandCodes}
           filters={filters}
@@ -187,7 +196,7 @@ function SupplierWorkspace({
             catalogAssignments={assignmentsByCode}
             productsByCode={productsByCode}
             orders={derived.projection.orders}
-            suppliers={SUPPLIER_POOL}
+            suppliers={suppliers}
             onShowProducts={showProducts}
           />
         )}
@@ -197,6 +206,7 @@ function SupplierWorkspace({
           product={product}
           assignment={assignmentsByCode.get(product.code)}
           saving={saving}
+          suppliers={suppliers}
           error={error}
           onDismissError={() => setError('')}
           onSave={save}
@@ -207,6 +217,7 @@ function SupplierWorkspace({
         <BulkSupplierDialog
           skuCodes={dialog.skuCodes}
           assignmentsByCode={assignmentsByCode}
+          suppliers={suppliers}
           saving={saving}
           error={error}
           onSave={async (command, success) => {
