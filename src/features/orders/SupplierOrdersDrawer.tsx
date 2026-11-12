@@ -1,7 +1,7 @@
 import { moneySum } from '../../domain/money';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalLayer } from '../../components/Dialog';
+import { Dialog, useModalLayer } from '../../components/Dialog';
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -10,7 +10,8 @@ import type {
 import type { WorkflowOrder } from '../../app/selectors';
 import { QuantityInput } from '../../components/QuantityInput';
 import { Button } from '../../components/ui';
-import type { OrderLine } from '../../domain/types';
+import type { OrderLine, ValidationIssue } from '../../domain/types';
+import { OrderBlockerDetails } from './OrderBlockerDetails';
 import { buildSkuOrder } from '../../domain/skuOrder';
 import { fmtQty, money } from '../demand/DemandPage';
 
@@ -64,8 +65,10 @@ export function SupplierOrdersDrawer({
   widthPreferences,
   onWidthsChange,
   saving = false,
+  dataIssues,
 }: {
   supplier: string;
+  dataIssues?: ValidationIssue[] | undefined;
   saving?: boolean | undefined;
   widthPreferences?: Record<string, number> | undefined;
   onWidthsChange?: ((value: Record<string, number>) => void) | undefined;
@@ -91,6 +94,8 @@ export function SupplierOrdersDrawer({
 }) {
   const modalRef = useRef<HTMLElement>(null);
   useModalLayer(modalRef, onClose);
+  const [blockerOrderId, setBlockerOrderId] = useState<string | null>(null);
+  const blockerOrder = orders.find(order => order.id === blockerOrderId);
   const model = useMemo(
     () => buildMatrixModel(orders, branchOrder, compareSku),
     [orders, branchOrder, compareSku],
@@ -378,6 +383,8 @@ export function SupplierOrdersDrawer({
                               {order.reviewed ? 'Проверен' : 'Не проверен'}
                             </span>
                           </label>
+                        </div>
+                        <div className="supplier-branch-flags">
                           {order.manualEditCount > 0 && (
                             <small
                               className="manual-indicator"
@@ -386,18 +393,19 @@ export function SupplierOrdersDrawer({
                               ✋ {order.manualEditCount}
                             </small>
                           )}
+                          {exportedOrderIds?.has(order.id) && <small>Выгружен</small>}
                         </div>
-                        {exportedOrderIds?.has(order.id) && (
-                          <span className="badge OK">Выгружен</span>
-                        )}
-                        {order.belowThreshold && !blocker && (
-                          <small className="warning-text">Ниже порога</small>
-                        )}
-                        {blocker && (
-                          <small className="danger-text supplier-branch-blocker">
-                            Есть блокирующая ошибка
-                          </small>
-                        )}
+                        <div className="supplier-branch-status">
+                          {order.blockers.length > 0 && (
+                            <Button
+                              className={`secondary supplier-branch-blocker ${blocker ? 'danger-text' : 'warning-text'}`}
+                              aria-label={`Почему заблокирован заказ ${branch}`}
+                              onClick={() => setBlockerOrderId(order.id)}
+                            >
+                              {blocker ? 'Причина блокировки' : 'Ниже порога'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       {resizer(branchKey, branch, branchWidth)}
                     </th>
@@ -520,6 +528,15 @@ export function SupplierOrdersDrawer({
           </table>
         </div>
       </section>
+      {blockerOrder && (
+        <Dialog
+          title={`Почему заказ заблокирован — ${blockerOrder.branch}`}
+          onClose={() => setBlockerOrderId(null)}
+        >
+          <p>{blockerOrder.supplier} → {blockerOrder.branch}</p>
+          <OrderBlockerDetails order={blockerOrder} dataIssues={dataIssues} />
+        </Dialog>
+      )}
     </div>,
     document.body,
   );

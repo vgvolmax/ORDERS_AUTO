@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkflowOrder } from '../../src/app/selectors';
 import { SupplierOrdersDrawer } from '../../src/features/orders/SupplierOrdersDrawer';
@@ -62,6 +62,52 @@ beforeEach(() => {
 });
 
 describe('SupplierOrdersDrawer', () => {
+  it.each([
+    ['Не хватает цены', 'Добавьте цену в отчёт MIN/MAX и загрузите обновлённый отчёт.'],
+    ['Нет позиций с количеством больше нуля', 'Восстановите исключённую позицию или укажите количество больше нуля. Пустой заказ выгружать не нужно.'],
+    ['Ошибка данных MIN/MAX: SKU1 / Ленина', 'Исправьте указанные строки в исходном MIN/MAX и загрузите обновлённый отчёт.'],
+  ])('explains the blocker %s and gives a recovery path', (blocker, hint) => {
+    const orders = makeOrders();
+    orders[0] = { ...orders[0]!, status: 'BLOCKED', blockers: [blocker] };
+    if (blocker === 'Не хватает цены') {
+      orders[0].lines[0] = { ...orders[0].lines[0]!, unitPrice: null, amount: null };
+      orders[0].totalAmount = null;
+    }
+    if (blocker === 'Нет позиций с количеством больше нуля') {
+      orders[0].lines = orders[0].lines.map(line => ({ ...line, orderQty: 0, amount: 0, excluded: true }));
+      orders[0].totalQty = 0;
+      orders[0].totalAmount = 0;
+    }
+    render(<SupplierOrdersDrawer
+      supplier="ИП Баранов Роман Борисович"
+      orders={orders}
+      branchOrder={['Ленина', 'Ступино']}
+      dataIssues={[
+        { severity: 'ERROR', code: 'DUPLICATE_SKU', skuCode: 'SKU1', branch: 'Ленина', row: 7, message: 'Дублируется код SKU1' },
+        { severity: 'ERROR', code: 'DUPLICATE_SKU', skuCode: 'SKU2', branch: 'Ступино', row: 9, message: 'Чужая ошибка другого заказа' },
+      ]}
+      onClose={() => undefined}
+      onEdit={() => undefined}
+      onSetExcluded={() => undefined}
+      onSetReviewed={() => undefined}
+      onSetAllReviewed={() => undefined}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: 'Почему заблокирован заказ Ленина' }));
+    const details = within(screen.getByRole('dialog', { name: 'Почему заказ заблокирован — Ленина' }));
+    expect(details.getByText(blocker, { exact: true })).toBeInTheDocument();
+    expect(details.getByText(hint, { exact: true })).toBeInTheDocument();
+    if (blocker === 'Не хватает цены') {
+      expect(details.getByText(/SKU1.*ART-SKU1.*Товар SKU1/)).toBeInTheDocument();
+      expect(details.queryByText(/Товар SKU2/)).not.toBeInTheDocument();
+    }
+    if (blocker.startsWith('Ошибка данных')) {
+      expect(details.getByText('Дублируется код SKU1 (строка 7)', { exact: true })).toBeInTheDocument();
+      expect(details.queryByText(/Чужая ошибка/)).not.toBeInTheDocument();
+    }
+    fireEvent.click(details.getByRole('button', { name: 'Закрыть окно' }));
+    expect(screen.queryByRole('dialog', { name: 'Почему заказ заблокирован — Ленина' })).not.toBeInTheDocument();
+  });
+
   it('renders SKU rows with branch columns and cross-branch SKU totals', () => {
     render(
       <SupplierOrdersDrawer

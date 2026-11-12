@@ -691,6 +691,7 @@ export function OrdersPage({
       {selected && (
         <OrderDrawer
           order={selected}
+          dataIssues={derived.projection.dataIssues}
           exported={exportedIds.has(selected.id)}
           exportError={exportError}
           saving={Boolean(busy || saving)}
@@ -715,6 +716,7 @@ export function OrdersPage({
       {selectedSupplier && selectedSupplierOrders.length > 0 && (
         <SupplierOrdersDrawer
           supplier={selectedSupplier}
+          dataIssues={derived.projection.dataIssues}
           saving={Boolean(busy || saving)}
           renderMovement={renderOrderMovement}
           orders={selectedSupplierOrders}
