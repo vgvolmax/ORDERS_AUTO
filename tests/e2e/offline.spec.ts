@@ -3771,10 +3771,11 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
 
   // Change links while active; the inactive list is deliberately read-only.
   await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
-  await assignPrimary(page, '0001', second);
   await assignPrimary(page, '0002', second);
   await uploadWeek('catalog-week-2.xlsx', false);
   await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  // The archived first week retains the old link for 0001; restore must use the current catalog.
+  await assignPrimary(page, '0001', second);
   await expect(page.getByRole('button', { name: 'Товары · 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(supplierLinks(page, '0002')).toHaveCount(0);
   await page.getByRole('button', { name: 'Неактивные · 1', exact: true }).click();
@@ -3792,6 +3793,7 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
   await inactive.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
   await expect(search).toBeFocused();
   await expect(absent).toBeVisible();
+  await expect(page.getByText('Сохранение сеанса…', { exact: true })).toBeHidden();
   await page.reload();
   await page.getByRole('button', { name: 'Неактивные · 1', exact: true }).click();
   await expect(absent).toContainText(second);
