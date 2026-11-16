@@ -1,5 +1,5 @@
 .suppliers-page .supplier-views {
-  grid-template-columns: repeat(2, minmax(135px, 175px));
+  grid-template-columns: repeat(3, minmax(135px, 175px));
   margin: 0 0 12px;
 }
 

@@ -55,9 +55,13 @@ function SupplierWorkspace({
 }) {
   const { state, set, commit } = useStore();
   const derived = useDerivedState(state);
-  const [view, setView] = useState<'products' | 'suppliers'>('products');
+  const [view, setView] = useState<'products' | 'inactive' | 'suppliers'>('products');
   const [filters, setFilters] = usePreference<ProductFilters>(
     'suppliers:productFilters',
+    defaultProductFilters,
+  );
+  const [inactiveFilters, setInactiveFilters] = usePreference<ProductFilters>(
+    'suppliers:inactiveProductFilters',
     defaultProductFilters,
   );
   const [selection, setSelection] = usePreference<SupplierSelection | null>(
@@ -72,6 +76,10 @@ function SupplierWorkspace({
   const products = state.catalog?.products ?? state.minMax?.skus;
   const suppliers = state.catalog?.suppliers ?? SUPPLIER_POOL;
   const currentCodes = useMemo(() => new Set(state.minMax?.skus.map((sku) => sku.code)), [state.minMax]);
+  const inactiveCount = useMemo(
+    () => products?.filter((sku) => !currentCodes.has(sku.code)).length ?? 0,
+    [products, currentCodes],
+  );
   const productsByCode = useMemo(
     () => new Map(products?.map((sku) => [sku.code, sku])),
     [products],
@@ -82,9 +90,9 @@ function SupplierWorkspace({
   );
   const selectedCodes = useMemo(
     () => selection?.snapshotId === state.snapshotId
-      ? selection.skuCodes.filter((skuCode) => productsByCode.has(skuCode))
+      ? selection.skuCodes.filter((skuCode) => productsByCode.has(skuCode) && currentCodes.has(skuCode))
       : [],
-    [productsByCode, selection, state.snapshotId],
+    [productsByCode, currentCodes, selection, state.snapshotId],
   );
   const demandCodes = useMemo(
     () => new Set(derived.purchaseDemand.filter((line) => line.purchaseQty > 0).map((line) => line.skuCode)),
@@ -160,6 +168,7 @@ function SupplierWorkspace({
 
   function showProducts(supplier: string, role: SupplierRole) {
     setFilters({ ...defaultProductFilters, supplier, role });
+    setInactiveFilters({ ...defaultProductFilters, supplier, role });
     setView('products');
     productTab.current?.focus({ preventScroll: true });
   }
@@ -167,10 +176,13 @@ function SupplierWorkspace({
   return (
     <>
       <PurchasingDataAlert issues={derived.projection.dataIssues} />
-      {state.catalog && <p className="muted">Связи меняются в справочнике и для затронутых товаров текущего сеанса. Сохранённые сеансы остаются прежними. Потребность и суммы относятся к текущему MIN/MAX.</p>}
+      {state.catalog && <p className="muted">Связи сохраняются в справочнике и используются рабочими сеансами. Потребность и суммы относятся к выбранному MIN/MAX. Принятые документы сохраняют свои реквизиты.</p>}
       <div className="workspace-tabs supplier-views" role="group" aria-label="Представления поставщиков">
         <button ref={productTab} aria-pressed={view === 'products'} onClick={() => setView('products')}>
-          Товары
+          Товары · {state.minMax ? currentCodes.size : '—'}
+        </button>
+        <button aria-pressed={view === 'inactive'} onClick={() => setView('inactive')}>
+          Неактивные · {state.minMax ? inactiveCount : '—'}
         </button>
         <button aria-pressed={view === 'suppliers'} onClick={() => setView('suppliers')}>
           По поставщикам
@@ -178,27 +190,32 @@ function SupplierWorkspace({
       </div>
       <div className="supplier-view-panels">
         <SupplierProducts
-          active={view === 'products'}
+          active={view !== 'suppliers'}
+          mode={view === 'inactive' ? 'inactive' : 'current'}
+          hasMinMax={state.minMax !== null}
           products={products ?? []}
           currentCodes={currentCodes}
           suppliers={suppliers}
           assignmentsByCode={assignmentsByCode}
           demandCodes={demandCodes}
-          filters={filters}
-          onFiltersChange={setFilters}
+          filters={view === 'inactive' ? inactiveFilters : filters}
+          onFiltersChange={view === 'inactive' ? setInactiveFilters : setFilters}
           selectedCodes={selectedCodes}
           onSelect={select}
           onOpenProduct={(skuCode) => openDialog({ skuCode })}
           onOpenBulk={() => openDialog({ skuCodes: selectedCodes })}
         />
         {view === 'suppliers' && (
-          <SupplierRoster
-            catalogAssignments={assignmentsByCode}
-            productsByCode={productsByCode}
-            orders={derived.projection.orders}
-            suppliers={suppliers}
-            onShowProducts={showProducts}
-          />
+          <>
+            <p className="muted">Количество связей — по всему справочнику, суммы закупки — по MIN/MAX выбранного сеанса. Неактивные товары доступны в отдельной вкладке.</p>
+            <SupplierRoster
+              catalogAssignments={assignmentsByCode}
+              productsByCode={productsByCode}
+              orders={derived.projection.orders}
+              suppliers={suppliers}
+              onShowProducts={showProducts}
+            />
+          </>
         )}
       </div>
       {product && (

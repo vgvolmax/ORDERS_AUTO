@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
-import { VirtualTable } from '../../components/VirtualTable';
+import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
 import { productColumns } from '../../components/productColumns';
 import { Button, SearchInput, Select } from '../../components/ui';
 import type { SupplierAssignment } from '../../domain/supplierAssignments';
@@ -9,7 +9,6 @@ import type { CatalogProduct } from '../../domain/supplierCatalog';
 type PrimaryFilter = 'all' | 'with-primary' | 'without-primary';
 export type SupplierRole = 'any' | 'primary' | 'additional';
 export interface ProductFilters {
-  presence?: 'all' | 'current' | 'absent';
   query: string;
   primary: PrimaryFilter;
   supplier: string;
@@ -18,7 +17,6 @@ export interface ProductFilters {
 }
 
 export const defaultProductFilters: ProductFilters = {
-  presence: 'all',
   query: '',
   primary: 'all',
   supplier: '',
@@ -30,6 +28,8 @@ const productKey = (sku: CatalogProduct) => sku.code;
 
 export function SupplierProducts({
   active,
+  mode,
+  hasMinMax,
   products,
   currentCodes,
   suppliers = SUPPLIER_POOL,
@@ -43,6 +43,8 @@ export function SupplierProducts({
   onOpenBulk,
 }: {
   active: boolean;
+  mode: 'current' | 'inactive';
+  hasMinMax: boolean;
   products: CatalogProduct[];
   currentCodes: ReadonlySet<string>;
   suppliers?: readonly string[];
@@ -55,18 +57,20 @@ export function SupplierProducts({
   onOpenProduct: (code: string) => void;
   onOpenBulk: () => void;
 }) {
+  const readOnly = mode === 'inactive';
   const tableRef = useRef<HTMLDivElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const scopedProducts = useMemo(() => hasMinMax ? products.filter((sku) =>
+    readOnly ? !currentCodes.has(sku.code) : currentCodes.has(sku.code),
+  ) : [], [products, currentCodes, hasMinMax, readOnly]);
   const visible = useMemo(() => {
     const query = filters.query.trim().toLocaleLowerCase('ru-RU');
-    return products.filter((sku) => {
-      if (filters.presence === 'current' && !currentCodes.has(sku.code)) return false;
-      if (filters.presence === 'absent' && currentCodes.has(sku.code)) return false;
+    return scopedProducts.filter((sku) => {
       const assignment = assignmentsByCode.get(sku.code);
       const primary = assignment?.primary;
       if (filters.primary === 'with-primary' && !primary) return false;
       if (filters.primary === 'without-primary' && primary) return false;
-      if (filters.hasDemand && !demandCodes.has(sku.code)) return false;
+      if (!readOnly && filters.hasDemand && !demandCodes.has(sku.code)) return false;
       if (filters.supplier) {
         const main = filters.role !== 'additional' && primary === filters.supplier;
         const extra = filters.role !== 'primary' && assignment?.additional.includes(filters.supplier);
@@ -76,7 +80,7 @@ export function SupplierProducts({
         (value) => value?.toLocaleLowerCase('ru-RU').includes(query),
       );
     });
-  }, [products, filters, assignmentsByCode, demandCodes, currentCodes]);
+  }, [scopedProducts, filters, assignmentsByCode, demandCodes, readOnly]);
   const selected = useMemo(() => new Set(selectedCodes), [selectedCodes]);
   const selectedVisible = visible.reduce((total, sku) => total + Number(selected.has(sku.code)), 0);
   const allSelected = visible.length > 0 && selectedVisible === visible.length;
@@ -91,7 +95,7 @@ export function SupplierProducts({
       node.scrollTop = 0;
       node.scrollLeft = 0;
     }
-  }, [filters]);
+  }, [filters, mode]);
 
   function setChecked(codes: string[], checked: boolean) {
     const next = new Set(selected);
@@ -103,7 +107,8 @@ export function SupplierProducts({
   }
 
   return (
-    <section className="supplier-products-view" hidden={!active} inert={!active} aria-label="Товары">
+    <section className="supplier-products-view" hidden={!active} inert={!active} aria-label={readOnly ? 'Неактивные товары' : 'Товары'}>
+      {readOnly && hasMinMax && <p className="muted">Отсутствуют в MIN/MAX выбранного сеанса. Сохранены в справочнике и не участвуют в расчётах. При повторном появлении в MIN/MAX становятся активными автоматически.</p>}
       <div className="filters compact-filters supplier-product-filters" role="group" aria-label="Фильтры товаров">
         <label>
           Поиск товара
@@ -113,16 +118,6 @@ export function SupplierProducts({
             placeholder="Код 1С, артикул, название"
             onValueChange={(query) => onFiltersChange({ ...filters, query })}
           />
-        </label>
-        <label>
-          Наличие в MIN/MAX
-          <Select value={filters.presence ?? 'all'} onChange={(event) =>
-            onFiltersChange({ ...filters, presence: event.target.value as 'all' | 'current' | 'absent' })
-          }>
-            <option value="all">Все товары справочника</option>
-            <option value="current">Есть в текущем MIN/MAX</option>
-            <option value="absent">Нет в текущем MIN/MAX</option>
-          </Select>
         </label>
         <label>
           Наличие основного
@@ -155,16 +150,16 @@ export function SupplierProducts({
             <option value="additional">Дополнительный</option>
           </Select>
         </label>
-        <label className="checkbox-control">
+        {!readOnly && <label className="checkbox-control">
           <input
             type="checkbox"
             checked={filters.hasDemand}
             onChange={(event) => onFiltersChange({ ...filters, hasDemand: event.target.checked })}
           />
           Есть потребность
-        </label>
+        </label>}
       </div>
-      <div className="supplier-bulk-bar">
+      {readOnly || !hasMinMax ? <p role="status">Найдено: {visible.length}</p> : <div className="supplier-bulk-bar">
         <label className="checkbox-control">
           <input
             ref={selectAllRef}
@@ -184,15 +179,19 @@ export function SupplierProducts({
           <Button className="secondary" onClick={() => onSelect([])}>Снять отметки</Button>
         )}
         <Button disabled={!selected.size} onClick={onOpenBulk}>Назначить основного выбранным</Button>
-      </div>
+      </div>}
       <div ref={tableRef}>
         <VirtualTable
           rows={visible}
           getRowKey={productKey}
           maxHeight="min(58vh, 700px)"
-          emptyMessage={products.length ? 'Нет товаров по выбранным фильтрам.' : 'В справочнике нет товаров.'}
+          emptyMessage={!hasMinMax
+            ? 'Загрузите MIN/MAX, чтобы определить активность товаров.'
+            : scopedProducts.length ? 'Нет товаров по выбранным фильтрам.'
+            : readOnly ? 'Все товары справочника есть в MIN/MAX выбранного сеанса.'
+            : 'В MIN/MAX выбранного сеанса нет товаров.'}
           columns={[
-            {
+            ...(!readOnly ? [{
               key: 'check',
               header: <span className="sr-only">Выбор</span>,
               width: '42px',
@@ -204,12 +203,15 @@ export function SupplierProducts({
                   onChange={(event) => setChecked([sku.code], event.target.checked)}
                 />
               ),
-            },
+            }] satisfies VirtualColumn<CatalogProduct>[] : []),
             ...productColumns<CatalogProduct>((sku) => ({ code: sku.code, article: sku.article, name: sku.name }), {
               code: { width: '130px' },
               article: { width: '110px' },
               name: { width: 'minmax(210px,1.25fr)' },
             }),
+            ...(readOnly ? [{
+              key: 'unit', header: 'Ед. изм.', width: '70px', render: (sku) => sku.unit ?? '—',
+            }] satisfies VirtualColumn<CatalogProduct>[] : []),
             {
               key: 'primary',
               header: 'Основной поставщик',
@@ -219,21 +221,23 @@ export function SupplierProducts({
             {
               key: 'additional',
               header: 'Дополнительные',
-              width: '125px',
-              render: (sku) => assignmentsByCode.get(sku.code)?.additional.length ?? 0,
+              width: readOnly ? 'minmax(165px,1fr)' : '125px',
+              render: (sku) => readOnly
+                ? assignmentsByCode.get(sku.code)?.additional.join(', ') || '—'
+                : assignmentsByCode.get(sku.code)?.additional.length ?? 0,
             },
             {
               key: 'demand',
-              header: 'Текущий MIN/MAX',
+              header: readOnly ? 'Статус' : 'Текущий MIN/MAX',
               width: '120px',
               render: (sku) => (
                 <>
-                  <div>{currentCodes.has(sku.code) ? 'Есть в MIN/MAX' : 'Нет в MIN/MAX'}</div>
+                  <div>{readOnly ? 'Неактивен' : 'Есть в MIN/MAX'}</div>
                   {currentCodes.has(sku.code) && <small>{demandCodes.has(sku.code) ? 'Есть потребность' : 'Без потребности'}</small>}
                 </>
               ),
             },
-            {
+            ...(!readOnly ? [{
               key: 'links',
               header: 'Связи',
               width: '92px',
@@ -242,7 +246,7 @@ export function SupplierProducts({
                   Связи
                 </Button>
               ),
-            },
+            }] satisfies VirtualColumn<CatalogProduct>[] : []),
           ]}
         />
       </div>
