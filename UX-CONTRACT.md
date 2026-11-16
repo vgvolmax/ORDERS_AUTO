@@ -167,7 +167,7 @@ ImportIssues использует общий SearchInput, native Select и Virtu
 
 ### Независимый справочник ·11.11.2026
 
-Runtime owners: SuppliersPage — справочник/долговременное сохранение, SupplierProducts — фильтр присутствия и виртуальная таблица; SupplierRoster — общие связи и текущие закупочные суммы; прежний ProductSupplierDialog — редактирование отсутствующего товара. Native Select/Button/Dialog/VirtualTable и существующие tokens неизменны. Источник данных — AppState.catalog; расчёты заказов — snapshot. Приёмка E2E-28 и tests/ui/independentCatalog.test.tsx.
+Runtime owners: SuppliersPage — справочник/долговременное сохранение и представления «Товары · N»/«Неактивные · N»/«По поставщикам»; SupplierProducts — текущая область по Коду1С, независимые фильтры и виртуальная таблица, включая read-only вариант неактивных; SupplierRoster — общие связи и текущие закупочные суммы. ProductSupplierDialog и массовое назначение доступны только текущим товарам; восстановленный выбор ограничен текущими кодами. Нет MIN/MAX — неизвестные счётчики и приглашение загрузить отчёт. Пустая неактивная область и отсутствие результатов поиска различаются. Native Select/Button/Dialog/VirtualTable и существующие tokens неизменны. Источник данных — AppState.catalog; область активности и расчёты — выбранный MIN/MAX, без persisted active-флага. Приёмка E2E-28, tests/ui/{independentCatalog,inactiveCatalog}.test.tsx и tests/persistence/inactiveCatalog.test.ts.
 
 
 ### Исправления доверия к данным и feedback · 11.11.2026

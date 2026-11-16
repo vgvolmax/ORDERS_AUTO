@@ -31,7 +31,7 @@ function catalogState() {
 describe('SuppliersPage', () => {
   it('includes products without demand and filters by assignment status, current demand and product identity', () => {
     renderWithStore(<SuppliersPage />, catalogState());
-    expect(screen.getByRole('button', { name: 'Товары' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Товары · 2' })).toHaveAttribute('aria-pressed', 'true');
     const links = () => screen.queryByRole('button', { name: 'Связи 000000002' });
     expect(links()).toBeVisible();
 
@@ -69,7 +69,7 @@ describe('SuppliersPage', () => {
     fireEvent.change(supplierSearch, { target: { value: 'Алмаз' } });
     expect(screen.getByRole('textbox', { name: 'Поиск поставщика' })).toBe(supplierSearch);
     fireEvent.change(supplierSearch, { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Товары' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Товары · 2' }));
     expect(search).toHaveValue('ART-2');
 
     suppliersView();

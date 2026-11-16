@@ -3769,22 +3769,39 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
   await expect(reviewed).toBeChecked();
   await order.getByRole('button', { name: 'Закрыть', exact: true }).click();
 
-  await uploadWeek('catalog-week-2.xlsx', false);
+  // Change links while active; the inactive list is deliberately read-only.
   await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
-  const absent = page.getByRole('row').filter({ has: supplierLinks(page, '0002') });
-  await expect(absent).toContainText('Нет в MIN/MAX');
   await assignPrimary(page, '0001', second);
   await assignPrimary(page, '0002', second);
-  await page.getByRole('combobox', { name: 'Наличие в MIN/MAX', exact: true }).selectOption('current');
+  await uploadWeek('catalog-week-2.xlsx', false);
+  await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Товары · 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(supplierLinks(page, '0002')).toHaveCount(0);
-  await page.getByRole('combobox', { name: 'Наличие в MIN/MAX', exact: true }).selectOption('all');
+  await page.getByRole('button', { name: 'Неактивные · 1', exact: true }).click();
+  const inactive = page.getByRole('region', { name: 'Неактивные товары', exact: true });
+  const absent = inactive.getByRole('row').filter({ hasText: '0002' });
+  await expect(absent).toContainText('Неактивен');
+  await expect(absent).toContainText(second);
+  await expect(absent).toContainText('шт');
+  await expect(inactive.getByRole('checkbox')).toHaveCount(0);
+  await expect(inactive.getByRole('button', { name: /Связи|Назначить|Переместить/ })).toHaveCount(0);
+  const search = inactive.getByRole('textbox', { name: 'Поиск товара', exact: true });
+  await search.fill('несуществующий');
+  await expect(inactive.getByText('Нет товаров по выбранным фильтрам.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Неактивные · 1', exact: true })).toBeVisible();
+  await inactive.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
+  await expect(search).toBeFocused();
+  await expect(absent).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('row').filter({ has: supplierLinks(page, '0002') })).toContainText(second);
-  const linkBounds = await supplierLinks(page, '0002').boundingBox();
-  expect(linkBounds).not.toBeNull();
-  expect(linkBounds!.x + linkBounds!.width).toBeLessThanOrEqual(1280);
-  await page.screenshot({ path: testInfo.outputPath('28-independent-catalog.png'), fullPage: true });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Неактивные · 1', exact: true }).click();
+  await expect(absent).toContainText(second);
+  await expect(inactive.getByRole('row').filter({ hasText: '0001' })).toHaveCount(0);
+  for (const width of [1280, 1024]) {
+    await page.setViewportSize({ width, height: 720 });
+    await expect(absent).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`28-inactive-catalog-${width}.png`), fullPage: true });
+  }
 
   await nav.getByRole('button', { name: 'История сеансов', exact: true }).click();
   await page.getByRole('row').filter({ hasText: 'catalog-week-1.xlsx' })
@@ -3794,6 +3811,9 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
   await expect(page.getByRole('button', { name: `Все заказы ${second}`, exact: true })).toBeVisible();
   await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
   await expect(page.getByRole('row').filter({ has: supplierLinks(page, '0001') })).toContainText(second);
+  await expect(page.getByRole('button', { name: 'Товары · 2', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Неактивные · 0', exact: true }).click();
+  await expect(page.getByText('Все товары справочника есть в MIN/MAX выбранного сеанса.', { exact: true })).toBeVisible();
 
   await uploadWeek('catalog-week-3.xlsx', true);
   await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
