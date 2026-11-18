@@ -133,3 +133,10 @@
 .shared-catalog-actions > button {
   flex: 0 1 auto;
 }
+
+
+.add-supplier-form,
+.add-supplier-form label {
+  display: grid;
+  gap: 8px;
+}

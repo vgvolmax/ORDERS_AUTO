@@ -49,7 +49,7 @@ function initialState() {
   state.rebalance.tab = 'results';
   return state;
 }
-function harness(initial = initialState(), failAcceptance = false) {
+function harness(initial = initialState(), failAcceptance = false, saving = false) {
   let current: AppState = initial;
   function Harness() {
     const [state, update] = useState(initial);
@@ -66,7 +66,7 @@ function harness(initial = initialState(), failAcceptance = false) {
       set(result);
     };
     return (
-      <StoreContext.Provider value={{ state, set, commit }}>
+      <StoreContext.Provider value={{ state, set, commit, saving }}>
         <RebalancingPage />
       </StoreContext.Provider>
     );
@@ -382,6 +382,20 @@ it('saves a manual quantity for only the open direction and keeps purchase uncha
   expect(
     within(screen.getByRole('dialog', { name: 'Направления товара SKU1' })).getByText(/Остаток отправителя ниже MAX/),
   ).toBeInTheDocument();
+});
+
+it('lets the operator submit a quantity while a separate workspace write is pending', async () => {
+  const current = harness(initialState(), false, true);
+  const { drawer } = openRoute();
+  const quantity = within(drawer).getByRole('spinbutton', { name: 'Количество SKU1' });
+  expect(quantity).toBeEnabled();
+  fireEvent.change(quantity, { target: { value: '16' } });
+  const save = within(drawer).getByRole('button', { name: 'Сохранить количество SKU1' });
+  expect(save).toBeEnabled();
+  fireEvent.click(save);
+  await waitFor(() =>
+    expect(current().rebalance.proposal!.transfers.find((line) => line.skuCode === 'SKU1' && line.fromBranchId === 'b0')?.qty).toBe(16),
+  );
 });
 
 it('selects the whole virtual composition and preserves selection while searching', () => {

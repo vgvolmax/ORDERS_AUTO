@@ -18,19 +18,20 @@
   box-sizing: border-box;
 }
 
-.order-review-strip {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+.order-drawer-actions {
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
 }
 
 .order-service-flags {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
+  margin-top: 4px;
+}
+
+.order-service-flags:empty {
+  display: none;
 }
 
 .order-service-flags .manual-indicator {

@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { BrandIcon } from '../../components/BrandIcon';
 import { Button } from '../../components/ui';
 import type { TransferQuantityDetails } from '../../domain/rebalancing/manualTransferQuantity';
 import { fmtQty, money } from '../demand/DemandPage';
@@ -36,7 +37,9 @@ export function TransferQuantityEditor({
   useLayoutEffect(() => {
     if (saving || disabled || !restoreFocus.current) return;
     restoreFocus.current = false;
-    inputRef.current?.focus({ preventScroll: true });
+    if (document.activeElement === document.body) {
+      inputRef.current?.focus({ preventScroll: true });
+    }
   }, [disabled, saving]);
   const qty = Number(draft);
   const validQty = Number.isSafeInteger(qty) && qty > 0;
@@ -85,52 +88,57 @@ export function TransferQuantityEditor({
         }
       }}
     >
-      <input
-        ref={inputRef}
-        type="number"
-        className="input"
-        min={1}
-        max={details?.maxQty}
-        step={1}
-        aria-label={`Количество ${line.skuCode}`}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error || warnings.length ? feedbackId : undefined}
-        value={draft ?? line.qty}
-        disabled={disabled || saving}
-        onChange={(event) => {
-          setSaveError('');
-          const value = event.currentTarget.value;
-          onDraft(value === String(line.qty) ? undefined : value);
-        }}
-      />
+      <div className="transfer-quantity-controls">
+        <input
+          ref={inputRef}
+          type="number"
+          className="input"
+          min={1}
+          max={details?.maxQty}
+          step={1}
+          aria-label={`Количество ${line.skuCode}`}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error || warnings.length ? feedbackId : undefined}
+          value={draft ?? line.qty}
+          disabled={disabled}
+          readOnly={saving}
+          onChange={(event) => {
+            setSaveError('');
+            const value = event.currentTarget.value;
+            onDraft(value === String(line.qty) ? undefined : value);
+          }}
+        />
+        {draft !== undefined && (
+          <>
+            <Button
+              type="submit"
+              className="secondary"
+              aria-label={`Сохранить количество ${line.skuCode}`}
+              title="Сохранить количество (Enter)"
+              disabled={disabled || saving || Boolean(validation)}
+            >
+              <BrandIcon name="check" />
+            </Button>
+            <button
+              className="link"
+              type="button"
+              aria-label={`Отменить правку количества ${line.skuCode}`}
+              title="Отменить правку"
+              disabled={saving}
+              onClick={() => {
+                onDraft(undefined);
+                setSaveError('');
+                inputRef.current?.focus({ preventScroll: true });
+              }}
+            >
+              ×
+            </button>
+          </>
+        )}
+      </div>
       <small>Ед. изм.: {unit}</small>
       {manual && (
         <small className="transfer-manual-qty">Вручную · расчёт {fmtQty(originalQty)}</small>
-      )}
-      {draft !== undefined && (
-        <div className="transfer-quantity-actions">
-          <Button
-            type="submit"
-            className="secondary"
-            aria-label={`Сохранить количество ${line.skuCode}`}
-            disabled={disabled || saving || Boolean(validation)}
-          >
-            {saving ? 'Сохранение…' : 'Сохранить'}
-          </Button>
-          <button
-            className="link"
-            type="button"
-            aria-label={`Отменить правку количества ${line.skuCode}`}
-            disabled={saving}
-            onClick={() => {
-              onDraft(undefined);
-              setSaveError('');
-              inputRef.current?.focus({ preventScroll: true });
-            }}
-          >
-            Отмена
-          </button>
-        </div>
       )}
       {(error || warnings.length > 0) && (
         <div id={feedbackId} className="transfer-quantity-feedback">

@@ -8,6 +8,7 @@ import type { SupplierAssignment } from '../../domain/supplierAssignments';
 import type { Order } from '../../domain/types';
 import type { CatalogProduct } from '../../domain/supplierCatalog';
 import { money } from '../../format/numbers';
+import { AddSupplierButton } from './AddSupplierButton';
 import type { SupplierRole } from './SupplierProducts';
 
 export function SupplierRoster({
@@ -83,6 +84,7 @@ export function SupplierRoster({
           Потребность от, ₽
           <Input type="number" min="0" value={amountFrom} onChange={(event) => setAmountFrom(event.target.value)} />
         </label>
+        <AddSupplierButton />
         <small>Найдено: {visible.length} из {suppliers.length}</small>
       </div>
       {visible.length > 0 ? (

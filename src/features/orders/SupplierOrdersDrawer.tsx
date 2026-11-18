@@ -11,6 +11,7 @@ import type { WorkflowOrder } from '../../app/selectors';
 import { QuantityInput } from '../../components/QuantityInput';
 import { Button } from '../../components/ui';
 import type { OrderLine, ValidationIssue } from '../../domain/types';
+import { OrderReviewButton } from './OrderReviewButton';
 import { OrderBlockerDetails } from './OrderBlockerDetails';
 import { buildSkuOrder } from '../../domain/skuOrder';
 import { fmtQty, money } from '../demand/DemandPage';
@@ -369,20 +370,12 @@ export function SupplierOrdersDrawer({
                             : money(order.totalAmount)}
                         </span>
                         <div className="supplier-branch-meta">
-                          <label className="supplier-branch-review">
-                            <input
-                              type="checkbox"
-                              aria-label={`Проверен ${branch}`}
-                              checked={order.reviewed}
-                              disabled={saving}
-                              onChange={(event) =>
-                                onSetReviewed(order.id, event.target.checked)
-                              }
-                            />
-                            <span>
-                              {order.reviewed ? 'Проверен' : 'Не проверен'}
-                            </span>
-                          </label>
+                          <OrderReviewButton
+                            label={`Проверен ${branch}`}
+                            reviewed={order.reviewed}
+                            disabled={saving}
+                            onChange={(reviewed) => onSetReviewed(order.id, reviewed)}
+                          />
                         </div>
                         <div className="supplier-branch-flags">
                           {order.manualEditCount > 0 && (

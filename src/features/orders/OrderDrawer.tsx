@@ -8,6 +8,7 @@ import { Alert, Button } from '../../components/ui';
 import { QuantitySummary } from '../../components/QuantitySummary';
 import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
 import { fmtQty, money, priceSourceLabel } from '../demand/DemandPage';
+import { OrderReviewButton } from './OrderReviewButton';
 import './OrderDrawer.css';
 import { OrderBlockerDetails } from './OrderBlockerDetails';
 
@@ -161,29 +162,11 @@ export function OrderDrawer({
                 ? 'Сумма неизвестна'
                 : money(order.totalAmount)}
             </p>
-            <div className="order-review-strip">
-              <label
-                className={`review-toggle ${
-                  order.reviewed ? 'is-reviewed' : ''
-                } ${hardBlocked ? 'has-blocker' : ''}`}
-              >
-                <input
-                  type="checkbox"
-                  aria-label="Заказ проверен"
-                  checked={order.reviewed}
-                  disabled={saving}
-                  onChange={(event) => onReviewedChange(event.target.checked)}
-                />
-                <span>
-                  {order.reviewed ? '✓ Заказ проверен' : 'Заказ не проверен'}
-                </span>
-              </label>
-              <div className="order-service-flags">
-                {exported && <span className="badge OK">Выгружен</span>}
-                {order.manualEditCount > 0 && (
-                  <span className="manual-indicator">✋ {order.manualEditCount} изменено</span>
-                )}
-              </div>
+            <div className="order-service-flags">
+              {exported && <span className="badge OK">Выгружен</span>}
+              {order.manualEditCount > 0 && (
+                <span className="manual-indicator">✋ {order.manualEditCount} изменено</span>
+              )}
             </div>
           </div>
           <button className="close" onClick={onClose} aria-label="Закрыть">
@@ -211,7 +194,13 @@ export function OrderDrawer({
           estimateRowHeight={78}
         />
 
-        <div className="drawer-actions">
+        <div className="drawer-actions order-drawer-actions">
+          <OrderReviewButton
+            label="Заказ проверен"
+            reviewed={order.reviewed}
+            disabled={saving}
+            onChange={onReviewedChange}
+          />
           {onReconcile && (
             <Button className="secondary" disabled={saving} onClick={onReconcile}>
               Сверить счёт

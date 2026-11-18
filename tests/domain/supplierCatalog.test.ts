@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSupplierCatalog, mergeCatalogProducts, changeCatalogAssignment } from '../../src/domain/supplierCatalog';
+import { addCatalogSupplier, createSupplierCatalog, mergeCatalogProducts, changeCatalogAssignment } from '../../src/domain/supplierCatalog';
 import { baseState } from '../ui/renderWithStore';
 
 const first = 'ИП Баранов Роман Борисович';
@@ -31,6 +31,16 @@ describe('independent supplier catalog', () => {
     expect(changed.assignments).toEqual([{ skuCode: 'SKU1', primary: second, additional: [first] }]);
     expect(changed.revision).toBe(catalog.revision + 1);
     expect(catalog.assignments[0]?.primary).toBe(first);
+  });
+
+  it('adds a legal name to an existing shared list and rejects equivalent names', () => {
+    const catalog = { ...createSupplierCatalog(baseState())!, suppliers: [first] };
+    const added = addCatalogSupplier(catalog, '  ООО "САБЛАЙН   СЕРВИС"  ');
+    expect(added.suppliers).toEqual([first, 'ООО "САБЛАЙН СЕРВИС"']);
+    expect(added.revision).toBe(catalog.revision + 1);
+    expect(added.assignments).toBe(catalog.assignments);
+    expect(() => addCatalogSupplier(added, 'ооо «Саблайн Сервис»')).toThrow('уже есть');
+    expect(() => addCatalogSupplier(added, '  ')).toThrow('Введите');
   });
 
   it('does not initialize before the two startup reports have established assignments', () => {
