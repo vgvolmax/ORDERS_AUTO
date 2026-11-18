@@ -87,6 +87,7 @@ export function InvoicesPage({
     (comparison.drafts.size || comparison.mode === 'order'),
   );
   const fileInput = useRef<HTMLInputElement>(null);
+  const replacement = useRef<string | null>(null);
   const fileSequence = useRef(0);
   const actionSequence = useRef(0);
 
@@ -225,7 +226,7 @@ export function InvoicesPage({
     );
   }
 
-  async function addInvoices(incoming: File[]) {
+  async function addInvoices(incoming: File[], replaceId: string | null) {
     if (reading || !incoming.length) return;
     const current = ++fileSequence.current;
     const isCurrent = () => fileSequence.current === current && latest.current.context === context;
@@ -233,7 +234,7 @@ export function InvoicesPage({
     setReading(true);
     const parsed = await Promise.all(incoming.map((file, index) => readInvoiceFile(file, `${current}:${index}`, isCurrent)));
     if (!isCurrent()) return;
-    const next = [...files];
+    const next = files.filter(({ id }) => id !== replaceId);
     let duplicates = 0;
     for (const file of parsed) {
       if (!file) continue;
@@ -484,12 +485,17 @@ export function InvoicesPage({
             onChange={(event) => {
               const next = Array.from(event.currentTarget.files ?? []);
               event.currentTarget.value = '';
-              if (completeSelection) void addInvoices(next);
+              const replaceId = replacement.current;
+              replacement.current = null;
+              if (completeSelection) void addInvoices(next, replaceId);
             }}
           />
           <div className="invoice-actions">
             <Button className="secondary" disabled={!completeSelection || reading || Boolean(action)}
-              onClick={() => fileInput.current?.click()}>
+              onClick={() => {
+                replacement.current = null;
+                fileInput.current?.click();
+              }}>
               <BrandIcon name="upload" /> Добавить счета
             </Button>
             <Button disabled={!completeSelection || !canCompare || Boolean(action)}
@@ -517,7 +523,14 @@ export function InvoicesPage({
                   <Button className="secondary" disabled={reading || Boolean(action)} onClick={() => removeInvoice(file)}
                     aria-label={`Удалить счёт ${file.name}`}>Удалить</Button>
                 </div>
-                {file.status === 'failed' && <Alert tone="danger">{file.error}</Alert>}
+                {file.status === 'failed' && <Alert tone="danger">
+                  {file.error}{' '}
+                  <Button className="secondary" disabled={reading || Boolean(action) || !completeSelection}
+                    onClick={() => {
+                      replacement.current = file.id;
+                      fileInput.current?.click();
+                    }}>Заменить {file.name}</Button>
+                </Alert>}
                 {choice && <InvoiceSheets {...choice} applied={file.status === 'ready'} disabled={reading || Boolean(action)}
                   onChange={(name, included) => changeSheets(file, choice, name, included)}
                   onApply={() => { if (file.status === 'selecting') applySheets(file); }} />}

@@ -26,7 +26,9 @@ export function App() {
   const [invoiceContext, setInvoiceContext] = useState<{
     workspaceId: string; sourceId?: string | undefined; orderIds?: string[] | undefined; sequence: number;
   } | null>(null);
-  const [invoiceExit, setInvoiceExit] = useState<(() => void) | null>(null);
+  const [invoiceExit, setInvoiceExit] = useState<{
+    run: () => void; replacesSource: boolean;
+  } | null>(null);
   const invoiceDirty = useRef(false);
   const markInvoiceDirty = useCallback((dirty: boolean) => {
     invoiceDirty.current = dirty;
@@ -183,7 +185,7 @@ export function App() {
     );
   const leaveInvoice = (navigate: () => void) => {
     if (state.page === 'invoices' && invoiceDirty.current) {
-      setInvoiceExit(() => navigate);
+      setInvoiceExit({ run: navigate, replacesSource: false });
     } else {
       navigate();
     }
@@ -210,7 +212,7 @@ export function App() {
       }));
       set({ page: 'invoices' });
     };
-    if (invoiceDirty.current) setInvoiceExit(() => open);
+    if (invoiceDirty.current) setInvoiceExit({ run: open, replacesSource: true });
     else open();
   };
   const statusTone = pending
@@ -282,21 +284,23 @@ export function App() {
 
         {invoiceExit && (
           <Dialog
-            title="Выйти из сверки счёта?"
+            title={invoiceExit.replacesSource ? 'Открыть другой источник сверки?' : 'Выйти из сверки счёта?'}
             onClose={() => setInvoiceExit(null)}
             actions={
               <>
                 <Button className="secondary" onClick={() => setInvoiceExit(null)}>Остаться</Button>
                 <Button onClick={() => {
                   setInvoiceExit(null);
-                  invoiceExit();
+                  invoiceExit.run();
                 }}>
-                  Выйти из сверки
+                  {invoiceExit.replacesSource ? 'Открыть источник' : 'Выйти из сверки'}
                 </Button>
               </>
             }
           >
-            <p>Черновик сверки сохранится в открытом приложении до смены рабочего сеанса или источника сверки.</p>
+            <p>{invoiceExit.replacesSource
+              ? 'Новый источник заменит выбранные заказы, счета и ручные правки в черновике.'
+              : 'Черновик сверки сохранится в открытом приложении до смены рабочего сеанса или источника сверки.'}</p>
           </Dialog>
         )}
         {state.toast && <AppToast message={state.toast} />}
