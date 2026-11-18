@@ -384,13 +384,13 @@ export function TransferDrawer({
               {
                 key: 'qty',
                 header: 'Количество',
-                width: '130px',
+                width: '168px',
                 render: (l) =>
                   l.decision === 'PROPOSED' && onEditQuantity ? (
                     <TransferQuantityEditor
                       line={l}
                       draft={quantityDrafts.get(l.id)}
-                      disabled={disabled || saving}
+                      disabled={disabled}
                       quantityDetails={quantityDetails}
                       onDraft={(value) => setQuantityDraft(l.id, value)}
                       onSave={onEditQuantity}
@@ -404,23 +404,6 @@ export function TransferDrawer({
                       )}
                     </div>
                   ),
-              },
-              {
-                key: 'cost',
-                header: 'Цена · сумма',
-                width: 'minmax(115px, 1fr)',
-                className: 'transfer-cost num',
-                render: (l) => (
-                  <>
-                    <small>
-                      Цена:{' '}
-                      {l.unitPrice === null ? 'Нет цены' : money(l.unitPrice)}
-                    </small>
-                    <span>
-                      {l.amount === null ? 'Сумма неизвестна' : money(l.amount)}
-                    </span>
-                  </>
-                ),
               },
               {
                 key: 'decision',
@@ -463,6 +446,23 @@ export function TransferDrawer({
                   </div>
                 ),
               },
+              {
+                key: 'cost',
+                header: 'Цена · сумма',
+                width: 'minmax(115px, 1fr)',
+                className: 'transfer-cost num',
+                render: (l) => (
+                  <>
+                    <small>
+                      Цена:{' '}
+                      {l.unitPrice === null ? 'Нет цены' : money(l.unitPrice)}
+                    </small>
+                    <span>
+                      {l.amount === null ? 'Сумма неизвестна' : money(l.amount)}
+                    </span>
+                  </>
+                ),
+              },
             ]}
           />
         </div>
@@ -496,7 +496,7 @@ export function TransferDrawer({
                 К отмене: {revokeIds.length} · {amount(revokeAmount)}
               </small>
             )}
-            {saving && <small role="status">Сохраняем выбор…</small>}
+            {saving && <small role="status">Сохраняем изменения…</small>}
             {hasUnsavedQuantities && (
               <small role="status">Сохраните или отмените правки количества.</small>
             )}

@@ -45,8 +45,16 @@
   font-variant-numeric: tabular-nums;
 }
 
-.transfer-quantity > .input {
+.transfer-quantity-controls {
+  display: grid;
+  grid-template-columns: 74px 30px 26px;
+  align-items: center;
+  gap: 3px;
+}
+
+.transfer-quantity-controls > .input {
   width: 100%;
+  min-width: 0;
   min-height: 30px;
   padding: 4px 6px;
 }
@@ -61,22 +69,30 @@
   font-weight: 600;
 }
 
-.transfer-quantity-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 3px 6px;
-}
-
-.transfer-quantity-actions > .button,
-.transfer-quantity-actions > .link {
-  min-height: 24px;
+.transfer-quantity-controls > .button,
+.transfer-quantity-controls > .link {
+  min-height: 30px;
   padding: 2px 4px;
   font-size: 11px;
 }
 
-.transfer-quantity-actions > .link:hover:enabled {
-  text-decoration: underline;
+.transfer-quantity-controls > .button {
+  display: grid;
+  place-items: center;
+}
+
+.transfer-quantity-controls > .button .brand-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.transfer-quantity-controls > .link {
+  border-radius: 5px;
+  font-size: 18px;
+}
+
+.transfer-quantity-controls > .link:hover:enabled {
+  background: var(--blue-soft);
 }
 
 .transfer-quantity-feedback {
