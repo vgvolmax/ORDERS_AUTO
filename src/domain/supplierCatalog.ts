@@ -1,7 +1,8 @@
 import { applySupplierAssignmentChange, type SupplierAssignment, type SupplierAssignmentCommand } from './supplierAssignments';
 import type { Sku, SupplierDataset, ValidationIssue } from './types';
 import type { ImportFileRef, WorkspaceData } from './workspace';
-import { SUPPLIER_POOL } from './supplierPool';
+import { isSupplierInPool, supplierKey, SUPPLIER_POOL } from './supplierPool';
+import { normalizeText } from './normalize';
 
 export type CatalogProduct = Pick<Sku, 'code' | 'article' | 'name'> & { unit?: string };
 export interface SupplierCatalog {
@@ -68,6 +69,14 @@ export function mergeCatalogProducts(catalog: SupplierCatalog, incoming: readonl
     changed = true;
   }
   return changed ? { ...catalog, revision: catalog.revision + 1, products: [...products.values()] } : catalog;
+}
+
+export function addCatalogSupplier(catalog: SupplierCatalog, name: string): SupplierCatalog {
+  const supplier = normalizeText(name);
+  const suppliers = catalog.suppliers ?? SUPPLIER_POOL;
+  if (!supplierKey(supplier)) throw new Error('Введите наименование поставщика.');
+  if (isSupplierInPool(supplier, suppliers)) throw new Error('Такой поставщик уже есть в справочнике.');
+  return { ...catalog, suppliers: [...suppliers, supplier], revision: catalog.revision + 1 };
 }
 
 export function changeCatalogAssignment(catalog: SupplierCatalog, command: SupplierAssignmentCommand): SupplierCatalog {

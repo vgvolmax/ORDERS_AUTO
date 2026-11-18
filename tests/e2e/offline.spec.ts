@@ -62,8 +62,8 @@ test('E2E-30 invalid norms are visible and a kopeck price tolerance cannot hide 
   await expect(drawer).not.toContainText('Неверный норматив');
   // Review state is published after IndexedDB saves it, not synchronously on click.
   // Let the assertion below wait for that committed state.
-  await drawer.getByRole('checkbox', { name: 'Заказ проверен' }).click();
-  await expect(drawer.getByRole('checkbox', { name: 'Заказ проверен' })).toBeChecked();
+  await drawer.getByRole('switch', { name: 'Заказ проверен' }).click();
+  await expect(drawer.getByRole('switch', { name: 'Заказ проверен' })).toBeChecked();
   await drawer.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.locator('.sidebar').getByRole('button', { name: 'Счета', exact: true }).click();
   await page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ленина` }).check();
@@ -1221,7 +1221,7 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   await supplierLinks(page, 'SKU3').click();
   const choice = page.getByRole('dialog', { name: 'Связи товара', exact: true });
   const selector = choice.getByRole('combobox', { name: 'Основной поставщик', exact: true });
-  await expect(selector.locator('option')).toHaveCount(33);
+  await expect(selector.locator('option')).toHaveCount(34);
   await expect(selector.locator('option').filter({ hasText: hidden })).toHaveCount(0);
   const alternatives = choice.getByRole('region', { name: 'Текущие дополнительные поставщики' });
   await expect(alternatives.getByRole('listitem')).toHaveText([
@@ -1497,9 +1497,9 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     '35',
   );
   await page.getByLabel('Количество SKU1', { exact: true }).fill('40');
-  await page.getByRole('checkbox', { name: 'Заказ проверен' }).click();
+  await page.getByRole('switch', { name: 'Заказ проверен' }).click();
   await expect(
-    page.getByRole('checkbox', { name: 'Заказ проверен' }),
+    page.getByRole('switch', { name: 'Заказ проверен' }),
   ).toBeChecked();
   const csvDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Скачать CSV заказа' }).click();
@@ -1513,7 +1513,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
   const supplierQty = page.getByLabel('Количество SKU1 Получатель', {
     exact: true,
   });
-  const supplierReview = page.getByRole('checkbox', {
+  const supplierReview = page.getByRole('switch', {
     name: 'Проверен Получатель',
     exact: true,
   });
@@ -1547,7 +1547,7 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     '41.5',
   );
   await expect(
-    page.getByRole('checkbox', { name: 'Заказ проверен' }),
+    page.getByRole('switch', { name: 'Заказ проверен' }),
   ).toBeChecked();
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page
@@ -3618,7 +3618,7 @@ test('E2E-26 manual transfer quantity, route context and accepted Excel survive 
   await quantity.fill('16');
   await expect(drawer.getByText(/Остаток получателя выше MAX/)).toBeVisible();
   await expect(save).toBeEnabled();
-  await save.click();
+  await quantity.press('Enter');
   await expect(save).toHaveCount(0);
   await expect(drawer.getByText('Вручную · расчёт 15', { exact: true })).toBeVisible();
   await page.reload();
@@ -3686,7 +3686,7 @@ test('E2E-27 masked articles and explicit invoice sheets produce a safe correcti
   await page.locator('.order-cell').first().click();
   const order = page.getByRole('dialog', { name: 'Состав заказа' });
   await expect(order.getByText('000123', { exact: true })).toBeVisible();
-  const reviewed = order.getByRole('checkbox', { name: 'Заказ проверен' });
+  const reviewed = order.getByRole('switch', { name: 'Заказ проверен' });
   await reviewed.click();
   await expect(reviewed).toBeChecked();
   await order.getByRole('button', { name: 'Сверить счёт', exact: true }).click();
@@ -3764,7 +3764,7 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
   await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
   await page.locator('.order-cell').first().click();
   const order = page.getByRole('dialog', { name: 'Состав заказа' });
-  const reviewed = order.getByRole('checkbox', { name: 'Заказ проверен' });
+  const reviewed = order.getByRole('switch', { name: 'Заказ проверен' });
   await reviewed.click();
   await expect(reviewed).toBeChecked();
   await order.getByRole('button', { name: 'Закрыть', exact: true }).click();

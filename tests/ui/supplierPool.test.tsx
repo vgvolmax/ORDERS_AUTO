@@ -28,6 +28,7 @@ const approved = [
   'ООО "Мир инструмента"',
   'ООО "Р-КЛИМАТ"',
   'ООО "РЕСУРС ФОРВАРДИНГ"',
+  'ООО "САБЛАЙН СЕРВИС"',
   'ООО "САНСФЕРА-РУС"',
   'ООО "САНТЕХГРУПП"',
   'ООО "Сантехкомплект"',
@@ -65,7 +66,7 @@ function poolState(names = [allowed, otherAllowed, hidden]) {
 }
 
 describe('approved supplier pool', () => {
-  it('offers all 32 suppliers regardless of history and prices the explicit choice from MIN/MAX', () => {
+  it('offers all approved suppliers regardless of history and prices the explicit choice from MIN/MAX', () => {
     const state = poolState();
     state.suppliers!.history[0]!.weightedUnitCost = 85;
     const set = vi.fn();
@@ -125,7 +126,7 @@ describe('approved supplier pool', () => {
     expect(screen.getByText('Товар 1')).toBeInTheDocument();
   });
 
-  it('keeps exactly the 32 approved suppliers as additional when more than one was present', () => {
+  it('keeps exactly the approved suppliers as additional when more than one was present', () => {
     const state = poolState([...approved, hidden]);
     const before = structuredClone(state);
     expect(state.supplierAssignments).toEqual([

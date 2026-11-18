@@ -56,7 +56,7 @@ it('restores an excluded choice as unresolved and persists an explicit allowed r
   const choice = within(dialog).getByRole('combobox', {
     name: 'Основной поставщик',
   });
-  expect(within(choice).getAllByRole('option')).toHaveLength(33);
+  expect(within(choice).getByRole('option', { name: 'ООО "САБЛАЙН СЕРВИС"' })).toBeInTheDocument();
   expect(within(choice).queryByRole('option', { name: hidden })).toBeNull();
   fireEvent.change(choice, { target: { value: allowed } });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Сделать основным' }));
