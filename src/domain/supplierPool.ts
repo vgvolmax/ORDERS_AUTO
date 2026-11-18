@@ -1,5 +1,5 @@
-/** Approved purchasing pool. Imported history remains intact for session recovery. */
-export const SUPPLIER_POOL: readonly string[] = [
+/** Starter roster used before the supplier editor was introduced. */
+const PREVIOUS_STARTER_POOL = [
   'АО ТД "ЭЛЕКТРОТЕХМОНТАЖ"',
   'ИП Баранов Роман Борисович',
   'ИП Бобров Э.Р.',
@@ -18,7 +18,6 @@ export const SUPPLIER_POOL: readonly string[] = [
   'ООО "Мир инструмента"',
   'ООО "Р-КЛИМАТ"',
   'ООО "РЕСУРС ФОРВАРДИНГ"',
-  'ООО "САБЛАЙН СЕРВИС"',
   'ООО "САНСФЕРА-РУС"',
   'ООО "САНТЕХГРУПП"',
   'ООО "Сантехкомплект"',
@@ -33,7 +32,10 @@ export const SUPPLIER_POOL: readonly string[] = [
   'ООО "ЮЗТК"',
   'ООО "Ютара"',
   'ООО ТД "БИОСЕПТИК"',
-];
+] as const;
+
+const sablineService = 'ООО "САБЛАЙН СЕРВИС"';
+export const SUPPLIER_POOL: readonly string[] = [...PREVIOUS_STARTER_POOL, sablineService];
 
 export function supplierKey(supplier: string): string {
   // Ignore presentation, but retain the legal form and complete name: no fuzzy/prefix matches.
@@ -51,4 +53,14 @@ export function canonicalSupplierName(supplier: string, pool: readonly string[] 
 
 export function isSupplierInPool(supplier: string, pool: readonly string[] = SUPPLIER_POOL): boolean {
   return canonicalSupplierName(supplier, pool) !== undefined;
+}
+
+const previousStarterKeys = PREVIOUS_STARTER_POOL.map(supplierKey);
+const sablineServiceKey = supplierKey(sablineService);
+
+/** Upgrade the previous starter roster, including catalogs with additional suppliers. */
+export function upgradeStarterSupplierPool(suppliers: string[]): string[] {
+  const keys = new Set(suppliers.map(supplierKey));
+  if (keys.has(sablineServiceKey) || !previousStarterKeys.every((key) => keys.has(key))) return suppliers;
+  return [...suppliers, sablineService];
 }

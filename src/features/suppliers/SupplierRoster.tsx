@@ -4,6 +4,7 @@ import { usePreference } from '../../app/usePreference';
 import { ThresholdControls } from '../../components/ThresholdControls';
 import { EmptyState, Input, SearchInput } from '../../components/ui';
 import { moneySum } from '../../domain/money';
+import { supplierKey } from '../../domain/supplierPool';
 import type { SupplierAssignment } from '../../domain/supplierAssignments';
 import type { Order } from '../../domain/types';
 import type { CatalogProduct } from '../../domain/supplierCatalog';
@@ -57,10 +58,10 @@ export function SupplierRoster({
     });
   }, [catalogAssignments, productsByCode, orders, suppliers]);
 
-  const search = query.trim().toLocaleLowerCase('ru-RU');
+  const search = supplierKey(query);
   const minimumAmount = amountFrom === '' ? null : Number(amountFrom);
   const visible = summaries.filter(({ supplier, total }) =>
-    supplier.toLocaleLowerCase('ru-RU').includes(search) &&
+    supplierKey(supplier).includes(search) &&
     (minimumAmount === null || (total !== null && total >= minimumAmount)),
   );
 

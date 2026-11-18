@@ -1,7 +1,7 @@
 import type { CatalogProduct, SupplierCatalog } from './supplierCatalog';
 import type { SupplierAssignment } from './supplierAssignments';
 import type { Sku } from './types';
-import { supplierKey, SUPPLIER_POOL } from './supplierPool';
+import { supplierKey, SUPPLIER_POOL, upgradeStarterSupplierPool } from './supplierPool';
 
 export const SHARED_CATALOG_FILENAME = 'volmax-supplier-catalog.json';
 export const APPBOX_JSON_LIMIT = 2 * 1024 * 1024;
@@ -130,7 +130,7 @@ export function applySharedCatalog(
     revision: (current?.revision ?? -1) + 1,
     products: [...products.values()],
     assignments: document.assignments.map((item) => ({ ...item, additional: [...item.additional] })),
-    suppliers: [...document.suppliers],
+    suppliers: upgradeStarterSupplierPool([...document.suppliers]),
     source: current?.source ?? null,
   };
 }

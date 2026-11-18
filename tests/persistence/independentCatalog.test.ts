@@ -5,6 +5,7 @@ import { createWorkspaceSession, stateFromWorkspace, workspaceFromState } from '
 import { saveWorkspace, loadActiveWorkspace, loadWorkspace } from '../../src/persistence/workspaces';
 import { loadOrCreateSupplierCatalog, loadSupplierCatalog } from '../../src/persistence/supplierCatalog';
 import { createSupplierCatalog, changeCatalogAssignment } from '../../src/domain/supplierCatalog';
+import { SUPPLIER_POOL } from '../../src/domain/supplierPool';
 import { derive } from '../../src/app/selectors';
 import { db } from '../../src/persistence/db';
 import { createInitialState } from '../../src/app/initialState';
@@ -56,6 +57,19 @@ it('keeps an initialized catalog even when there is no active workspace', async 
   const catalog = createSupplierCatalog(baseState())!;
   await (await db()).put('supplierCatalog', catalog, 'main');
   expect(await loadOrCreateSupplierCatalog(null)).toEqual(catalog);
+});
+
+it('adds САБЛАЙН СЕРВИС once to the previous starter list and keeps existing assignments', async () => {
+  const added = 'ООО "САБЛАЙН СЕРВИС"';
+  const suppliers = SUPPLIER_POOL.filter((name) => name !== added).concat('ООО "Другой поставщик"');
+  const catalog = { ...createSupplierCatalog(baseState())!, revision: 5, suppliers };
+  await (await db()).put('supplierCatalog', catalog, 'main');
+
+  const expected = { ...catalog, revision: 6, suppliers: [...suppliers, added] };
+  const updated = await Promise.all([loadOrCreateSupplierCatalog(null), loadOrCreateSupplierCatalog(null)]);
+  expect(updated).toEqual([expected, expected]);
+  expect(await loadOrCreateSupplierCatalog(null)).toEqual(expected);
+  expect(await loadSupplierCatalog()).toEqual(expected);
 });
 
 it('aborts a catalog update when saving the workspace fails later in the same transaction', async () => {

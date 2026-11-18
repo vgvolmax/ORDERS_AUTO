@@ -46,6 +46,18 @@ describe('portable shared supplier catalog', () => {
     expect(next.suppliers).toEqual([first, second]);
   });
 
+  it('upgrades a shared copy of the earlier starter list without changing its assignments', () => {
+    const added = 'ООО "САБЛАЙН СЕРВИС"';
+    const earlier = SUPPLIER_POOL.filter((name) => name !== added);
+    const input = parseSharedCatalog({ ...sample(), suppliers: earlier });
+    const current = applySharedCatalog(null, input);
+    expect(current.suppliers).toEqual([...earlier, added]);
+    expect(current.assignments).toEqual(input.assignments);
+    const renamed = 'ооо «Саблайн сервис»';
+    expect(applySharedCatalog(null, { ...input, suppliers: [...earlier, renamed] }).suppliers)
+      .toEqual([...earlier, renamed]);
+  });
+
   it('rejects malformed documents without silently accepting broken mappings', () => {
     expect(() => parseSharedCatalog({ ...sample(), schemaVersion: 2 })).toThrow();
     expect(() => parseSharedCatalog({ ...sample(), suppliers: [first, first] })).toThrow(/Повторяются/);

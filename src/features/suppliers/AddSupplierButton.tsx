@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { currentCatalogLink } from '../../appbox/supplierCatalogBridge';
 import { Dialog } from '../../components/Dialog';
@@ -7,21 +7,20 @@ import { addCatalogSupplier } from '../../domain/supplierCatalog';
 
 export function AddSupplierButton() {
   const { state, commit, saving: workspaceSaving } = useStore();
-  const formId = useId();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const form = useRef<HTMLFormElement>(null);
+  const editor = useRef<HTMLDivElement>(null);
   const readOnly = currentCatalogLink()?.document?.canEdit === false;
 
   useLayoutEffect(() => {
-    if (open) form.current?.querySelector('input')?.focus();
+    if (open) editor.current?.querySelector('input')?.focus();
   }, [open]);
 
   async function add() {
-    if (!commit || savingRef.current) return;
+    if (!commit || !name.trim() || readOnly || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     setError('');
@@ -65,27 +64,27 @@ export function AddSupplierButton() {
           title="Добавить поставщика"
           onClose={() => { if (!savingRef.current) setOpen(false); }}
           actions={
-            <Button type="submit" form={formId} disabled={saving || readOnly || !name.trim()}>
+            <Button
+              type="button"
+              disabled={saving || readOnly || !name.trim()}
+              onClick={() => void add()}
+            >
               {saving ? 'Добавление…' : 'Добавить'}
             </Button>
           }
         >
-          <form
-            ref={form}
-            id={formId}
-            className="add-supplier-form"
-            aria-busy={saving}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void add();
-            }}
-          >
+          <div ref={editor} className="add-supplier-form" aria-busy={saving}>
             <label>
               Наименование поставщика
               <Input
                 value={name}
                 required
                 readOnly={saving}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+                  event.preventDefault();
+                  void add();
+                }}
                 onChange={(event) => {
                   setName(event.currentTarget.value);
                   setError('');
@@ -93,7 +92,7 @@ export function AddSupplierButton() {
               />
             </label>
             {error && <Alert tone="danger">{error}</Alert>}
-          </form>
+          </div>
         </Dialog>
       )}
     </>
