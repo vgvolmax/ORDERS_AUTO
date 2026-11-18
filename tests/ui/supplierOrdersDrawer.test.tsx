@@ -180,7 +180,7 @@ describe('SupplierOrdersDrawer', () => {
     );
 
     expect(screen.getByText(/✋\s*1/)).toBeInTheDocument();
-    const stupino = screen.getByRole('checkbox', { name: 'Проверен Ступино' });
+    const stupino = screen.getByRole('switch', { name: 'Проверен Ступино' });
     fireEvent.click(stupino);
     expect(onSetReviewed).toHaveBeenCalledWith(orders[1]!.id, true);
 
@@ -314,7 +314,7 @@ it('waits for quantity persistence before review while allowing the operator to 
     />,
   );
   expect(
-    screen.getByRole('checkbox', { name: 'Проверен Ленина' }),
+    screen.getByRole('switch', { name: 'Проверен Ленина' }),
   ).toBeDisabled();
   expect(
     screen.getByRole('button', { name: 'Отметить все проверенными' }),

@@ -164,12 +164,12 @@ describe('OrdersPage', () => {
     const qty = drawer.getByRole('spinbutton', { name: 'Количество SKU1' });
     expect(drawer.getAllByRole('spinbutton')).toEqual([qty]);
     expect(qty).toHaveValue(8);
-    expect(drawer.getByRole('checkbox', { name: 'Заказ проверен' })).toBeChecked();
+    expect(drawer.getByRole('switch', { name: 'Заказ проверен' })).toBeChecked();
 
     fireEvent.click(drawer.getByRole('button', { name: 'Исключить SKU1 из заказа' }));
     expect(qty).toHaveValue(0);
     expect(qty).toBeDisabled();
-    expect(drawer.getByRole('checkbox', { name: 'Заказ проверен' })).not.toBeChecked();
+    expect(drawer.getByRole('switch', { name: 'Заказ проверен' })).not.toBeChecked();
     expect(drawer.queryByText('Выгружен')).not.toBeInTheDocument();
     expect(drawer.getByRole('button', { name: 'Скачать CSV заказа' })).toBeDisabled();
 
@@ -225,7 +225,7 @@ describe('OrdersPage', () => {
     expect(stupinoQty).toBeDisabled();
     expect(matrix.getByRole('spinbutton', { name: 'Количество SKU10 Ленина' })).toHaveValue(2);
     expect(leninaHeader.getByText('Ниже порога')).toBeVisible();
-    expect(leninaHeader.getByRole('checkbox')).not.toBeChecked();
+    expect(leninaHeader.getByRole('switch')).not.toBeChecked();
     expect(leninaHeader.queryByText('Выгружен')).not.toBeInTheDocument();
     expect(writes).toEqual([[
       { skuCode: 'SKU1', branch: 'Ленина', qty: 0, excluded: true },
@@ -493,7 +493,7 @@ describe('OrdersPage', () => {
     expect(skuRow).toHaveTextContent('1 400,00 ₽');
     expect(within(dialog).getByText(/✋\s*1/)).toBeInTheDocument();
     expect(
-      within(dialog).getByRole('checkbox', { name: 'Проверен Ленина' }),
+      within(dialog).getByRole('switch', { name: 'Проверен Ленина' }),
     ).not.toBeChecked();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Закрыть' }));

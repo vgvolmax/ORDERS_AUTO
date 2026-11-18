@@ -150,23 +150,11 @@
   gap: 4px 8px;
 }
 
-.supplier-branch-review {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #526173;
+.supplier-branch-meta .button.secondary.review-toggle {
+  min-inline-size: 88px;
+  min-height: 26px;
+  padding: 3px 7px;
   font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.supplier-branch-review input {
-  width: 15px;
-  height: 15px;
-  margin: 0;
-  accent-color: var(--blue);
-  cursor: pointer;
 }
 
 .supplier-branch-flags {

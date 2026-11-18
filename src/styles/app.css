@@ -231,9 +231,20 @@ details summary { cursor: pointer; }
 .drawer-head { display: flex; justify-content: space-between; gap: 20px; }
 .close { border: 0; background: none; font-size: 32px; cursor: pointer; }
 .drawer-actions { display: flex; gap: 10px; justify-content: flex-end; padding: 18px 0; }
-.review-toggle { border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 8px 10px; }
-.review-toggle.is-reviewed { border-color: #78b88b; background: #eef9f2; }
-.review-toggle.has-blocker, .review-toggle.is-reviewed.has-blocker { border-color: #cf6558; background: #fff2f0; color: var(--danger); }
+.button.secondary.review-toggle {
+  min-inline-size: 118px;
+  white-space: nowrap;
+}
+.button.secondary.review-toggle[aria-checked='true'] {
+  border-color: #78b88b;
+  background: #eef9f2;
+  color: var(--success);
+}
+.button.secondary.review-toggle[aria-checked='true']:hover:enabled:not(:active) {
+  border-color: var(--success);
+  background: #e2f3e8;
+  color: var(--success);
+}
 .danger-action { color: #7d2b35 !important; }
 
 .toast { position: fixed; right: 50%; top: 24px; transform: translateX(50%); background: #25364e; color: #fff; padding: 13px 18px; border-radius: 8px; box-shadow: 0 5px 20px #0003; z-index: 30; max-width: min(460px, calc(100vw - 48px)); }
