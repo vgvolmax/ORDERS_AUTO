@@ -123,7 +123,7 @@ export function InvoicesPage({
   useLayoutEffect(() => {
     if (!visibleComparison || !focusResult.current) return;
     focusResult.current = false;
-    resultHeading.current?.focus();
+    resultHeading.current?.focus({ preventScroll: true });
     resultHeading.current?.scrollIntoView?.({ block: 'start' });
   }, [visibleComparison]);
   const latest = useRef({ context, scope });
@@ -384,7 +384,14 @@ export function InvoicesPage({
       </header>
 
       {visibleComparison && <div className="invoice-actions invoice-source-summary">
-        <strong>{supplier} · {selectedOrders.length} заказов · {readyFiles.length} {readyFiles.length === 1 ? 'файл' : 'файлов'}</strong>
+        <div>
+          <strong>{supplier} · Заказов: {fmtQty(selectedOrders.length)} · Файлов: {fmtQty(readyFiles.length)}</strong>
+          <small>{sources.find((source) => source.id === sourceId)?.label} · {[
+            ...new Set(selectedOrders.map((order) => order.archivedBasis === 'export'
+              ? 'Состав из выгрузки'
+              : order.archivedBasis === 'session' ? 'Состав архивного сеанса' : 'Текущий состав')),
+          ].join(' / ')}</small>
+        </div>
         <Button className="secondary" aria-expanded={inputsOpen} onClick={() => setInputsOpen(!inputsOpen)}>
           {inputsOpen ? 'Свернуть источники' : 'Показать источники'}
         </Button>

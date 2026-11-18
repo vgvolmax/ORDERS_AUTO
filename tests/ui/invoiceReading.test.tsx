@@ -151,3 +151,21 @@ it('marks absence as unconfirmed when a selected file has skipped rows', async (
   expect(within(result).getByText('Не подтверждено', { selector: 'span' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeDisabled();
 });
+
+it('keeps document discrepancies visible when opposite amounts cancel out', async () => {
+  render(<InvoicesPage initialOrderIds={['o']} />);
+  uploadFiles(
+    makeFile([[header, ['0001', '000123', 'Кран', 4, 'шт', 100, 400], [null, null, 'К оплате', null, null, null, 450]]], 'первый.xlsx'),
+    makeFile([[header, ['0001', '000123', 'Кран', 6, 'шт', 100, 600], [null, null, 'К оплате', null, null, null, 550]]], 'второй.xlsx'),
+  );
+  const compare = screen.getByRole('button', { name: 'Сравнить' });
+  await waitFor(() => expect(compare).toBeEnabled());
+  fireEvent.click(compare);
+  const totals = await screen.findByRole('group', { name: 'Итоги документов' });
+  expect(totals).toHaveTextContent(/К оплате − товарные строки: 0,00/);
+  expect(totals).toHaveTextContent(/отличается от товарных строк в 2 счетах/);
+  expect(totals).toHaveTextContent('+50,00');
+  expect(totals).toHaveTextContent(/[-−]50,00/);
+  expect(screen.getByRole('note', { name: 'Перед выгрузкой в 1С' })).toHaveTextContent(/в 2 счетах/);
+  expect(screen.getByRole('button', { name: 'Excel для 1С' })).toBeEnabled();
+});

@@ -1,4 +1,4 @@
-import { useMemo, useState, type Ref } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { BrandIcon } from '../../components/BrandIcon';
 import { Dialog } from '../../components/Dialog';
 import { Alert, Button, Input, MetricCard, SearchInput, Select } from '../../components/ui';
@@ -79,6 +79,17 @@ export function InvoiceResults({
   const [adjustmentPresence, setAdjustmentPresence] = useState('all');
   const [copyNotice, setCopyNotice] = useState('');
   const [copyFallback, setCopyFallback] = useState('');
+  const adjustmentRef = useRef<HTMLElement>(null);
+  const [errorFocus, setErrorFocus] = useState<{ id: string } | null>(null);
+  useLayoutEffect(() => {
+    if (!errorFocus) return;
+    const fields = adjustmentRef.current?.querySelectorAll<HTMLInputElement>('input[aria-invalid="true"]');
+    const field = Array.from(fields ?? []).find((input) => input.dataset.adjustmentId === errorFocus.id);
+    if (field) {
+      field.focus({ preventScroll: true });
+      field.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+    }
+  }, [errorFocus]);
   const { mode, adjustments, drafts } = comparison;
   const rows = useMemo(() => incomplete ? comparison.rows.map((row): InvoiceComparisonRow =>
     row.differences.includes('missing') ? {
@@ -122,6 +133,20 @@ export function InvoiceResults({
   const conflicts = conflictingInvoiceAdjustments(checked);
   const exportDisabled = incomplete || Boolean(action) || checked.length === 0 ||
     invalidNumbers.length > 0 || unidentified.length > 0 || conflicts.length > 0;
+  const documentChecks = documentTotals.map((file) => ({
+    ...file,
+    difference: file.payable && file.lineTotal !== null
+      ? moneySum([file.payable.amount, -file.lineTotal])
+      : null,
+  }));
+  const documentDifferences = documentChecks.filter((file) => file.difference !== null && file.difference !== 0);
+  const uncheckedDocuments = documentChecks.filter((file) => file.difference === null).length;
+  const completeDocumentTotals = documentChecks.length > 0 && !incomplete && uncheckedDocuments === 0;
+  const payableTotal = completeDocumentTotals ? moneySum(documentChecks.map((file) => file.payable!.amount)) : null;
+  const payableDifference = completeDocumentTotals ? moneySum(documentChecks.map((file) => file.difference!)) : null;
+  const documentWarning = documentDifferences.length === 1
+    ? `Итог «К оплате» отличается от товарных строк на ${signedMoney(documentDifferences[0]!.difference!)} в файле «${documentDifferences[0]!.name}».`
+    : `Итог «К оплате» отличается от товарных строк в ${fmtQty(documentDifferences.length)} счетах.`;
   const activeFilter = !incomplete && filter === 'unconfirmed' ? 'all' : filter;
   const visibleRows = rows.filter((row) => matchesItem(row, query) && matchesPresence(row, presence) && (
     activeFilter === 'all' || (
@@ -143,6 +168,15 @@ export function InvoiceResults({
   ]).map((row) => row.id));
   const bulkIncluded = bulkCandidates.filter((row) => !bulkConflicts.has(row.id));
   const fileBase = safeFilename(supplier.slice(0, 110));
+
+  function focusFirstError() {
+    const first = invalidNumbers[0];
+    if (!first) return;
+    setEditQuery(itemLabel(first));
+    setAdjustmentPresence('all');
+    setIncludedFilter('all');
+    setErrorFocus({ id: first.id });
+  }
 
   function edit(id: string, change: AdjustmentDraft) {
     const next = new Map(drafts);
@@ -239,6 +273,7 @@ export function InvoiceResults({
           type="text"
           inputMode="decimal"
           aria-label={`Количество · ${itemLabel(row)}`}
+          data-adjustment-id={row.id}
           aria-invalid={row.included && !validNumber(row.qty) ? true : undefined}
           aria-describedby={row.included && !validNumber(row.qty) ? 'invoice-adjustment-errors' : undefined}
           value={drafts.get(row.id)?.qty ?? editableText(row.qty)}
@@ -253,6 +288,7 @@ export function InvoiceResults({
           type="text"
           inputMode="decimal"
           aria-label={`Цена · ${itemLabel(row)}`}
+          data-adjustment-id={row.id}
           aria-invalid={row.included && !validNumber(row.price) ? true : undefined}
           aria-describedby={row.included && !validNumber(row.price) ? 'invoice-adjustment-errors' : undefined}
           value={drafts.get(row.id)?.price ?? editableText(row.price)}
@@ -293,15 +329,25 @@ export function InvoiceResults({
         <div className="metrics metrics-three" role="group" aria-label="Суммы сверки">
           <MetricCard label="Сумма заказов" value={display(amounts.orderAmount, money)} />
           <MetricCard label="Товарные строки счетов" value={display(amounts.invoiceAmount, money)} />
-          <MetricCard label="Разница суммы" value={display(amounts.difference, signedMoney)}
+          <MetricCard label="Разница по товарным строкам" value={display(amounts.difference, signedMoney)}
             tone={amounts.difference !== null && amounts.difference !== 0 ? 'warning' : 'neutral'}
             note={amounts.difference === null ? 'Не хватает данных о суммах' : 'Счета минус заказы · по всем позициям'} />
         </div>
-        {documentTotals.length > 0 && (
-          <ul className="invoice-document-totals" aria-label="Итоги по файлам">
-            {documentTotals.map(({ id, name, lineTotal, payable }) => {
-              const difference = payable && lineTotal !== null ? moneySum([payable.amount, -lineTotal]) : null;
-              return (
+        {documentChecks.length > 0 && (
+          <div className="invoice-document-check" role="group" aria-label="Итоги документов">
+            <div className="invoice-document-summary">
+              <div>
+                <strong>Итоги документов</strong>
+                <span>{payableTotal === null
+                  ? 'Общий итог к оплате не подтверждён'
+                  : `К оплате: ${money(payableTotal)}`}</span>
+              </div>
+              {payableDifference !== null && <strong>К оплате − товарные строки: {signedMoney(payableDifference)}</strong>}
+              {uncheckedDocuments > 0 && <span>Без полной проверки: {fmtQty(uncheckedDocuments)} из {fmtQty(documentChecks.length)}</span>}
+            </div>
+            {documentDifferences.length > 0 && <Alert tone="warning">{documentWarning}</Alert>}
+            <ul className="invoice-document-totals" aria-label="Итоги по файлам">
+              {documentChecks.map(({ id, name, lineTotal, payable, difference }) => (
                 <li key={id}>
                   <strong>{name}</strong>
                   {' · '}Товарные строки: {lineTotal === null ? 'сумма неизвестна' : money(lineTotal)}
@@ -310,9 +356,9 @@ export function InvoiceResults({
                     ? ' · Итог совпадает с товарными строками'
                     : <strong className="warning-text"> · Отличие итога: {signedMoney(difference)}. Проверьте строку {payable!.row}{payable!.sheet ? ` листа «${payable!.sheet}»` : ''}.</strong>)}
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          </div>
         )}
         <div className="invoice-filters">
           <label className="filter-search">
@@ -350,7 +396,7 @@ export function InvoiceResults({
         />
       </section>
 
-      <section className="panel invoice-result" aria-labelledby="invoice-adjust-heading">
+      <section ref={adjustmentRef} className="panel invoice-result" aria-labelledby="invoice-adjust-heading">
         <h2 id="invoice-adjust-heading">Корректировка и экспорт в 1С</h2>
         <p>Проверьте количества и цены. В экспорт попадут все отмеченные строки, включая скрытые фильтрами.</p>
         <div className="metrics metrics-three">
@@ -405,7 +451,8 @@ export function InvoiceResults({
         {invalidNumbers.length > 0 && (
           <div id="invoice-adjustment-errors">
             <Alert tone="warning">
-              Экспорт недоступен. Укажите неотрицательные количество и цену и проверьте сумму либо исключите позиции с ошибками ({fmtQty(invalidNumbers.length)}).
+              Экспорт недоступен. Укажите неотрицательные количество и цену и проверьте сумму либо исключите позиции с ошибками ({fmtQty(invalidNumbers.length)}).{' '}
+              <Button className="secondary" onClick={focusFirstError}>К первой ошибке</Button>
             </Alert>
           </div>
         )}
@@ -419,6 +466,11 @@ export function InvoiceResults({
             Отмеченные позиции неразличимы для 1С. Оставьте одну строку на артикул, наименование и единицу.
             {' '}{conflicts.slice(0, 3).map(itemLabel).join(', ')}{conflicts.length > 3 ? '…' : '.'}
           </Alert>
+        )}
+        {documentDifferences.length > 0 && (
+          <div role="note" aria-label="Перед выгрузкой в 1С">
+            <Alert tone="warning">{documentWarning} Проверьте итог документа перед выгрузкой в 1С.</Alert>
+          </div>
         )}
         <div className="invoice-actions invoice-export-actions">
           <small aria-live="polite">Включено {fmtQty(checked.length)} · скрыто фильтрами {fmtQty(hiddenIncluded)}</small>
