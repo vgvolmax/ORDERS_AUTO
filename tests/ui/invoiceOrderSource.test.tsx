@@ -66,3 +66,21 @@ it('reads an archived order without restoring its workspace and detects a stale 
   await saveWorkspace(workspaceFromState({ ...current, workspaceRevision: 1 }), 0);
   await expect(result.current.verifySource()).rejects.toThrow('Сеанс изменился');
 });
+
+it('keeps a previously exported order as a reconciliation source after its live quantity changes', () => {
+  const state = baseState({ reviewedOrderIds: [lenina] });
+  const original = selectInvoiceOrders(state)[0]!;
+  const changed = {
+    ...state,
+    edits: [{ skuCode: 'SKU1', branch: 'Ленина', qty: 3 }],
+    reviewedOrderIds: [],
+    exportedOrders: [original],
+  };
+  expect(selectInvoiceOrders(changed)).toMatchObject([
+    { id: lenina, archivedBasis: 'export', lines: [{ orderQty: original.lines[0]!.orderQty }] },
+  ]);
+  expect(selectInvoiceOrders(changed, 'current')).toEqual([]);
+  expect(selectInvoiceOrders({ ...changed, reviewedOrderIds: [lenina] }, 'current')).toMatchObject([
+    { id: lenina, lines: [{ orderQty: 3 }] },
+  ]);
+});

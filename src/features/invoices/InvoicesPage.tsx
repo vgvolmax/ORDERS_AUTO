@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { InvoiceOrder } from '../../app/invoiceOrders';
+import type { InvoiceOrder, InvoiceOrderBasis } from '../../app/invoiceOrders';
 import { BrandIcon } from '../../components/BrandIcon';
 import { Dialog } from '../../components/Dialog';
 import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
@@ -56,13 +56,20 @@ const noOrders: readonly string[] = [];
 
 export function InvoicesPage({
   initialOrderIds = noOrders,
+  initialSourceId,
   onDirtyChange,
 }: {
   initialOrderIds?: readonly string[];
+  initialSourceId?: string | undefined;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const [basis, setBasis] = useState<InvoiceOrderBasis>('preferred');
   const { sources, sourceId, selectSource, orders, skuCodes, loading, error, historyError, verifySource } =
-    useInvoiceOrders();
+    useInvoiceOrders(initialSourceId, basis);
+  const currentSource = sourceId === sources[0]?.id;
+  const [inputsOpen, setInputsOpen] = useState(true);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
+  const focusResult = useRef(false);
   const [selectedIds, setSelectedIds] = useState(() => [...new Set(initialOrderIds)]);
   const [orderQuery, setOrderQuery] = useState('');
   const [orderStatus, setOrderStatus] = useState('all');
@@ -88,13 +95,15 @@ export function InvoicesPage({
     return orders.filter((order) => ids.has(order.id));
   }, [orders, selectedIds]);
   const supplier = selectedOrders[0]?.supplier;
+  const latestSupplier = useRef(supplier);
+  if (supplier) latestSupplier.current = supplier;
   const completeSelection =
     !loading &&
     !error &&
     selectedOrders.length > 0 &&
     selectedOrders.length === selectedIds.length &&
     selectedOrders.every((order) => order.supplier === supplier);
-  const context = JSON.stringify([sourceId, supplier]);
+  const context = JSON.stringify([sourceId, supplier ?? (selectedIds.length ? latestSupplier.current : null)]);
   const scope = useMemo(
     () => completeSelection ? orderFingerprint(sourceId, selectedOrders, skuCodes) : null,
     [completeSelection, sourceId, selectedOrders, skuCodes],
@@ -110,6 +119,12 @@ export function InvoicesPage({
     comparison && scope !== null && comparison.scope === scope && comparison.fileVersion === fileVersion && !invalidated
       ? comparison
       : null;
+  useLayoutEffect(() => {
+    if (!visibleComparison || !focusResult.current) return;
+    focusResult.current = false;
+    resultHeading.current?.focus();
+    resultHeading.current?.scrollIntoView?.({ block: 'start' });
+  }, [visibleComparison]);
   const latest = useRef({ context, scope });
   useLayoutEffect(() => {
     if (latest.current.context !== context) discardFile();
@@ -157,6 +172,7 @@ export function InvoicesPage({
     setComparison(null);
     setExportedDraft(null);
     setInvalidated(false);
+    setInputsOpen(true);
   }
 
   function discardFile() {
@@ -187,10 +203,11 @@ export function InvoicesPage({
     );
   }
 
-  function changeSelection(ids: string[]) {
+  function changeSelection(ids: string[], clear = false) {
     withConfirmation(
-      'Изменение состава заказов сбросит результат сверки и ручные правки корректировки.',
-      'Изменить выбор',
+      clear ? 'Выбранные заказы, счета и ручные правки будут удалены из черновика.'
+        : 'Изменение состава заказов сбросит результат сверки и ручные правки корректировки.',
+      clear ? 'Очистить сверку' : 'Изменить выбор',
       () => {
         resetComparison();
         if (ids.length === 0) discardFile();
@@ -308,6 +325,8 @@ export function InvoicesPage({
           })));
           const rows = compareInvoice(selectedOrders, items, skuCodes);
           const adjustments = buildInvoiceAdjustments(rows, 'invoice');
+          setInputsOpen(false);
+          focusResult.current = true;
           setComparison({ scope, fileVersion, rows, adjustments, mode: 'invoice', drafts: new Map() });
           setExportedDraft(null);
           setInvalidated(false);
@@ -336,7 +355,8 @@ export function InvoicesPage({
         <div className="invoice-identity">
           <strong>{order.supplier}</strong>
           <small>{order.branch}</small>
-          {order.archivedBasis && <small>{order.archivedBasis === 'export' ? 'Состав из выгрузки' : 'По данным архивного сеанса'}</small>}
+          <small>{order.archivedBasis === 'export' ? 'Состав из выгрузки' : order.archivedBasis === 'session' ? 'По данным архивного сеанса' : 'Текущая версия'}</small>
+          {order.exportedAt && <small>{new Date(order.exportedAt).toLocaleString('ru-RU')}</small>}
         </div>
       ),
     },
@@ -362,7 +382,14 @@ export function InvoicesPage({
         <p>Сверьте заказы одного поставщика со счётом и подготовьте корректировку для 1С.</p>
       </header>
 
-      <div className="invoice-inputs">
+      {visibleComparison && <div className="invoice-actions invoice-source-summary">
+        <strong>{supplier} · {selectedOrders.length} заказов · {readyFiles.length} {readyFiles.length === 1 ? 'файл' : 'файлов'}</strong>
+        <Button className="secondary" aria-expanded={inputsOpen} onClick={() => setInputsOpen(!inputsOpen)}>
+          {inputsOpen ? 'Свернуть источники' : 'Показать источники'}
+        </Button>
+        <Button className="secondary" onClick={() => changeSelection([], true)}>Очистить сверку</Button>
+      </div>}
+      <div className="invoice-inputs" data-collapsed={Boolean(visibleComparison && !inputsOpen)}>
         <section className="panel invoice-source" aria-labelledby="invoice-orders-heading">
           <h2 id="invoice-orders-heading">1. Заказы для сверки</h2>
           <div className="invoice-filters">
@@ -374,6 +401,19 @@ export function InvoicesPage({
                 ))}
               </Select>
             </label>
+            {currentSource && <label>
+              Версия заказов
+              <Select value={basis} onChange={(event) => {
+                const next = event.target.value as InvoiceOrderBasis;
+                withConfirmation('Смена версии заказа сбросит результат и ручные правки.', 'Сменить версию', () => {
+                  resetComparison();
+                  setBasis(next);
+                });
+              }}>
+                <option value="preferred">Последняя выгрузка, если есть</option>
+                <option value="current">Текущая проверенная или выгруженная</option>
+              </Select>
+            </label>}
             <label className="filter-search">
               Поиск заказов
               <SearchInput
@@ -399,6 +439,9 @@ export function InvoicesPage({
               Выбрано заказов: {fmtQty(selectedOrders.length)}
               {hiddenSelection > 0 && ` · Скрыто фильтром: ${fmtQty(hiddenSelection)}`}
             </small>
+            {supplier && <Button className="secondary" onClick={() => changeSelection(
+              orders.filter((order) => order.supplier === supplier).map(({ id }) => id),
+            )}>Все заказы поставщика</Button>}
             <Button
               className="secondary"
               disabled={selectedIds.length === 0}
@@ -505,6 +548,11 @@ export function InvoicesPage({
         <InvoiceResults
           key={visibleComparison.scope}
           comparison={visibleComparison}
+          headingRef={resultHeading}
+          documentTotals={readyFiles.map((file) => ({
+            id: file.id, name: file.name, payable: file.data.payable,
+            lineTotal: invoiceLineTotal(file.data.items),
+          }))}
           supplier={supplier!}
           fileName={readyFiles.length === 1 ? readyFiles[0]!.name : `Счетов: ${fmtQty(readyFiles.length)}`}
           incomplete={incomplete}
@@ -550,6 +598,7 @@ function orderFingerprint(sourceId: string, orders: readonly EligibleOrder[], sk
       order.branch,
       order.reviewed,
       order.exported,
+      order.archivedBasis,
       order.lines.filter((line) => line.orderQty > 0).map((line) => [
         line.skuCode, line.article, line.name, line.orderQty, line.unit, line.unitPrice, line.amount,
       ]),
@@ -557,7 +606,12 @@ function orderFingerprint(sourceId: string, orders: readonly EligibleOrder[], sk
   ]);
 }
 
-function invoiceFileAmount(items: InvoiceItem[]): string {
+function invoiceLineTotal(items: InvoiceItem[]): number | null {
   const amounts = items.map((item) => item.amount ?? (item.price === null ? null : moneyProduct(item.quantity, item.price)));
-  return amounts.some((amount) => amount === null) ? 'Сумма неизвестна' : money(moneySum(amounts as number[]));
+  return amounts.some((amount) => amount === null) ? null : moneySum(amounts as number[]);
+}
+
+function invoiceFileAmount(items: InvoiceItem[]): string {
+  const total = invoiceLineTotal(items);
+  return total === null ? 'Сумма неизвестна' : money(total);
 }

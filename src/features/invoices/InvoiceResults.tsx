@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type Ref } from 'react';
 import { BrandIcon } from '../../components/BrandIcon';
 import { Dialog } from '../../components/Dialog';
 import { Alert, Button, Input, MetricCard, SearchInput, Select } from '../../components/ui';
@@ -43,6 +43,8 @@ const csvType = 'text/csv;charset=utf-8';
 
 export function InvoiceResults({
   comparison,
+  headingRef,
+  documentTotals = [],
   supplier,
   fileName,
   incomplete,
@@ -53,6 +55,13 @@ export function InvoiceResults({
   confirmReplace,
 }: {
   comparison: InvoiceResult;
+  headingRef?: Ref<HTMLHeadingElement>;
+  documentTotals?: readonly {
+    id: string;
+    name: string;
+    lineTotal: number | null;
+    payable: { amount: number; row: number; sheet?: string } | null | undefined;
+  }[];
   supplier: string;
   fileName: string;
   incomplete: boolean;
@@ -266,7 +275,7 @@ export function InvoiceResults({
       <section className="panel invoice-result" aria-labelledby="invoice-result-heading">
         <div className="section-heading">
           <div>
-            <h2 id="invoice-result-heading">Результат сверки</h2>
+            <h2 id="invoice-result-heading" ref={headingRef} tabIndex={-1}>Результат сверки</h2>
             <p>{supplier} · {fileName}</p>
           </div>
           <Button className="secondary" disabled={Boolean(action)} onClick={downloadReport}>
@@ -276,28 +285,35 @@ export function InvoiceResults({
         </div>
 
         {incomplete && <Alert tone="warning">Результат неполный. Суммы и расхождения рассчитаны по прочитанным строкам.</Alert>}
-        <div className="metrics">
-          <MetricCard label="Позиций в заказе" value={fmtQty(counts.ordered)} icon="list" />
-          <MetricCard label="Найдено в счёте" value={fmtQty(counts.matched)} icon="check" tone="accent" />
-          <MetricCard
-            label="С расхождениями"
-            value={fmtQty(counts.discrepancies)}
-            icon="warning"
-            tone={counts.discrepancies ? 'warning' : 'success'}
-          />
-          <MetricCard
-            label="Лишнее в счёте"
-            value={fmtQty(counts.differences.get('extra') ?? 0)}
-            icon="file"
-          />
-        </div>
+        <p className="invoice-result-counts" role="status">
+          Найдено {fmtQty(counts.matched)} из {fmtQty(counts.ordered)} позиций заказа
+          {' · '}С расхождениями: {fmtQty(counts.discrepancies)}
+          {' · '}Лишнее в счёте: {fmtQty(counts.differences.get('extra') ?? 0)}
+        </p>
         <div className="metrics metrics-three" role="group" aria-label="Суммы сверки">
           <MetricCard label="Сумма заказов" value={display(amounts.orderAmount, money)} />
-          <MetricCard label="Сумма счетов" value={display(amounts.invoiceAmount, money)} />
+          <MetricCard label="Товарные строки счетов" value={display(amounts.invoiceAmount, money)} />
           <MetricCard label="Разница суммы" value={display(amounts.difference, signedMoney)}
             tone={amounts.difference !== null && amounts.difference !== 0 ? 'warning' : 'neutral'}
             note={amounts.difference === null ? 'Не хватает данных о суммах' : 'Счета минус заказы · по всем позициям'} />
         </div>
+        {documentTotals.length > 0 && (
+          <ul className="invoice-document-totals" aria-label="Итоги по файлам">
+            {documentTotals.map(({ id, name, lineTotal, payable }) => {
+              const difference = payable && lineTotal !== null ? moneySum([payable.amount, -lineTotal]) : null;
+              return (
+                <li key={id}>
+                  <strong>{name}</strong>
+                  {' · '}Товарные строки: {lineTotal === null ? 'сумма неизвестна' : money(lineTotal)}
+                  {' · '}{payable ? `К оплате: ${money(payable.amount)}` : 'Итог к оплате не распознан'}
+                  {difference !== null && (difference === 0
+                    ? ' · Итог совпадает с товарными строками'
+                    : <strong className="warning-text"> · Отличие итога: {signedMoney(difference)}. Проверьте строку {payable!.row}{payable!.sheet ? ` листа «${payable!.sheet}»` : ''}.</strong>)}
+                </li>
+              );
+            })}
+          </ul>
+        )}
         <div className="invoice-filters">
           <label className="filter-search">
             Поиск по результату

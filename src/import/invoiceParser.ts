@@ -17,10 +17,13 @@ interface Header {
   amount: number;
 }
 
+type InvoicePayable = { amount: number; row: number; sheet?: string };
+
 export interface ParsedInvoice {
   items: InvoiceItem[];
   warnings: string[];
   skippedRows?: number;
+  payable?: InvoicePayable | null;
 }
 
 export interface ParsedInvoiceSheet extends ParsedInvoice {
@@ -50,6 +53,7 @@ export function selectInvoiceSheets(
   }
   const skippedRows = included.reduce((total, sheet) => total + (sheet.skippedRows ?? 0), 0);
   return {
+    ...(included.length === 1 && included[0]?.payable ? { payable: included[0].payable } : included.some((sheet) => sheet.payable !== undefined) ? { payable: null } : {}),
     ...(skippedRows ? { skippedRows } : {}),
     items: included.flatMap((sheet) => sheet.items.map((item) => ({ ...item, sourceSheet: sheet.name }))),
     warnings: [
@@ -220,6 +224,7 @@ function parseRows(rows: SheetRows, initialHeader: Header, firstHeaderRow: numbe
   const items: InvoiceItem[] = [];
   const warnings: string[] = useFixedLayout ? [FIXED_LAYOUT_WARNING] : [];
   let skippedRows = 0;
+  let payable: InvoicePayable | null | undefined;
   let header = initialHeader;
   for (const [rowIndex, cells] of rows) {
     const repeatedHeader = useFixedLayout ? null : findHeader(cells);
@@ -232,6 +237,22 @@ function parseRows(rows: SheetRows, initialHeader: Header, firstHeaderRow: numbe
     const article = identifier(cells.get(header.article));
     const name = normalizeText(cells.get(header.name)?.v);
     const unit = normalizeText(cells.get(header.unit)?.v);
+    const payableLabel = (value: unknown) => /^(?:(?:итого|всего)\s+)?к\s+оплате[\s:.,]*$/iu.test(normalizeText(value));
+    if (rowIndex > firstHeaderRow && items.length && (payableLabel(code) || payableLabel(article) || !code && !article)) {
+      const labelColumn = [...cells].find(([, cell]) => payableLabel(cell.v))?.[0];
+      if (labelColumn !== undefined) {
+        const amounts = [...cells]
+          .filter(([column]) => column > labelColumn)
+          .flatMap(([, cell]) => {
+            const amount = invoiceMoneyCell(cell, invoiceCellNumber(cell));
+            return amount === null ? [] : [amount];
+          });
+        payable = payable === undefined && amounts.length === 1 && amounts[0]! >= 0
+          ? { amount: amounts[0]!, row }
+          : null;
+        continue;
+      }
+    }
     if (isSummary(code) || isSummary(article) || (!article && !code && isSummary(name))) continue;
     if (compact(article) === 'артикул' || CODE_HEADERS.has(compact(code))) continue;
 
@@ -262,7 +283,7 @@ function parseRows(rows: SheetRows, initialHeader: Header, firstHeaderRow: numbe
     }
     items.push({ skuCode: code || null, article, name, quantity, unit: unit || null, price, amount, sourceRow: row });
   }
-  return { items, warnings, ...(skippedRows ? { skippedRows } : {}) };
+  return { items, warnings, ...(skippedRows ? { skippedRows } : {}), ...(payable !== undefined ? { payable } : {}) };
 }
 
 function hasFixedLayout(rows: SheetRows): boolean {
@@ -311,7 +332,7 @@ export function parseInvoiceWorkbook(bytes: ArrayBuffer): ParsedInvoice {
     }
     if (!header && !hasFixedLayout(rows)) continue;
     const result = parseRows(rows, header ?? FIXED_HEADER, headerRow);
-    if (result.items.length > 0 || result.warnings.length > 0) sheets.push({ name, ...result });
+    if (result.items.length > 0 || result.warnings.length > 0) sheets.push({ name, ...result, ...(result.payable ? { payable: { ...result.payable, sheet: name } } : {}) });
     firstEmptyResult ??= result;
   }
   if (sheets.length > 1) throw new InvoiceSheetsRequiredError(sheets);

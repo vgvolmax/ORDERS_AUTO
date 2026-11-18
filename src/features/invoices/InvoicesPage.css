@@ -249,3 +249,9 @@
 .invoices-page .virtual-row-shell:focus-within > .invoice-adjustment-row {
   box-shadow: inset 3px 0 var(--blue);
 }
+
+.invoice-inputs[data-collapsed="true"] { display: none; }
+.invoice-source-summary { margin: 12px 0; align-items: center; }
+.invoice-source-summary > strong { flex: 1 1 240px; overflow-wrap: anywhere; }
+.invoice-document-totals { margin: 8px 0; padding-inline-start: 20px; }
+.invoice-result-counts { margin: 8px 0; }

@@ -23,7 +23,9 @@ export function App() {
   const [initializing, setInitializing] = useState(true);
   const [pending, setPending] = useState(0);
   const [retry, setRetry] = useState(0);
-  const [invoiceOrderIds, setInvoiceOrderIds] = useState<string[]>([]);
+  const [invoiceContext, setInvoiceContext] = useState<{
+    workspaceId: string; sourceId?: string | undefined; orderIds?: string[] | undefined; sequence: number;
+  } | null>(null);
   const [invoiceExit, setInvoiceExit] = useState<(() => void) | null>(null);
   const invoiceDirty = useRef(false);
   const markInvoiceDirty = useCallback((dirty: boolean) => {
@@ -160,6 +162,11 @@ export function App() {
     !initializing && Boolean(session.current),
   );
 
+  useEffect(() => {
+    if (state.page === 'invoices' && invoiceContext?.workspaceId !== state.workspaceId)
+      setInvoiceContext({ workspaceId: state.workspaceId, sequence: 0 });
+  }, [state.page, state.workspaceId, invoiceContext?.workspaceId]);
+
   if (initializing) {
     return <div className="boot">Загрузка сохранённых настроек…</div>;
   }
@@ -185,17 +192,26 @@ export function App() {
     page: state.page,
     branches: state.minMax && (state.catalog || state.supplierAssignments) ? state.minMax.branches : undefined,
     onNavigate: (page: AppState['page']) => {
-      if (page === 'invoices' && state.page === 'invoices') return;
-      leaveInvoice(() => {
-        if (page === 'invoices') setInvoiceOrderIds([]);
-        set({ page });
-      });
+      if (page === 'invoices' && invoiceContext?.workspaceId !== state.workspaceId)
+        setInvoiceContext({ workspaceId: state.workspaceId, sequence: 0 });
+      set({ page });
     },
     onImport: () => {
       if (state.page !== 'import') {
         leaveInvoice(() => owner?.transient({ page: 'import' }));
       }
     },
+  };
+  const activeInvoice = invoiceContext?.workspaceId === state.workspaceId ? invoiceContext : null;
+  const openInvoiceSource = (sourceId?: string, orderIds?: string[]) => {
+    const open = () => {
+      setInvoiceContext((previous) => ({
+        workspaceId: state.workspaceId, sourceId, orderIds, sequence: (previous?.sequence ?? 0) + 1,
+      }));
+      set({ page: 'invoices' });
+    };
+    if (invoiceDirty.current) setInvoiceExit(() => open);
+    else open();
   };
   const statusTone = pending
     ? 'busy'
@@ -238,7 +254,7 @@ export function App() {
             </div>
           )}
           {state.page === 'history' ? (
-            <WorkspaceHistoryPage />
+            <WorkspaceHistoryPage onReconcile={openInvoiceSource} />
           ) : state.page === 'import' ? (
             <ImportPage />
           ) : state.page === 'all' ? (
@@ -249,18 +265,18 @@ export function App() {
             <RebalancingPage />
           ) : state.page === 'suppliers' ? (
             <SuppliersPage />
-          ) : state.page === 'invoices' ? (
-            <InvoicesPage
-              initialOrderIds={invoiceOrderIds}
-              onDirtyChange={markInvoiceDirty}
-            />
-          ) : (
-            <OrdersPage
-              onReconcile={(orderIds) => {
-                setInvoiceOrderIds(orderIds);
-                set({ page: 'invoices' });
-              }}
-            />
+          ) : state.page === 'invoices' ? null : (
+            <OrdersPage onReconcile={(orderIds) => openInvoiceSource(undefined, orderIds)} />
+          )}
+          {(activeInvoice || state.page === 'invoices') && (
+            <div hidden={state.page !== 'invoices'}>
+              <InvoicesPage
+                key={`${state.workspaceId}:${activeInvoice?.sequence ?? 0}`}
+                initialOrderIds={activeInvoice?.orderIds ?? []}
+                initialSourceId={activeInvoice?.sourceId}
+                onDirtyChange={markInvoiceDirty}
+              />
+            </div>
           )}
         </div>
 
@@ -280,7 +296,7 @@ export function App() {
               </>
             }
           >
-            <p>Ручные правки корректировки будут сброшены при переходе в другой раздел.</p>
+            <p>Черновик сверки сохранится в открытом приложении до смены рабочего сеанса или источника сверки.</p>
           </Dialog>
         )}
         {state.toast && <AppToast message={state.toast} />}

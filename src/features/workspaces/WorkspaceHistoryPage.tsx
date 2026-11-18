@@ -10,10 +10,11 @@ import type {
   WorkspaceMetadata,
 } from '../../domain/workspace';
 import { Dialog } from '../../components/Dialog';
-import { Alert, Button } from '../../components/ui';
+import { Alert, Button, SearchInput } from '../../components/ui';
 import { VirtualTable } from '../../components/VirtualTable';
 import { save } from '../../export/download';
-export function WorkspaceHistoryPage() {
+export function WorkspaceHistoryPage({ onReconcile }: { onReconcile?: (sourceId: string) => void } = {}) {
+  const [query, setQuery] = useState('');
   const { state, restore } = useStore();
   const [rows, setRows] = useState<WorkspaceMetadata[]>([]),
     [error, setError] = useState(''),
@@ -72,6 +73,10 @@ export function WorkspaceHistoryPage() {
   for (const row of [...rows].reverse()) {
     if (!originals.has(row.snapshotId)) originals.set(row.snapshotId, row.workspaceId);
   }
+  const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
+  const visibleRows = rows.filter((row) => [
+    row.minMaxFileName, row.supplierFileName, new Date(row.updatedAt).toLocaleDateString('ru-RU'),
+  ].some((value) => value?.toLocaleLowerCase('ru-RU').includes(normalizedQuery)));
   return (
     <main>
       <header>
@@ -83,6 +88,9 @@ export function WorkspaceHistoryPage() {
           сохранённого сеанса.
         </p>
       </header>
+      {rows.length > 0 && <label className="filter-search">Поиск по файлу или дате
+        <SearchInput value={query} onValueChange={setQuery} />
+      </label>}
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
         <p role="status">Загрузка истории…</p>
@@ -90,15 +98,16 @@ export function WorkspaceHistoryPage() {
         <p>Сохранённых сеансов пока нет.</p>
       ) : (
         <VirtualTable
-          rows={rows}
+          rows={visibleRows}
+          emptyMessage="По заданному поиску сеансы не найдены."
           getRowKey={(w) => w.workspaceId}
           columns={[
             {
               key: 'date',
-              header: 'Начало сеанса',
+              header: 'Последнее обновление',
               width: '220px',
               render: (w) =>
-                new Date(w.createdAt).toLocaleString('ru-RU', {
+                new Date(w.updatedAt).toLocaleString('ru-RU', {
                   timeZoneName: 'short',
                 }),
             },
@@ -126,9 +135,11 @@ export function WorkspaceHistoryPage() {
             {
               key: 'actions',
               header: 'Действия',
-              width: '330px',
+              width: '390px',
               render: (w) => (
                 <div className="history-actions">
+                  {onReconcile && w.minMaxFileName && <Button className="secondary" disabled={busy}
+                    onClick={() => onReconcile(w.workspaceId)}>Сверить счета</Button>}
                   <Button
                     className="secondary"
                     disabled={

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../app/appStore';
-import { selectArchivedInvoiceOrders, selectInvoiceOrders, type InvoiceOrder } from '../../app/invoiceOrders';
+import { selectArchivedInvoiceOrders, selectInvoiceOrders, type InvoiceOrder, type InvoiceOrderBasis } from '../../app/invoiceOrders';
 import { stateFromWorkspace } from '../../app/workspaceSession';
 import { loadSupplierCatalog } from '../../persistence/supplierCatalog';
 import type { WorkspaceMetadata } from '../../domain/workspace';
@@ -13,9 +13,11 @@ type ArchiveOrders =
 const noOrders: readonly InvoiceOrder[] = [];
 const noSkuCodes: readonly string[] = [];
 
-export function useInvoiceOrders() {
+export function useInvoiceOrders(initialSourceId?: string, basis: InvoiceOrderBasis = 'preferred') {
   const { state } = useStore();
-  const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [archiveId, setArchiveId] = useState<string | null>(() =>
+    initialSourceId && initialSourceId !== state.workspaceId ? initialSourceId : null,
+  );
   const [history, setHistory] = useState<WorkspaceMetadata[]>([]);
   const [historyError, setHistoryError] = useState('');
   const [archive, setArchive] = useState<ArchiveOrders | null>(null);
@@ -56,7 +58,7 @@ export function useInvoiceOrders() {
     return () => { current = false; };
   }, [archiveId, state.catalog]);
 
-  const currentOrders = useMemo(() => selectInvoiceOrders(state), [state]);
+  const currentOrders = useMemo(() => selectInvoiceOrders(state, basis), [state, basis]);
   const currentSkuCodes = useMemo(() => state.minMax?.skus.map(({ code }) => code) ?? noSkuCodes, [state.minMax]);
   const selectedArchive = archive?.id === archiveId ? archive : null;
 
