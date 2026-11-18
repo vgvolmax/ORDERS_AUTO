@@ -3885,6 +3885,7 @@ test('E2E-34 preserves the exact downloaded version and diagnoses an invoice pay
   const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   const file = (name: string, rows: unknown[][]) => ({ name, mimeType, buffer: Buffer.from(buildWorkbook(rows)) });
   await page.context().setOffline(true);
+  await page.setViewportSize({ width: 1280, height: 600 });
   await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
   await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles(file('audit-minmax.xlsx', [
     ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
@@ -3900,6 +3901,14 @@ test('E2E-34 preserves the exact downloaded version and diagnoses an invoice pay
   await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
   await page.locator('.order-cell').click();
   const order = page.getByRole('dialog', { name: 'Состав заказа' });
+  const review = order.getByRole('switch', { name: 'Заказ проверен' });
+  const beforeReview = await review.boundingBox();
+  await review.click();
+  await expect(review).toBeChecked();
+  expect(await review.boundingBox()).toEqual(beforeReview);
+  await expect(order.getByRole('button', { name: 'Проверить и закрыть' })).toBeInViewport();
+  await review.click();
+  await expect(review).not.toBeChecked();
   await page.evaluate(() => {
     const put = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (...args: Parameters<typeof put>) {
