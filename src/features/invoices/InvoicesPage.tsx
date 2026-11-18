@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { WorkflowOrder } from '../../app/selectors';
+import type { InvoiceOrder } from '../../app/invoiceOrders';
 import { BrandIcon } from '../../components/BrandIcon';
 import { Dialog } from '../../components/Dialog';
 import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
@@ -7,7 +7,9 @@ import { Alert, Button, EmptyState, SearchInput, Select } from '../../components
 import {
   buildInvoiceAdjustments,
   compareInvoice,
+  type InvoiceItem,
 } from '../../domain/invoices';
+import { moneyProduct, moneySum } from '../../domain/money';
 import { fmtQty, money } from '../../format/numbers';
 import {
   InvoiceSheetsRequiredError,
@@ -24,15 +26,30 @@ import {
 import { useInvoiceOrders } from './useInvoiceOrders';
 import './InvoicesPage.css';
 
-type EligibleOrder = WorkflowOrder & { exported: boolean };
+type EligibleOrder = InvoiceOrder;
 type SheetChoice = { sheets: ParsedInvoiceSheet[]; selectedNames: string[] };
-type InvoiceFile = { context: string; name: string } & (
-  | { status: 'reading' }
+type InvoiceFile = { id: string; name: string } & (
   | { status: 'failed'; error: string }
-  | ({ status: 'selecting' } & SheetChoice)
-  | { status: 'ready'; data: ReturnType<typeof parseInvoiceWorkbook>; sheetChoice?: SheetChoice }
+  | ({ status: 'selecting'; bytes: Uint8Array } & SheetChoice)
+  | { status: 'ready'; bytes: Uint8Array; data: ReturnType<typeof parseInvoiceWorkbook>; sheetChoice?: SheetChoice }
 );
-type Comparison = InvoiceResult & { scope: string };
+type Comparison = InvoiceResult & { scope: string; fileVersion: string };
+
+async function readInvoiceFile(file: File, id: string, isCurrent: () => boolean): Promise<InvoiceFile | null> {
+  const info = { id, name: file.name };
+  let bytes: Uint8Array | undefined;
+  try {
+    if (!/\.xlsx?$/i.test(file.name)) throw new Error('Выберите счёт в формате .xlsx или .xls.');
+    const buffer = await file.arrayBuffer();
+    if (!isCurrent()) return null;
+    bytes = new Uint8Array(buffer);
+    return { ...info, status: 'ready', bytes, data: parseInvoiceWorkbook(buffer) };
+  } catch (failure) {
+    if (bytes && failure instanceof InvoiceSheetsRequiredError)
+      return { ...info, status: 'selecting', bytes, sheets: failure.sheets, selectedNames: [] };
+    return { ...info, status: 'failed', error: failure instanceof Error ? failure.message : 'Не удалось прочитать счёт.' };
+  }
+}
 type Confirmation = { message: string; label: string; run: () => void };
 
 const noOrders: readonly string[] = [];
@@ -49,7 +66,9 @@ export function InvoicesPage({
   const [selectedIds, setSelectedIds] = useState(() => [...new Set(initialOrderIds)]);
   const [orderQuery, setOrderQuery] = useState('');
   const [orderStatus, setOrderStatus] = useState('all');
-  const [file, setFile] = useState<InvoiceFile | null>(null);
+  const [files, setFiles] = useState<InvoiceFile[]>([]);
+  const [reading, setReading] = useState(false);
+  const [duplicateCount, setDuplicateCount] = useState(0);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [exportedDraft, setExportedDraft] = useState<Comparison | null>(null);
   const [invalidated, setInvalidated] = useState(false);
@@ -80,15 +99,20 @@ export function InvoicesPage({
     () => completeSelection ? orderFingerprint(sourceId, selectedOrders, skuCodes) : null,
     [completeSelection, sourceId, selectedOrders, skuCodes],
   );
-  const activeFile = file?.context === context ? file : null;
-  const readyFile = activeFile?.status === 'ready' ? activeFile : null;
-  const sheetChoice = activeFile?.status === 'selecting' ? activeFile : readyFile?.sheetChoice;
+  const readyFiles = files.filter((file) => file.status === 'ready');
+  const failedFiles = files.filter((file) => file.status === 'failed').length;
+  const pendingFiles = files.length - readyFiles.length - failedFiles;
+  const skippedRows = readyFiles.reduce((total, file) => total + (file.data.skippedRows ?? 0), 0);
+  const fileVersion = JSON.stringify(readyFiles.map((file) => [file.id, file.sheetChoice?.selectedNames]));
+  const canCompare = !reading && pendingFiles === 0 && readyFiles.length > 0;
+  const incomplete = reading || failedFiles > 0 || pendingFiles > 0 || skippedRows > 0;
   const visibleComparison =
-    comparison && scope !== null && comparison.scope === scope && !invalidated
+    comparison && scope !== null && comparison.scope === scope && comparison.fileVersion === fileVersion && !invalidated
       ? comparison
       : null;
   const latest = useRef({ context, scope });
   useLayoutEffect(() => {
+    if (latest.current.context !== context) discardFile();
     latest.current = { context, scope };
   }, [context, scope]);
   useLayoutEffect(() => {
@@ -137,7 +161,9 @@ export function InvoicesPage({
 
   function discardFile() {
     fileSequence.current++;
-    setFile(null);
+    setFiles([]);
+    setReading(false);
+    setDuplicateCount(0);
   }
 
   function withConfirmation(message: string, label: string, run: () => void) {
@@ -182,64 +208,62 @@ export function InvoicesPage({
     );
   }
 
-  async function readInvoice(next: File) {
+  async function addInvoices(incoming: File[]) {
+    if (reading || !incoming.length) return;
     const current = ++fileSequence.current;
-    resetComparison();
-    const fileInfo = { context, name: next.name };
-    setFile({ ...fileInfo, status: 'reading' });
-    try {
-      if (!/\.xlsx?$/i.test(next.name)) {
-        throw new Error('Выберите счёт в формате .xlsx или .xls.');
-      }
-      const bytes = await next.arrayBuffer();
-      if (fileSequence.current !== current || latest.current.context !== context) return;
-      const data = parseInvoiceWorkbook(bytes);
-      setFile({ ...fileInfo, status: 'ready', data });
-    } catch (failure) {
-      if (fileSequence.current !== current || latest.current.context !== context) return;
-      if (failure instanceof InvoiceSheetsRequiredError) {
-        setFile({ ...fileInfo, status: 'selecting', sheets: failure.sheets, selectedNames: [] });
-        return;
-      }
-      setFile({
-        ...fileInfo,
-        status: 'failed',
-        error: failure instanceof Error ? failure.message : 'Не удалось прочитать счёт.',
-      });
+    const isCurrent = () => fileSequence.current === current && latest.current.context === context;
+    cancelAction();
+    setReading(true);
+    const parsed = await Promise.all(incoming.map((file, index) => readInvoiceFile(file, `${current}:${index}`, isCurrent)));
+    if (!isCurrent()) return;
+    const next = [...files];
+    let duplicates = 0;
+    for (const file of parsed) {
+      if (!file) continue;
+      if (file.status !== 'failed' && next.some((existing) =>
+        existing.status !== 'failed' && existing.bytes.length === file.bytes.length &&
+        existing.bytes.every((byte, index) => byte === file.bytes[index]))) {
+        duplicates++;
+      } else next.push(file);
     }
+    setFiles(next);
+    setDuplicateCount(duplicates);
+    setReading(false);
   }
 
-  function changeSheets(name: string, included: boolean) {
-    if (!activeFile || !sheetChoice) return;
+  function changeSheets(file: InvoiceFile, choice: SheetChoice, name: string, included: boolean) {
+    if (file.status === 'failed') return;
     const selectedNames = included
-      ? [...sheetChoice.selectedNames, name]
-      : sheetChoice.selectedNames.filter((selected) => selected !== name);
-    withConfirmation(
-      'Смена листов счёта сбросит результат сверки и ручные правки корректировки.',
-      'Изменить листы',
-      () => {
+      ? [...choice.selectedNames, name]
+      : choice.selectedNames.filter((selected) => selected !== name);
+    withConfirmation('Смена листов счёта сбросит результат сверки и ручные правки корректировки.',
+      'Изменить листы', () => {
         resetComparison();
-        setFile({ context, name: activeFile.name, status: 'selecting', sheets: sheetChoice.sheets, selectedNames });
-      },
-    );
+        setFiles((current) => current.map((item) => item.id === file.id
+          ? { id: file.id, name: file.name, bytes: file.bytes, status: 'selecting', sheets: choice.sheets, selectedNames }
+          : item));
+      });
   }
 
-  function applySheets() {
-    if (activeFile?.status !== 'selecting' || !activeFile.selectedNames.length) return;
-    const { sheets, selectedNames } = activeFile;
-    setFile({
-      context, name: activeFile.name, status: 'ready',
-      data: selectInvoiceSheets(sheets, selectedNames),
-      sheetChoice: { sheets, selectedNames },
-    });
+  function applySheets(file: Extract<InvoiceFile, { status: 'selecting' }>) {
+    const { sheets, selectedNames } = file;
+    const data = selectInvoiceSheets(sheets, selectedNames);
+    setFiles((current) => current.map((item) => item.id === file.id
+      ? { id: file.id, name: file.name, bytes: file.bytes, status: 'ready', data, sheetChoice: { sheets, selectedNames } }
+      : item));
   }
 
-  function chooseFile(next: File) {
-    withConfirmation(
-      'Новый счёт заменит текущий файл. Результат сверки и ручные правки корректировки будут сброшены.',
-      'Заменить счёт',
-      () => void readInvoice(next),
-    );
+  function removeInvoice(file: InvoiceFile) {
+    const remove = () => {
+      cancelAction();
+      setFiles((current) => current.filter((item) => item.id !== file.id));
+    };
+    if (file.status === 'ready') withConfirmation(
+      'Пересчёт после удаления счёта сбросит ручные правки.', 'Удалить счёт', () => {
+        resetComparison();
+        remove();
+      });
+    else remove();
   }
 
   const runVerified: InvoiceAction = async (label, run, failureMessage) => {
@@ -272,16 +296,19 @@ export function InvoicesPage({
   };
 
   function compare() {
-    if (!readyFile || !scope) return;
+    if (!canCompare || !scope) return;
     withConfirmation(
       'Повторная сверка пересоберёт корректировку и сбросит ручные правки.',
       'Пересобрать сверку',
       () => void runVerified(
         'Сверка…',
         () => {
-          const rows = compareInvoice(selectedOrders, readyFile.data.items, skuCodes);
+          const items = readyFiles.flatMap((file) => file.data.items.map((item) => ({
+            ...item, sourceFile: file.name, sourceFileId: file.id,
+          })));
+          const rows = compareInvoice(selectedOrders, items, skuCodes);
           const adjustments = buildInvoiceAdjustments(rows, 'invoice');
-          setComparison({ scope, rows, adjustments, mode: 'invoice', drafts: new Map() });
+          setComparison({ scope, fileVersion, rows, adjustments, mode: 'invoice', drafts: new Map() });
           setExportedDraft(null);
           setInvalidated(false);
         },
@@ -309,6 +336,7 @@ export function InvoicesPage({
         <div className="invoice-identity">
           <strong>{order.supplier}</strong>
           <small>{order.branch}</small>
+          {order.archivedBasis && <small>{order.archivedBasis === 'export' ? 'Состав из выгрузки' : 'По данным архивного сеанса'}</small>}
         </div>
       ),
     },
@@ -402,76 +430,74 @@ export function InvoicesPage({
         </section>
 
         <section className="panel invoice-upload" aria-labelledby="invoice-file-heading">
-          <h2 id="invoice-file-heading">2. Счёт поставщика</h2>
-          <p>Загрузите файл .xlsx или .xls. Счёт обрабатывается на этом компьютере.</p>
+          <h2 id="invoice-file-heading">2. Счета поставщика</h2>
           <input
             ref={fileInput}
             hidden
+            multiple
             type="file"
             aria-label="Файл счёта поставщика"
             accept=".xlsx,.xls"
             onChange={(event) => {
-              const next = event.currentTarget.files?.[0];
+              const next = Array.from(event.currentTarget.files ?? []);
               event.currentTarget.value = '';
-              if (next && completeSelection) chooseFile(next);
+              if (completeSelection) void addInvoices(next);
             }}
           />
           <div className="invoice-actions">
-            <Button
-              className="secondary"
-              disabled={!completeSelection}
-              onClick={() => fileInput.current?.click()}
-            >
-              <BrandIcon name="upload" />
-              {activeFile ? 'Заменить счёт' : 'Выбрать счёт'}
+            <Button className="secondary" disabled={!completeSelection || reading || Boolean(action)}
+              onClick={() => fileInput.current?.click()}>
+              <BrandIcon name="upload" /> Добавить счета
             </Button>
-            <Button
-              disabled={!completeSelection || !readyFile || Boolean(action)}
-              aria-busy={action === 'Сверка…'}
-              onClick={compare}
-            >
-              <BrandIcon name="swap" />
-              {action === 'Сверка…' ? action : 'Сравнить'}
+            <Button disabled={!completeSelection || !canCompare || Boolean(action)}
+              aria-busy={action === 'Сверка…'} onClick={compare}>
+              <BrandIcon name="swap" /> {action === 'Сверка…' ? action : 'Сравнить'}
             </Button>
           </div>
-          {activeFile ? (
-            <div className="invoice-file-info" aria-live="polite">
-              <BrandIcon name="file" />
-              <span>
-                <strong title={activeFile.name}>{activeFile.name}</strong>
-                <small>
-                  {activeFile.status === 'reading' ? 'Чтение счёта…' :
-                    activeFile.status === 'ready' ? `Позиций в файле: ${fmtQty(activeFile.data.items.length)}` :
-                    activeFile.status === 'selecting' ? 'Выберите листы для сверки' :
-                    'Файл не загружен'}
-                </small>
-              </span>
-            </div>
-          ) : <p className="invoice-upload-hint">{completeSelection ? 'Счёт пока не выбран.' : 'Сначала отметьте заказы одного поставщика.'}</p>}
-          {sheetChoice && (
-            <InvoiceSheets
-              {...sheetChoice}
-              applied={activeFile?.status === 'ready'}
-              disabled={Boolean(action)}
-              onChange={changeSheets}
-              onApply={applySheets}
-            />
+          {reading && <Alert>Читаем счета…</Alert>}
+          {duplicateCount > 0 && <Alert>Пропущено повторных файлов: {fmtQty(duplicateCount)}.</Alert>}
+          {!files.length && !reading && (
+            <p className="invoice-upload-hint">{completeSelection ? 'Выберите один или несколько файлов .xlsx или .xls.' : 'Сначала отметьте заказы одного поставщика.'}</p>
           )}
-          {activeFile?.status === 'failed' && <Alert tone="danger">{activeFile.error}</Alert>}
-          {readyFile && readyFile.data.warnings.length > 0 && (
-            <Alert tone="warning">
-              <details>
-                <summary>Замечания к счёту ({readyFile.data.warnings.length})</summary>
-                <ul>{readyFile.data.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
-              </details>
-            </Alert>
-          )}
+          {files.map((file) => {
+            const choice = file.status === 'selecting' ? file : file.status === 'ready' ? file.sheetChoice : undefined;
+            return (
+              <div className="invoice-file-entry" key={file.id}>
+                <div className="invoice-file-info">
+                  <BrandIcon name="file" />
+                  <span>
+                    <strong>{file.name}</strong>
+                    <small>{file.status === 'ready'
+                      ? `${fmtQty(file.data.items.length)} поз. · ${invoiceFileAmount(file.data.items)}`
+                      : file.status === 'selecting' ? 'Выберите листы' : 'Файл не прочитан'}</small>
+                  </span>
+                  <Button className="secondary" disabled={reading || Boolean(action)} onClick={() => removeInvoice(file)}
+                    aria-label={`Удалить счёт ${file.name}`}>Удалить</Button>
+                </div>
+                {file.status === 'failed' && <Alert tone="danger">{file.error}</Alert>}
+                {choice && <InvoiceSheets {...choice} applied={file.status === 'ready'} disabled={reading || Boolean(action)}
+                  onChange={(name, included) => changeSheets(file, choice, name, included)}
+                  onApply={() => { if (file.status === 'selecting') applySheets(file); }} />}
+                {file.status === 'ready' && file.data.warnings.length > 0 && (
+                  <details className="invoice-file-warnings">
+                    <summary>Замечания к счёту ({file.data.warnings.length})</summary>
+                    <ul>{file.data.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+                  </details>
+                )}
+              </div>
+            );
+          })}
+          {incomplete && !reading && <Alert tone="warning">
+            Неполный комплект. Файлов с ошибкой: {fmtQty(failedFiles)}. Без выбранных листов: {fmtQty(pendingFiles)}.
+            Пропущено товарных строк: {fmtQty(skippedRows)}. Для выгрузки в 1С примените выбор листов, исправьте или удалите проблемные файлы.
+          </Alert>}
         </section>
       </div>
 
       {comparison && !visibleComparison && (
         <Alert tone="warning">
-          Заказы изменились или сеанс недоступен. Повторите сверку, чтобы открыть результат и экспорт.
+          {comparison.scope !== scope || invalidated ? 'Заказы изменились или сеанс недоступен.' : 'Состав счетов изменился.'}
+          {' '}Повторите сверку, чтобы открыть актуальный результат и экспорт.
         </Alert>
       )}
       {actionError && <Alert tone="danger">{actionError}</Alert>}
@@ -480,7 +506,8 @@ export function InvoicesPage({
           key={visibleComparison.scope}
           comparison={visibleComparison}
           supplier={supplier!}
-          fileName={readyFile?.name ?? ''}
+          fileName={readyFiles.length === 1 ? readyFiles[0]!.name : `Счетов: ${fmtQty(readyFiles.length)}`}
+          incomplete={incomplete}
           action={action}
           runVerified={runVerified}
           onChange={(changes) => {
@@ -528,4 +555,9 @@ function orderFingerprint(sourceId: string, orders: readonly EligibleOrder[], sk
       ]),
     ]),
   ]);
+}
+
+function invoiceFileAmount(items: InvoiceItem[]): string {
+  const amounts = items.map((item) => item.amount ?? (item.price === null ? null : moneyProduct(item.quantity, item.price)));
+  return amounts.some((amount) => amount === null) ? 'Сумма неизвестна' : money(moneySum(amounts as number[]));
 }

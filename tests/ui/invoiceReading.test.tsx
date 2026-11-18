@@ -21,11 +21,16 @@ vi.mock('../../src/features/invoices/useInvoiceOrders', () => ({
 }));
 
 const header = ['Код 1С', 'Артикул', 'Наименование', 'Количество', 'Ед. измерения', 'Цена', 'Сумма'];
-function upload(sheets: unknown[][][]) {
+function makeFile(sheets: unknown[][][], name = 'счёт.xlsx') {
   const book = XLSX.utils.book_new();
   sheets.forEach((rows, i) => XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rows), 'Часть ' + (i + 1)));
-  const file = new File([XLSX.write(book, { type: 'array', bookType: 'xlsx' })], 'счёт.xlsx');
-  fireEvent.change(screen.getByLabelText('Файл счёта поставщика'), { target: { files: [file] } });
+  return new File([XLSX.write(book, { type: 'array', bookType: 'xlsx' })], name);
+}
+function upload(sheets: unknown[][][]) {
+  uploadFiles(makeFile(sheets));
+}
+function uploadFiles(...files: File[]) {
+  fireEvent.change(screen.getByLabelText('Файл счёта поставщика'), { target: { files } });
 }
 beforeEach(() => vi.clearAllMocks());
 
@@ -100,5 +105,49 @@ it.each(['упак', null])('does not automatically export a comparison with inv
   for (const checkbox of screen.getAllByRole('checkbox', { name: /Включить в экспорт/ })) {
     expect(checkbox).not.toBeChecked();
   }
+  expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeDisabled();
+});
+
+
+it('combines separate invoices, ignores a duplicate, and keeps the result if another file fails', async () => {
+  render(<InvoicesPage initialOrderIds={['o']} />);
+  const first = makeFile([[header, ['0001', '000123', 'Кран', 4, 'шт', 85, 340]]], 'счёт 1.xlsx');
+  const second = makeFile([[header, ['0001', '000123', 'Кран', 6, 'шт', 110, 660]]], 'счёт 2.xlsx');
+  uploadFiles(first, second, first);
+  expect(await screen.findByText('Пропущено повторных файлов: 1.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Сравнить' }));
+  const result = await screen.findByRole('region', { name: 'Результат сверки' });
+  const correction = screen.getByRole('region', { name: 'Корректировка и экспорт в 1С' });
+  expect(within(result).getByText(/счёт 1.xlsx.*строка/)).toBeInTheDocument();
+  expect(within(result).getByText(/счёт 2.xlsx.*строка/)).toBeInTheDocument();
+  expect(within(correction).getByRole('textbox', { name: /Количество.*000123/ })).toHaveValue('10');
+
+  const remove = within(correction).getByRole('button', { name: /Снять отметки по фильтру/ });
+  fireEvent.click(remove);
+  expect(within(correction).getByRole('checkbox')).not.toBeChecked();
+  fireEvent.change(within(correction).getByLabelText('Наличие в счёте'), { target: { value: 'invoice' } });
+  fireEvent.click(within(correction).getByRole('button', { name: /Включить подходящие по фильтру/ }));
+  expect(within(correction).getByRole('checkbox')).toBeChecked();
+  fireEvent.change(within(correction).getByLabelText('Наличие в счёте'), { target: { value: 'extra' } });
+  expect(within(correction).getByText('Включено 1 · скрыто фильтрами 1')).toBeInTheDocument();
+
+  uploadFiles(new File(['not a workbook'], 'повреждён.xlsx'));
+  expect(await screen.findByText(/Файлов с ошибкой: 1/)).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Результат сверки' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Удалить счёт повреждён.xlsx' }));
+  expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeEnabled();
+});
+
+it('marks absence as unconfirmed when a selected file has skipped rows', async () => {
+  render(<InvoicesPage initialOrderIds={['o']} />);
+  upload([[header,
+    ['0001', '000123', 'Кран', 'ошибка', 'шт', 100, null],
+    ['', 'EXTRA', 'Дополнительный товар', 1, 'шт', 10, 10],
+  ]]);
+  expect(await screen.findByText(/Пропущено товарных строк: 1/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Сравнить' }));
+  const result = await screen.findByRole('region', { name: 'Результат сверки' });
+  expect(within(result).getByText('Не подтверждено', { selector: 'span' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeDisabled();
 });
