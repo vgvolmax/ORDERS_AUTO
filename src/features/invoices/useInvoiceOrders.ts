@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../app/appStore';
-import { selectInvoiceOrders, type InvoiceOrder } from '../../app/invoiceOrders';
+import { selectArchivedInvoiceOrders, selectInvoiceOrders, type InvoiceOrder } from '../../app/invoiceOrders';
 import { stateFromWorkspace } from '../../app/workspaceSession';
-import { attachSupplierCatalog } from '../../app/catalogSession';
 import { loadSupplierCatalog } from '../../persistence/supplierCatalog';
 import type { WorkspaceMetadata } from '../../domain/workspace';
 import { listWorkspaces, loadWorkspace, readActiveWorkspaceRevision } from '../../persistence/workspaces';
@@ -46,8 +45,8 @@ export function useInvoiceOrders() {
     void loadWorkspace(archiveId)
       .then((workspace) => {
         if (!workspace) throw new Error('Сеанс не найден');
-        const archivedState = attachSupplierCatalog(stateFromWorkspace(workspace), state.catalog);
-        const orders = selectInvoiceOrders(archivedState);
+        const archivedState = stateFromWorkspace(workspace);
+        const orders = selectArchivedInvoiceOrders(archivedState, state.catalog);
         const skuCodes = archivedState.minMax?.skus.map(({ code }) => code) ?? noSkuCodes;
         if (current) setArchive({ id: archiveId, orders, skuCodes });
       })

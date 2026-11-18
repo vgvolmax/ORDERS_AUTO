@@ -34,6 +34,7 @@ export function workspaceFromState(state: AppState): StoredWorkspace {
     settings,
     reviewedOrderIds,
     exportedOrderIds,
+    exportedOrders,
     page,
     rebalance,
     uiPreferences,
@@ -61,6 +62,7 @@ export function workspaceFromState(state: AppState): StoredWorkspace {
       settings,
       reviewedOrderIds,
       exportedOrderIds,
+      ...(exportedOrders === undefined ? {} : { exportedOrders }),
       page,
       rebalance,
       uiPreferences,
@@ -229,6 +231,7 @@ export function createWorkspaceSession({
             edits: [],
             reviewedOrderIds: [],
             exportedOrderIds: [],
+            exportedOrders: [],
             rebalance: {
               ...next.rebalance,
               accepted: [],

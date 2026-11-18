@@ -11,8 +11,8 @@ import {
   type InvoiceComparisonRow,
   type InvoiceDifference,
 } from '../../domain/invoices';
-import { moneySum } from '../../domain/money';
-import { hasInvoiceAmountDifference, hasInvoiceDiscrepancy, invoiceAmountDifference, invoicePriceWithinTolerance, summarizeInvoiceAmounts } from '../../domain/invoiceAmounts';
+import { moneyProduct, moneySum } from '../../domain/money';
+import { hasInvoiceAmountDifference, hasInvoiceDiscrepancy, invoicePriceWithinTolerance, summarizeInvoiceAmounts } from '../../domain/invoiceAmounts';
 import { parseOptionalNumber } from '../../domain/normalize';
 import { save } from '../../export/download';
 import { safeFilename } from '../../export/filenames';
@@ -45,6 +45,7 @@ export function InvoiceResults({
   comparison,
   supplier,
   fileName,
+  incomplete,
   action,
   runVerified,
   onChange,
@@ -54,6 +55,7 @@ export function InvoiceResults({
   comparison: InvoiceResult;
   supplier: string;
   fileName: string;
+  incomplete: boolean;
   action: string;
   runVerified: InvoiceAction;
   onChange: (change: Partial<InvoiceResult>) => void;
@@ -64,9 +66,17 @@ export function InvoiceResults({
   const [query, setQuery] = useState('');
   const [editQuery, setEditQuery] = useState('');
   const [includedFilter, setIncludedFilter] = useState('all');
+  const [presence, setPresence] = useState('all');
+  const [adjustmentPresence, setAdjustmentPresence] = useState('all');
   const [copyNotice, setCopyNotice] = useState('');
   const [copyFallback, setCopyFallback] = useState('');
-  const { rows, mode, adjustments, drafts } = comparison;
+  const { mode, adjustments, drafts } = comparison;
+  const rows = useMemo(() => incomplete ? comparison.rows.map((row): InvoiceComparisonRow =>
+    row.differences.includes('missing') ? {
+      ...row,
+      differences: row.differences.map((difference) => difference === 'missing' ? 'unconfirmed' : difference),
+      notes: ['Позиция не найдена в прочитанных строках. Комплект счетов неполный.'],
+    } : row) : comparison.rows, [comparison.rows, incomplete]);
   const amounts = useMemo(() => summarizeInvoiceAmounts(rows), [rows]);
   const counts = useMemo(() => {
     const differences = new Map<InvoiceDifference, number>();
@@ -101,22 +111,40 @@ export function InvoiceResults({
   );
   const unidentified = checked.filter((row) => !row.article.trim() && !row.name.trim());
   const conflicts = conflictingInvoiceAdjustments(checked);
-  const exportDisabled = Boolean(action) || checked.length === 0 ||
+  const exportDisabled = incomplete || Boolean(action) || checked.length === 0 ||
     invalidNumbers.length > 0 || unidentified.length > 0 || conflicts.length > 0;
-  const visibleRows = rows.filter((row) => matchesItem(row, query) && (
-    filter === 'all' || (
-      filter === 'problems' ? hasInvoiceDiscrepancy(row) :
-        filter === 'total' ? hasInvoiceAmountDifference(row) : row.differences.includes(filter as InvoiceDifference)
+  const activeFilter = !incomplete && filter === 'unconfirmed' ? 'all' : filter;
+  const visibleRows = rows.filter((row) => matchesItem(row, query) && matchesPresence(row, presence) && (
+    activeFilter === 'all' || (
+      activeFilter === 'problems' ? hasInvoiceDiscrepancy(row) :
+        activeFilter === 'total' ? hasInvoiceAmountDifference(row) : row.differences.includes(activeFilter as InvoiceDifference)
     )
   ));
-  const visibleAdjustments = effective.filter((row) => matchesItem(row, editQuery) && (
+  const visibleAdjustments = effective.filter((row) => matchesItem(row, editQuery) &&
+    matchesPresence(originals.get(row.id)!, adjustmentPresence) && (
     includedFilter === 'all' || row.included === (includedFilter === 'included')
   ));
+  const visibleIncluded = visibleAdjustments.filter((row) => row.included).length;
+  const hiddenIncluded = checked.length - visibleIncluded;
+  const defaultIncluded = new Set(adjustments.filter((row) => row.included).map((row) => row.id));
+  const bulkCandidates = visibleAdjustments.filter((row) => !row.included && defaultIncluded.has(row.id) &&
+    validNumber(row.qty) && validNumber(row.price) && validNumber(row.amount));
+  const bulkConflicts = new Set(conflictingInvoiceAdjustments([
+    ...checked, ...bulkCandidates.map((row) => ({ ...row, included: true })),
+  ]).map((row) => row.id));
+  const bulkIncluded = bulkCandidates.filter((row) => !bulkConflicts.has(row.id));
   const fileBase = safeFilename(supplier.slice(0, 110));
 
   function edit(id: string, change: AdjustmentDraft) {
     const next = new Map(drafts);
     next.set(id, { ...next.get(id), ...change });
+    setCopyNotice('');
+    onChange({ drafts: next });
+  }
+
+  function markVisible(rows: readonly InvoiceAdjustment[], included: boolean) {
+    const next = new Map(drafts);
+    for (const row of rows) next.set(row.id, { ...next.get(row.id), included });
     setCopyNotice('');
     onChange({ drafts: next });
   }
@@ -143,6 +171,7 @@ export function InvoiceResults({
   }
 
   function downloadCorrection(format: 'csv' | 'xls') {
+    if (exportDisabled) return;
     setCopyNotice('');
     void runVerified(
       'Выгрузка для 1С…',
@@ -157,6 +186,7 @@ export function InvoiceResults({
   }
 
   function copyCorrection() {
+    if (exportDisabled) return;
     setCopyNotice('');
     void runVerified('Копирование…', async (isCurrent) => {
       const text = invoiceAdjustmentTsv(effective);
@@ -245,6 +275,7 @@ export function InvoiceResults({
           </Button>
         </div>
 
+        {incomplete && <Alert tone="warning">Результат неполный. Суммы и расхождения рассчитаны по прочитанным строкам.</Alert>}
         <div className="metrics">
           <MetricCard label="Позиций в заказе" value={fmtQty(counts.ordered)} icon="list" />
           <MetricCard label="Найдено в счёте" value={fmtQty(counts.matched)} icon="check" tone="accent" />
@@ -262,10 +293,10 @@ export function InvoiceResults({
         </div>
         <div className="metrics metrics-three" role="group" aria-label="Суммы сверки">
           <MetricCard label="Сумма заказов" value={display(amounts.orderAmount, money)} />
-          <MetricCard label="Сумма счёта" value={display(amounts.invoiceAmount, money)} />
+          <MetricCard label="Сумма счетов" value={display(amounts.invoiceAmount, money)} />
           <MetricCard label="Разница суммы" value={display(amounts.difference, signedMoney)}
             tone={amounts.difference !== null && amounts.difference !== 0 ? 'warning' : 'neutral'}
-            note={amounts.difference === null ? 'Не хватает данных о суммах' : 'Счёт минус заказы · по всем позициям'} />
+            note={amounts.difference === null ? 'Не хватает данных о суммах' : 'Счета минус заказы · по всем позициям'} />
         </div>
         <div className="invoice-filters">
           <label className="filter-search">
@@ -280,19 +311,21 @@ export function InvoiceResults({
           </label>
           <label>
             Расхождения
-            <Select value={filter} onChange={(event) => setFilter(event.target.value)}>
+            <Select value={activeFilter} onChange={(event) => setFilter(event.target.value)}>
               <option value="all">Все позиции ({fmtQty(rows.length)})</option>
               <option value="problems">С расхождениями ({fmtQty(counts.discrepancies)})</option>
               <option value="total">Разница суммы ({fmtQty(rows.filter(hasInvoiceAmountDifference).length)})</option>
-              {Object.entries(invoiceDifferenceLabels).map(([value, label]) => (
+              {Object.entries(invoiceDifferenceLabels).filter(([value]) => value !== 'unconfirmed' || incomplete).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label} ({fmtQty(counts.differences.get(value as InvoiceDifference) ?? 0)})
                 </option>
               ))}
             </Select>
           </label>
+          <PresenceFilter value={presence} onChange={setPresence} />
           <small className="invoice-count">Показано {fmtQty(visibleRows.length)} из {fmtQty(rows.length)}</small>
         </div>
+        <small>В числовых колонках сверху заказ, ниже счёт и разница.</small>
         <VirtualTable
           rows={visibleRows}
           columns={comparisonColumns}
@@ -335,9 +368,19 @@ export function InvoiceResults({
               <option value="excluded">Исключённые</option>
             </Select>
           </label>
+          <PresenceFilter value={adjustmentPresence} onChange={setAdjustmentPresence} />
           <small className="invoice-count">Показано {fmtQty(visibleAdjustments.length)} из {fmtQty(effective.length)}</small>
         </div>
+        <div className="invoice-actions">
+          <Button className="secondary" disabled={!bulkIncluded.length || Boolean(action)} onClick={() => markVisible(bulkIncluded, true)}>
+            Включить подходящие по фильтру ({fmtQty(bulkIncluded.length)})
+          </Button>
+          <Button className="secondary" disabled={!visibleIncluded || Boolean(action)} onClick={() => markVisible(visibleAdjustments.filter((row) => row.included), false)}>
+            Снять отметки по фильтру ({fmtQty(visibleIncluded)})
+          </Button>
+        </div>
         <VirtualTable
+          rowClassName="invoice-adjustment-row"
           rows={visibleAdjustments}
           columns={adjustmentColumns}
           getRowKey={(row) => row.id}
@@ -362,6 +405,7 @@ export function InvoiceResults({
           </Alert>
         )}
         <div className="invoice-actions invoice-export-actions">
+          <small aria-live="polite">Включено {fmtQty(checked.length)} · скрыто фильтрами {fmtQty(hiddenIncluded)}</small>
           <Button disabled={exportDisabled} onClick={copyCorrection}>
             Скопировать для 1С
           </Button>
@@ -488,58 +532,78 @@ function editableNumber(text: string): number | null {
   return parseOptionalNumber(value);
 }
 
+function matchesPresence(row: InvoiceComparisonRow, value: string): boolean {
+  if (value === 'invoice') return row.invoiceQty !== null;
+  if (value === 'missing') return row.differences.includes('missing');
+  if (value === 'extra') return row.differences.includes('extra');
+  return true;
+}
+
+function PresenceFilter({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label>
+      Наличие в счёте
+      <Select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="all">Все позиции</option>
+        <option value="invoice">Есть в счёте</option>
+        <option value="missing">Нет в счёте</option>
+        <option value="extra">Только в счёте</option>
+      </Select>
+    </label>
+  );
+}
+
+function InvoiceRowDetails({ row }: { row: InvoiceComparisonRow }) {
+  return (row.notes.length > 0 || row.invoiceSources?.length) ? (
+    <details className="invoice-row-details">
+      <summary>Пояснения и источники</summary>
+      {row.invoiceSources && <ul>{row.invoiceSources.map((item) => (
+        <li key={JSON.stringify([item.sourceFileId, item.sourceSheet, item.sourceRow])}>
+          {item.sourceFile}{item.sourceSheet && ` · ${item.sourceSheet}`} · строка {item.sourceRow}
+          <br />{fmtQty(item.quantity)} {item.unit ?? ''} · цена {display(item.price, money)}
+          {' · сумма '}{display(item.amount ?? (item.price === null ? null : moneyProduct(item.quantity, item.price)), money)}
+        </li>
+      ))}</ul>}
+      {row.notes.filter((note) => !note.startsWith('Источник счёта:')).map((note, index) => <small key={index}>{note}</small>)}
+    </details>
+  ) : null;
+}
+
+function OrderAndInvoiceValues({ order, invoice, format }: {
+  order: number | null; invoice: number | null; format: (value: number) => string;
+}) {
+  return (
+    <div className="invoice-value-pair">
+      <small title="Заказ">{display(order, format)}</small>
+      <ValueWithDelta value={invoice} orderValue={order} format={format} />
+    </div>
+  );
+}
+
 const comparisonColumns: VirtualColumn<InvoiceComparisonRow>[] = [
   {
-    key: 'article', header: 'Артикул', width: '100px',
+    key: 'article', header: 'Артикул', width: '100px', sticky: true,
     render: (row) => <span className="invoice-code">{row.article || '—'}</span>,
   },
   {
-    key: 'item', header: 'Номенклатура', width: 'minmax(145px, 1fr)',
+    key: 'item', header: 'Номенклатура', width: 'minmax(175px, 1fr)', sticky: true,
     render: (row) => <ItemName row={row} />,
   },
-  { key: 'unit', header: 'Ед.', width: '42px', render: (row) => row.unit || '—' },
+  { key: 'unit', header: 'Ед.', width: '50px', render: (row) => row.unit || '—' },
   {
-    key: 'orderQty', header: 'Кол-во в заказе', width: '84px', className: 'num',
-    render: (row) => display(row.orderQty, fmtQty),
+    key: 'qty', header: 'Количество', width: '110px', className: 'num',
+    render: (row) => <OrderAndInvoiceValues order={row.orderQty} invoice={row.invoiceQty} format={fmtQty} />,
   },
   {
-    key: 'invoiceQty', header: 'Кол-во в счёте', width: '84px', className: 'num invoice-emphasis',
-    render: (row) => <ValueWithDelta
-      value={row.invoiceQty}
-      orderValue={row.differences.includes('quantity') ? row.orderQty : null}
-      format={fmtQty}
-    />,
+    key: 'price', header: 'Цена за ед.', width: '140px', className: 'num',
+    render: (row) => <OrderAndInvoiceValues order={row.orderPrice} invoice={row.invoicePrice} format={money} />,
   },
   {
-    key: 'orderPrice', header: 'Цена в заказе', width: '92px', className: 'num',
-    render: (row) => display(row.orderPrice, money),
+    key: 'amount', header: 'Сумма', width: '145px', className: 'num',
+    render: (row) => <OrderAndInvoiceValues order={row.orderAmount} invoice={row.invoiceAmount} format={money} />,
   },
   {
-    key: 'invoicePrice', header: 'Цена в счёте', width: '92px', className: 'num invoice-emphasis',
-    render: (row) => <ValueWithDelta
-      value={row.invoicePrice}
-      orderValue={row.differences.includes('higher') || row.differences.includes('lower') ? row.orderPrice : null}
-      format={money}
-    />,
-  },
-  {
-    key: 'orderAmount', header: 'Сумма заказа', width: '120px', className: 'num',
-    render: (row) => display(row.orderAmount, money),
-  },
-  {
-    key: 'invoiceAmount', header: 'Сумма счёта', width: '120px', className: 'num invoice-emphasis',
-    render: (row) => display(row.invoiceAmount, money),
-  },
-  {
-    key: 'amountDifference', header: 'Разница суммы', width: '120px', className: 'num',
-    render: (row) => display(invoiceAmountDifference(row), signedMoney),
-  },
-  {
-    key: 'differences', header: 'Расхождения', width: 'minmax(143px, .8fr)',
-    render: (row) => <DifferenceList row={row} />,
-  },
-  {
-    key: 'notes', header: 'Комментарий', width: 'minmax(143px, .8fr)',
-    render: (row) => <small className="invoice-note">{row.notes.join(' · ') || '—'}</small>,
+    key: 'differences', header: 'Расхождения', width: 'minmax(145px, .8fr)',
+    render: (row) => <><DifferenceList row={row} /><InvoiceRowDetails row={row} /></>,
   },
 ];

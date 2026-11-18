@@ -3439,6 +3439,10 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   const drawer = page.getByRole('dialog', { name: 'Состав заказа' });
   await drawer.getByRole('spinbutton', { name: 'Количество 0001' }).fill('7');
   await expect(drawer.getByRole('spinbutton', { name: 'Количество 0001' })).toHaveAttribute('aria-busy', 'false');
+  const orderDownload = page.waitForEvent('download');
+  await drawer.getByRole('button', { name: 'Скачать CSV заказа' }).click();
+  await orderDownload;
+  await expect(drawer.getByRole('button', { name: 'Скачать CSV ещё раз' })).toBeEnabled();
   await drawer.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.getByRole('button', { name: `Все заказы ${supplier}`, exact: true }).click();
   const supplierOrders = page.getByRole('dialog', { name: `Все заказы ${supplier}` });
@@ -3453,14 +3457,31 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   });
   await expect(page.getByRole('alert').filter({ hasText: 'Не удалось' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Сравнить', exact: true })).toBeDisabled();
-  await page.getByLabel('Файл счёта поставщика').setInputFiles(workbook('счёт.xlsx', [
-    ['Код 1С', 'Артикул', 'Наименование', 'Кол-во', 'Ед.', 'Цена без скидки', 'Цена со скидкой', 'Сумма со скидкой'],
-    ['0001', 'VM-1', 'Товар 1', 15, 'шт', 120, 115, 1724.99],
-    ['', 'EXTRA', 'Лишний товар', 2, 'шт', 70, 60, 120],
-  ]));
+  await page.getByRole('button', { name: 'Удалить счёт битый.xlsx' }).click();
+  const invoiceHeader = ['Код 1С', 'Артикул', 'Наименование', 'Кол-во', 'Ед.', 'Цена без скидки', 'Цена со скидкой', 'Сумма со скидкой'];
+  await page.getByLabel('Файл счёта поставщика').setInputFiles([
+    workbook('счёт-1.xlsx', [invoiceHeader,
+      ['0001', 'VM-1', 'Товар 1', 6, 'шт', 120, 115, 690],
+      ['', 'EXTRA', 'Лишний товар', 2, 'шт', 70, 60, 120],
+    ]),
+    workbook('счёт-2.xlsx', [invoiceHeader,
+      ['0001', 'VM-1', 'Товар 1', 9, 'шт', 120, 115, 1034.99],
+    ]),
+  ]);
   await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeVisible();
   await expect(page.getByText('Дороже', { exact: true }).first()).toBeVisible();
+  const correction = page.getByRole('region', { name: 'Корректировка и экспорт в 1С' });
+  const presence = correction.getByRole('combobox', { name: 'Наличие в счёте' });
+  await presence.selectOption('extra');
+  await expect(correction.getByText('Включено 1 · скрыто фильтрами 1')).toBeVisible();
+  await presence.selectOption('invoice');
+  const adjustmentRow = correction.locator('.invoice-adjustment-row').filter({ hasText: 'VM-1' });
+  await adjustmentRow.hover();
+  await expect(adjustmentRow).toHaveCSS('background-color', 'rgb(224, 239, 249)');
+  await page.mouse.move(1, 1);
+  await adjustmentRow.getByRole('textbox').first().focus();
+  await expect(adjustmentRow.locator('.invoice-emphasis')).toHaveCSS('background-color', 'rgb(224, 239, 249)');
   await page.screenshot({ path: testInfo.outputPath('24-invoice-reconciliation.png'), fullPage: true });
   const exportReady = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Excel для 1С', exact: true }).click();
@@ -3494,6 +3515,7 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   await source.selectOption(await weekOne.getAttribute('value') ?? '');
   await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ленина` })).toBeVisible();
   await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ступино` })).toBeVisible();
+  await expect(page.getByText('Состав из выгрузки', { exact: true })).toHaveCount(1);
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
 });
@@ -3733,6 +3755,7 @@ test('E2E-27 masked articles and explicit invoice sheets produce a safe correcti
     ['000123', 'Кран', 10, 'шт', 100, 1000],
   ]);
   for (const unit of ['упак', null]) {
+    await page.getByRole('button', { name: 'Удалить счёт invoice.xlsx' }).click();
     await page.getByLabel('Файл счёта поставщика').setInputFiles(invoice([[10, unit]]));
     await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeVisible();

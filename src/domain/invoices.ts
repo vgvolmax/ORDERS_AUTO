@@ -14,12 +14,15 @@ export interface InvoiceItem {
   amount: number | null;
   sourceRow: number;
   sourceSheet?: string;
+  sourceFile?: string;
+  sourceFileId?: string;
 }
 
-export type InvoiceDifference = 'missing' | 'extra' | 'quantity' | 'higher' | 'lower' | 'ambiguous' | 'unit' | 'unpriced' | 'amount' | 'signed';
+export type InvoiceDifference = 'missing' | 'unconfirmed' | 'extra' | 'quantity' | 'higher' | 'lower' | 'ambiguous' | 'unit' | 'unpriced' | 'amount' | 'signed';
 
 export const invoiceDifferenceLabels: Record<InvoiceDifference, string> = {
   missing: 'Нет в счёте',
+  unconfirmed: 'Не подтверждено',
   extra: 'Лишнее в счёте',
   quantity: 'Количество',
   higher: 'Дороже',
@@ -45,6 +48,7 @@ export interface InvoiceComparisonRow {
   invoiceAmount: number | null;
   differences: InvoiceDifference[];
   notes: string[];
+  invoiceSources?: readonly InvoiceItem[];
 }
 
 export interface InvoiceAdjustment {
@@ -164,9 +168,9 @@ function invoiceValues(items: readonly InvoiceItem[]): InvoiceValues {
 }
 
 function sourceRows(items: readonly InvoiceItem[]): string {
-  return items.map((item) => item.sourceSheet
-    ? `«${item.sourceSheet}»: ${item.sourceRow}`
-    : String(item.sourceRow)).join(', ');
+  return items.map((item) => [
+    item.sourceFile && `«${item.sourceFile}»`, item.sourceSheet && `«${item.sourceSheet}»`, item.sourceRow,
+  ].filter(Boolean).join(': ')).join(', ');
 }
 
 function inconsistentAmount({ quantity, price, amount }: InvoiceItem): boolean {
@@ -182,7 +186,7 @@ function inconsistentAmount({ quantity, price, amount }: InvoiceItem): boolean {
 function invoiceDiagnostics(items: readonly InvoiceItem[]) {
   const notes: string[] = [];
   const differences: InvoiceDifference[] = [];
-  if (items.some((item) => item.sourceSheet)) {
+  if (items.some((item) => item.sourceSheet || item.sourceFile)) {
     notes.push('Источник счёта: ' + sourceRows(items) + '.');
   }
   if (items.length > 1) {
@@ -276,6 +280,7 @@ function compareGroup(
     invoiceAmount: values?.invoiceAmount ?? null,
     differences,
     notes,
+    ...(items.some((item) => item.sourceFile) ? { invoiceSources: items } : {}),
   };
 }
 
@@ -295,8 +300,8 @@ function invoiceOnlyRow(
     notes.push('В счёте отсутствует цена для полного количества.');
   }
   return {
-    id: 'invoice:' + (items.some((item) => item.sourceSheet)
-      ? JSON.stringify(items.map((item) => [item.sourceSheet ?? null, item.sourceRow]))
+    id: 'invoice:' + (items.some((item) => item.sourceSheet || item.sourceFile)
+      ? JSON.stringify(items.map((item) => [item.sourceFileId ?? null, item.sourceSheet ?? null, item.sourceRow]))
       : sourceRows(items)),
     skuCode: skuCode ?? sample.skuCode,
     article: items.find((item) => item.article)?.article ?? '',
@@ -308,6 +313,7 @@ function invoiceOnlyRow(
     ...values,
     differences,
     notes,
+    ...(items.some((item) => item.sourceFile) ? { invoiceSources: items } : {}),
   };
 }
 

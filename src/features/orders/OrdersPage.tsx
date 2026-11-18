@@ -171,8 +171,13 @@ export function OrdersPage({
             payloads.get(o.id) === orderToCsv(o),
         )
         .map((o) => o.id);
+      const snapshots = new Map((current.exportedOrders ?? []).map((order) => [order.id, order]));
+      for (const { reviewed, manualEditCount, ...order } of exported) {
+        snapshots.set(order.id, { ...order, lines: order.lines.filter((line) => line.orderQty > 0) });
+      }
       return {
         exportedOrderIds: [...new Set([...current.exportedOrderIds, ...ids])],
+        exportedOrders: [...snapshots.values()],
       };
     };
     if (commit) await commit(patch);

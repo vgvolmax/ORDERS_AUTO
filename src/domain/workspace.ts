@@ -3,6 +3,7 @@ import type {
   SupplierDataset,
   ValidationIssue,
   OrderQtyEdit,
+  Order,
   OrderSettings,
 } from './types';
 import type { SupplierAssignment } from './supplierAssignments';
@@ -63,6 +64,8 @@ export interface WorkspaceData {
   settings: OrderSettings;
   reviewedOrderIds: string[];
   exportedOrderIds: string[];
+  /** Last exported contents of each order in this session, independent of review markers. */
+  exportedOrders?: Order[];
   page: string;
   rebalance: RebalanceWorkspace;
   uiPreferences: Record<string, unknown>;

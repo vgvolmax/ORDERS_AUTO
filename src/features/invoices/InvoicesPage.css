@@ -198,3 +198,54 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+.invoice-row-details {
+  margin-top: 4px;
+  color: var(--text);
+}
+
+.invoice-row-details summary {
+  color: var(--blue);
+  cursor: pointer;
+  font-size: var(--font-help);
+}
+
+.invoice-row-details small,
+.invoice-row-details li {
+  display: block;
+  margin-top: 4px;
+}
+
+.invoice-row-details ul {
+  padding-left: 0;
+}
+
+.invoice-value-pair {
+  line-height: 1.25;
+}
+
+.invoice-value-pair > small {
+  color: var(--muted);
+}
+
+.invoice-file-info > span {
+  flex: 1;
+}
+
+.invoice-file-info .button {
+  min-height: 28px;
+}
+
+.invoice-file-warnings {
+  margin-top: 4px;
+}
+
+.invoices-page .virtual-row-shell:is(:hover, :focus-within) > .invoice-adjustment-row,
+.invoices-page .virtual-row-shell:is(:hover, :focus-within) > .invoice-adjustment-row > .invoice-emphasis {
+  background: #e0eff9;
+}
+
+.invoices-page .virtual-row-shell:focus-within > .invoice-adjustment-row {
+  box-shadow: inset 3px 0 var(--blue);
+}

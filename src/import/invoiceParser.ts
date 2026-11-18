@@ -18,6 +18,7 @@ interface Header {
 export interface ParsedInvoice {
   items: InvoiceItem[];
   warnings: string[];
+  skippedRows?: number;
 }
 
 export interface ParsedInvoiceSheet extends ParsedInvoice {
@@ -45,7 +46,9 @@ export function selectInvoiceSheets(
   if (!included.some((sheet) => sheet.items.length > 0)) {
     throw new Error('На выбранных листах нет распознанных товарных позиций. Исправьте данные счёта.');
   }
+  const skippedRows = included.reduce((total, sheet) => total + (sheet.skippedRows ?? 0), 0);
   return {
+    ...(skippedRows ? { skippedRows } : {}),
     items: included.flatMap((sheet) => sheet.items.map((item) => ({ ...item, sourceSheet: sheet.name }))),
     warnings: [
       ...sheets.flatMap((sheet) => sheet.warnings.map((warning) => `Лист «${sheet.name}»: ${warning}`)),
@@ -186,9 +189,11 @@ function isSummary(value: unknown): boolean {
     .test(normalizeText(value));
 }
 
-function parseRows(rows: SheetRows, initialHeader: Header, useFixedLayout: boolean): ParsedInvoice {
+function parseRows(rows: SheetRows, initialHeader: Header, firstHeaderRow: number): ParsedInvoice {
+  const useFixedLayout = firstHeaderRow === -1;
   const items: InvoiceItem[] = [];
   const warnings: string[] = useFixedLayout ? [FIXED_LAYOUT_WARNING] : [];
+  let skippedRows = 0;
   let header = initialHeader;
   for (const [rowIndex, cells] of rows) {
     const repeatedHeader = useFixedLayout ? null : findHeader(cells);
@@ -210,13 +215,16 @@ function parseRows(rows: SheetRows, initialHeader: Header, useFixedLayout: boole
     const quantity = quantityCell?.t === 'e' ? null : invoiceNumber(quantityCell?.v);
     const price = priceCell?.t === 'e' ? null : invoiceNumber(priceCell?.v);
     const amount = amountCell?.t === 'e' ? null : invoiceNumber(amountCell?.v);
+    if (rowIndex < firstHeaderRow && ((!article && !code) || quantity === null)) continue;
     if (!article && !code) {
       if (name && (quantityCell || priceCell || amountCell)) {
+        skippedRows++;
         warnings.push(`В строке ${row} счёта отсутствуют артикул и Код 1С. Строка пропущена.`);
       }
       continue;
     }
     if (quantity === null) {
+      skippedRows++;
       warnings.push(`В строке ${row} счёта не удалось прочитать количество. Строка пропущена.`);
       continue;
     }
@@ -228,7 +236,7 @@ function parseRows(rows: SheetRows, initialHeader: Header, useFixedLayout: boole
     }
     items.push({ skuCode: code || null, article, name, quantity, unit: unit || null, price, amount, sourceRow: row });
   }
-  return { items, warnings };
+  return { items, warnings, ...(skippedRows ? { skippedRows } : {}) };
 }
 
 function hasFixedLayout(rows: SheetRows): boolean {
@@ -260,6 +268,7 @@ export function parseInvoiceWorkbook(bytes: ArrayBuffer): ParsedInvoice {
     const rows = sheetRows(sheet);
 
     let header: Header | null = null;
+    let headerRow = -1;
     for (const [rowIndex, cells] of rows) {
       try {
         header = findHeader(cells);
@@ -269,17 +278,20 @@ export function parseInvoiceWorkbook(bytes: ArrayBuffer): ParsedInvoice {
           index !== rowIndex && [...rowCells.values()].some((cell) => normalizeText(cell.v)));
         if (hasOtherRows) throw new Error(`Лист «${name}»: ${error.message}`);
       }
-      if (header) break;
+      if (header) {
+        headerRow = rowIndex;
+        break;
+      }
     }
     if (!header && !hasFixedLayout(rows)) continue;
-    const result = parseRows(rows, header ?? FIXED_HEADER, !header);
+    const result = parseRows(rows, header ?? FIXED_HEADER, headerRow);
     if (result.items.length > 0 || result.warnings.length > 0) sheets.push({ name, ...result });
     firstEmptyResult ??= result;
   }
   if (sheets.length > 1) throw new InvoiceSheetsRequiredError(sheets);
   if (sheets.length === 1 && sheets[0]!.items.length > 0) {
-    const { items, warnings } = sheets[0]!;
-    return { items, warnings };
+    const { name, ...invoice } = sheets[0]!;
+    return invoice;
   }
 
   if (firstEmptyResult) {
