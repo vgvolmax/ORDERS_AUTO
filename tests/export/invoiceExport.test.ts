@@ -108,6 +108,34 @@ it('exports the full invoice value when the only adjacent sum is a VAT amount', 
   expect(invoiceAdjustmentTsv(correction.map((row) => ({ ...row, included: true })))).toContain('120\t240');
 });
 
+it.each([
+  { total: 0.57, priceFormat: '#,##0.00', totalFormat: 'General', expected: [0.19, 0.57] },
+  { total: 0.565, priceFormat: '0.00', totalFormat: '0.00', expected: [0.19, 0.57] },
+  { total: null, priceFormat: '0.00 "руб."', totalFormat: 'General', expected: [0.19, 0.57] },
+  { total: 0.555, priceFormat: '#,##0.00', totalFormat: 'General', expected: [0.185, 0.555] },
+  { total: null, priceFormat: '0.000', totalFormat: 'General', expected: [0.185, 0.555] },
+])('uses the invoiced cents and preserves higher precision evidenced by the invoice ($total, $priceFormat)', ({
+  total, priceFormat, totalFormat, expected: [price, amount],
+}) => {
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Артикул', 'Наименование', 'Количество', 'Ед.', 'Цена', 'Сумма'],
+    ['B-7', 'Крепёж', 3, 'шт', 0.185, total],
+  ]);
+  sheet.E2!.z = priceFormat;
+  if (sheet.F2) sheet.F2.z = totalFormat;
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, 'Счёт');
+  const parsed = parseInvoiceWorkbook(XLSX.write(book, { type: 'array', bookType: 'xlsx' }));
+  const rows = compareInvoice([], parsed.items);
+  expect(rows[0]).toMatchObject({ invoicePrice: price, invoiceAmount: amount, differences: ['extra'] });
+  const corrections = buildInvoiceAdjustments(rows, 'invoice').map((row) => ({ ...row, included: true }));
+  expect(invoiceAdjustmentTsv(corrections)).toContain(`3\tшт\t${String(price).replace('.', ',')}\t${String(amount).replace('.', ',')}`);
+  expect(invoiceAdjustmentCsv(corrections)).toContain(`3;шт;${String(price).replace('.', ',')};${String(amount).replace('.', ',')}`);
+  const exported = XLSX.read(invoiceAdjustmentWorkbook(corrections), { type: 'array' });
+  const correction = exported.Sheets[exported.SheetNames[0]!]!;
+  expect([correction.E2!.v, correction.F2!.v]).toEqual([price, amount]);
+});
+
 it.each([invoiceAdjustmentCsv, invoiceAdjustmentTsv, invoiceAdjustmentWorkbook])(
   'rejects a correction when two included positions share the same exported identity',
   (exportCorrection) => {

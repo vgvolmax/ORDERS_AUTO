@@ -1,5 +1,7 @@
 import * as XLSX from 'xlsx';
+import { decimal, decimalNumber } from '../domain/decimal';
 import type { InvoiceItem } from '../domain/invoices';
+import { moneyProduct, moneySum } from '../domain/money';
 import { normalizeKey, normalizeText, parseOptionalNumber } from '../domain/normalize';
 
 type Cells = Map<number, XLSX.CellObject>;
@@ -184,6 +186,30 @@ function invoiceNumber(value: unknown): number | null {
   return parseOptionalNumber(text);
 }
 
+function invoiceCellNumber(cell: XLSX.CellObject | undefined): number | null {
+  return cell?.t === 'e' ? null : invoiceNumber(cell?.v);
+}
+
+function invoiceMoneyCell(cell: XLSX.CellObject | undefined, raw: number | null): number | null {
+  if (raw === null || cell?.t !== 'n' || typeof cell.z !== 'string') return raw;
+  const format = cell.z.replace(/"[^"]*"|\\.|\[[^\]]*\]|[_*]./g, '').split(';')[0]!;
+  if (!/[#0?]\.00(?![#0?,])/.test(format) || /%|[Ee][+-]/.test(format)) return raw;
+
+  const { n, d } = decimal(raw);
+  const cents = ((n < 0n ? -n : n) * 100n + d / 2n) / d;
+  return decimalNumber({ n: n < 0n ? -cents : cents, d: 100n });
+}
+
+function invoiceUnitPrice(cell: XLSX.CellObject | undefined, quantity: number | null, amount: number | null) {
+  const raw = invoiceCellNumber(cell);
+  const visible = invoiceMoneyCell(cell, raw);
+  if (raw === visible || raw === null || visible === null || quantity === null || amount === null) return visible;
+
+  // Keep extra unit-price precision when it better explains the supplier's stated amount.
+  const difference = (price: number) => Math.abs(moneySum([amount, -moneyProduct(quantity, price)]));
+  return difference(raw) < difference(visible) ? raw : visible;
+}
+
 function isSummary(value: unknown): boolean {
   return /^(?:итого|всего|в том числе|без налога|к оплате|сумма прописью|ндс|подпись|руководитель|главный бухгалтер)(?:[\s:.,]|$)/iu
     .test(normalizeText(value));
@@ -212,9 +238,9 @@ function parseRows(rows: SheetRows, initialHeader: Header, firstHeaderRow: numbe
     const quantityCell = cells.get(header.quantity);
     const priceCell = cells.get(header.price);
     const amountCell = cells.get(header.amount);
-    const quantity = quantityCell?.t === 'e' ? null : invoiceNumber(quantityCell?.v);
-    const price = priceCell?.t === 'e' ? null : invoiceNumber(priceCell?.v);
-    const amount = amountCell?.t === 'e' ? null : invoiceNumber(amountCell?.v);
+    const quantity = invoiceCellNumber(quantityCell);
+    const amount = invoiceMoneyCell(amountCell, invoiceCellNumber(amountCell));
+    const price = invoiceUnitPrice(priceCell, quantity, amount);
     if (rowIndex < firstHeaderRow && ((!article && !code) || quantity === null)) continue;
     if (!article && !code) {
       if (name && (quantityCell || priceCell || amountCell)) {
