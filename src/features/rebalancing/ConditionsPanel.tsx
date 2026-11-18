@@ -90,7 +90,7 @@ export function ConditionsPanel({
               Минимальная сумма SKU в перемещении
             </label>
             <label>
-              Порог, ₽
+              Порог, ₽ {filter.enabled ? '' : '· не применяется'}
               <QuantityInput
                 aria-label="Порог суммы SKU"
                 value={filter.threshold}

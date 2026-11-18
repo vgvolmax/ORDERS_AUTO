@@ -90,7 +90,7 @@ it('shows global and route amounts, keeps selection separate from rejection and 
   state.rebalance.tab = 'results';
   const current = harness(state);
   const metric = (label: string) => screen.getByText(label).parentElement!;
-  expect(metric('К перемещению')).toHaveTextContent('5 000,00');
+  expect(metric('Предложено к перемещению')).toHaveTextContent('5 000,00');
   expect(metric('Принято на сумму')).toHaveTextContent('0,00');
   let { drawer } = openRoute();
   expect(within(drawer).getByLabelText('Сумма перемещения')).toHaveTextContent(
@@ -113,7 +113,7 @@ it('shows global and route amounts, keeps selection separate from rejection and 
     ).getByRole('button', { name: 'Принять перемещения' }),
   );
   await waitFor(() => expect(current().rebalance.accepted).toHaveLength(1));
-  expect(metric('К перемещению')).toHaveTextContent('3 500,00');
+  expect(metric('Предложено к перемещению')).toHaveTextContent('3 500,00');
   expect(metric('Принято на сумму')).toHaveTextContent('1 500,00');
   await waitFor(() =>
     expect(
@@ -299,9 +299,10 @@ it('limits acceptance to the currently visible positions and preserves hidden se
   expect(
     within(drawer).getAllByRole('checkbox', { name: /Выбрать перемещение/ }),
   ).toHaveLength(1);
+  expect(within(drawer).getByText(/Скрыто фильтром: 1/)).toBeVisible();
   fireEvent.click(
     within(drawer).getByRole('button', {
-      name: 'Принять выбранные в перемещении (1)',
+      name: 'Принять выбранные по фильтру (1)',
     }),
   );
   fireEvent.click(

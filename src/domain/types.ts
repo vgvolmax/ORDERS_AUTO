@@ -154,6 +154,7 @@ export type OrderStatus = 'DRAFT' | 'BLOCKED' | 'READY' | 'EXPORTED';
 
 export interface Order {
   id: string;
+  exportedAt?: string;
   branch: string;
   supplier: string;
   lines: OrderLine[];

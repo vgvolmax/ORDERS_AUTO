@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { StockStatus } from '../domain/types';
 import { stockStatusLabels } from './StatusBadge';
 import { Input, SearchInput, Select } from './ui';
@@ -27,11 +28,13 @@ export function FiltersBar({
   onChange,
   suppliers,
   resultCount,
+  additionalToggle,
 }: {
   value: DemandFilters;
   onChange: (next: DemandFilters) => void;
   suppliers: string[];
   resultCount: number;
+  additionalToggle?: ReactNode;
 }) {
   const update = <K extends keyof DemandFilters>(
     key: K,
@@ -110,6 +113,7 @@ export function FiltersBar({
       </div>
 
       <div className="filter-toggles">
+        {additionalToggle}
         <label className="checkbox-control">
           <input
             type="checkbox"

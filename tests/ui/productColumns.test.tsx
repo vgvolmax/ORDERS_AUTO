@@ -35,6 +35,9 @@ it('persists demand column choices and pins product identity while sorting the d
     screen.getByRole('button', { name: 'Сортировать: Потребность' }),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Столбцы' }));
+  const branches = screen.getByRole('checkbox', { name: 'Показать столбец Подразделений' });
+  expect(branches).not.toBeChecked();
+  fireEvent.click(branches);
   fireEvent.click(
     screen.getByRole('checkbox', { name: 'Показать столбец Статус' }),
   );
@@ -47,8 +50,9 @@ it('persists demand column choices and pins product identity while sorting the d
   expect(
     screen.getAllByRole('row')[1]!.querySelectorAll('[role="cell"]')[0],
   ).toHaveClass('is-frozen');
+  expect(screen.getByRole('columnheader', { name: /Подразделений/ })).toBeVisible();
   expect(state.uiPreferences['demand:all:table:hiddenColumns']).toEqual([
-    'status',
+    'below', 'status',
   ]);
 });
 

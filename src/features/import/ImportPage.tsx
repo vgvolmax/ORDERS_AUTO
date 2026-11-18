@@ -6,6 +6,7 @@ import { isSupplierInPool, supplierKey, SUPPLIER_POOL } from '../../domain/suppl
 import type { ValidationIssue } from '../../domain/types';
 import { MIN_MAX_PARSER_VERSION, parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
+import { Dialog } from '../../components/Dialog';
 import { Alert, Button } from '../../components/ui';
 import { ImportIssues } from './ImportIssues';
 import { loadWorkspaceFile } from '../../persistence/workspaces';
@@ -16,6 +17,7 @@ export function ImportPage() {
   const { state, set, commit, saving } = useStore();
   const reads = useRef({ min: 0, sup: 0 });
   const pendingReads = useRef(new Set<'min' | 'sup'>());
+  const [duplicate, setDuplicate] = useState<File | null>(null);
   const [failures, setFailures] = useState({ min: '', sup: '' });
   const configured = state.supplierAssignments !== undefined;
   const ready = Boolean(state.minMax && configured);
@@ -68,7 +70,7 @@ export function ImportPage() {
     }
   }, [ready, state]);
 
-  async function load(file: File, kind: 'min' | 'sup') {
+  async function load(file: File, kind: 'min' | 'sup', startNewSession = false) {
     const token = ++reads.current[kind],
       epoch = state.importEpoch;
     pendingReads.current.add(kind);
@@ -79,9 +81,8 @@ export function ImportPage() {
       if (reads.current[kind] !== token) return;
       const activeFile = state.rawImports.minMax;
       if (
-        kind === 'min' &&
+        kind === 'min' && !startNewSession &&
         activeFile?.parserVersion === MIN_MAX_PARSER_VERSION &&
-        activeFile.name === file.name &&
         activeFile.size === bytes.byteLength
       ) {
         const saved = await loadWorkspaceFile(activeFile.fileId);
@@ -91,7 +92,8 @@ export function ImportPage() {
           saved?.bytes.byteLength === incoming.byteLength &&
           new Uint8Array(saved.bytes).every((byte, index) => byte === incoming[index])
         ) {
-          set({ toast: 'Этот отчёт MIN/MAX уже загружен. Продолжайте работу в текущем сеансе.' });
+          if (file.name !== activeFile.name) setDuplicate(file);
+          else set({ toast: 'Этот отчёт MIN/MAX уже загружен. Продолжайте работу в текущем сеансе.' });
           return;
         }
       }
@@ -179,7 +181,7 @@ export function ImportPage() {
             {resumeSetup
               ? 'Оба отчёта сохранены. Нажмите «Перейти к потребности», чтобы подготовить связи поставщиков.'
               : configured
-                ? 'Для следующей недели загрузите только отчёт MIN/MAX.'
+                ? state.minMax ? 'Для следующей недели загрузите только отчёт MIN/MAX.' : 'Справочник готов. Загрузите MIN/MAX, чтобы начать работу.'
                 : 'Загрузите MIN/MAX и подключите справочник JSON либо стартовый отчёт поставщиков.'}{' '}
             Файлы обрабатываются только в браузере.
           </p>
@@ -188,10 +190,9 @@ export function ImportPage() {
           disabled={!(ready || resumeSetup) || anyLoading || saving}
           onClick={() => set({ page: 'all', toast: 'Потребность рассчитана.' })}
         >
-          Перейти к потребности
+          {failures.min && state.minMax ? 'Продолжить со старым отчётом' : 'Перейти к потребности'}
         </Button>
       </header>
-      {(!configured || !state.minMax) && <SharedCatalogPanel />}
       <details className="import-help">
         <summary>Какие отчёты загрузить</summary>
         <p>
@@ -202,7 +203,10 @@ export function ImportPage() {
       </details>
 
       {anyLoading && <Alert>Обработка отчёта…</Alert>}
-      {failures.min && <Alert tone="danger">MIN/MAX: {failures.min}</Alert>}
+      {failures.min && <Alert tone="danger">
+        MIN/MAX: {failures.min}
+        {state.minMaxFileName && ` Новый файл не принят. Активен: ${state.minMaxFileName}.`}
+      </Alert>}
       {failures.sup && <Alert tone="danger">Поставщики: {failures.sup}</Alert>}
       {configured && (
         <p>
@@ -211,44 +215,45 @@ export function ImportPage() {
           Принятые перемещения, ручные количества и отметки заказов сбросятся.
         </p>
       )}
-      {!configured && state.suppliers && !state.minMax && (
-        <p>Осталось загрузить отчёт MIN/MAX.</p>
-      )}
-      {!configured && state.minMax && !state.suppliers && (
-        <p>Осталось подключить справочник JSON или загрузить отчёт поставщиков.</p>
-      )}
-
       <div className="upload-grid">
-        <FileCard
-          title="Отчёт MIN/MAX"
-          accept=".xlsx"
-          fileName={state.minMaxFileName}
-          ready={Boolean(state.minMax)}
-          busy={state.minMaxLoading}
-          summary={
-            state.minMax
-              ? `${state.minMax.skus.length} SKU · ${state.minMax.branches.length} подразделений`
-              : null
-          }
-          issues={minMaxIssues}
-          onFile={(file) => load(file, 'min')}
-        />
-        <FileCard
-          title="Отчёт поставщиков"
-          accept=".xls,.xlsx"
-          fileName={state.supplierFileName}
-          ready={Boolean(state.suppliers)}
-          busy={state.supplierLoading}
-          locked={configured}
-          catalogReady={configured && !state.suppliers}
-          summary={
-            state.suppliers
-              ? `${supplierPoolCount} поставщиков в рабочем пуле · ${state.suppliers.history.length} связок в исходном отчёте`
-              : null
-          }
-          issues={state.supplierIssues}
-          onFile={(file) => load(file, 'sup')}
-        />
+        <section aria-label="Загрузка остатков и нормативов">
+          {!configured && <h2>1. Остатки и нормативы</h2>}
+          <FileCard
+            title="Отчёт MIN/MAX"
+            accept=".xlsx"
+            fileName={state.minMaxFileName}
+            ready={Boolean(state.minMax)}
+            busy={state.minMaxLoading}
+            summary={
+              state.minMax
+                ? `${state.minMax.skus.length} SKU · ${state.minMax.branches.length} подразделений`
+                : null
+            }
+            issues={minMaxIssues}
+            onFile={(file) => load(file, 'min')}
+          />
+        </section>
+        <section aria-label="Подключение поставщиков">
+          {!configured && <><h2>2. Источник поставщиков</h2>
+            <p>Откройте справочник JSON или выберите стартовый Excel.</p></>}
+          {(!configured || !state.minMax) && <SharedCatalogPanel compact />}
+          <FileCard
+            title="Отчёт поставщиков"
+            accept=".xls,.xlsx"
+            fileName={state.supplierFileName}
+            ready={Boolean(state.suppliers)}
+            busy={state.supplierLoading}
+            locked={configured}
+            catalogReady={configured && !state.suppliers}
+            summary={
+              state.suppliers
+                ? `${supplierPoolCount} поставщиков в рабочем пуле · ${state.suppliers.history.length} связок в исходном отчёте`
+                : null
+            }
+            issues={state.supplierIssues}
+            onFile={(file) => load(file, 'sup')}
+          />
+        </section>
       </div>
 
       {supplierResolutionSummary && (
@@ -268,13 +273,34 @@ export function ImportPage() {
             Назначьте им основного поставщика в разделе «Поставщики», чтобы
             добавить потребность в заказы.
           </p>
+          {supplierResolutionSummary.unassigned > 0 && (
+            <Button className="secondary" onClick={() => set((current) => ({
+              page: 'suppliers',
+              uiPreferences: { ...current.uiPreferences, 'suppliers:productFilters': {
+                query: '', primary: 'without-primary', supplier: '', role: 'any', hasDemand: true,
+              } },
+            }))}>Открыть неназначенные товары</Button>
+          )}
         </section>
       )}
 
-      {ready && !anyLoading && (
+      {ready && !anyLoading && !failures.min && (
         <p className="import-ready" role="status">
           Отчёт MIN/MAX сохранён. Можно перейти к работе с потребностью.
         </p>
+      )}
+      {duplicate && (
+        <Dialog title="В файле тот же отчёт MIN/MAX" onClose={() => setDuplicate(null)} actions={<>
+          <Button onClick={() => setDuplicate(null)}>Продолжить текущий сеанс</Button>
+          <Button className="secondary" disabled={saving || anyLoading} onClick={() => {
+            const file = duplicate;
+            setDuplicate(null);
+            void load(file, 'min', true);
+          }}>Начать новый сеанс</Button>
+        </>}>
+          <p>Активный файл: {state.minMaxFileName}. Выбранный файл: {duplicate.name}.</p>
+          <p>В новом сеансе останутся условия и маршруты. Перемещения, правки и отметки текущего сеанса сохранятся в истории.</p>
+        </Dialog>
       )}
     </main>
   );

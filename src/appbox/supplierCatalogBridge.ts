@@ -24,6 +24,8 @@ declare global {
   }
 }
 export interface SharedCatalogLink {
+  openedAt?: string;
+  publishedAt?: string;
   document: AppBoxDocumentRef | null;
   /** Canonical snapshot last loaded from, or saved to, AppBox. */
   baseline: string;

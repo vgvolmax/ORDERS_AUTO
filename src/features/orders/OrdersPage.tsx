@@ -7,6 +7,7 @@ import { useStore } from '../../app/appStore';
 import { derive, type WorkflowOrder } from '../../app/selectors';
 import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
+import { Dialog } from '../../components/Dialog';
 import { QuantitySummary } from '../../components/QuantitySummary';
 import { PurchasingDataAlert } from '../../components/PurchasingDataAlert';
 import { MovementIndicator } from '../rebalancing/AcceptedMovementsPopover';
@@ -21,7 +22,6 @@ import {
 import {
   applyOrderQtyChange,
   applyOrderSkuExclusion,
-  setOrderReviewed,
   setOrdersReviewed,
 } from '../../domain/orderWorkflow';
 import {
@@ -37,6 +37,8 @@ import { OrderDrawer } from './OrderDrawer';
 import { SupplierOrdersDrawer } from './SupplierOrdersDrawer';
 
 type ExportMode = 'ALL' | 'REVIEWED';
+type ExportRecord = { orders: WorkflowOrder[]; allowBelowThreshold: boolean; time: string };
+type Exclusion = { orderIds: string[]; skuCode: string; excluded: boolean };
 
 const staleExportMessage =
   'Рабочий сеанс изменился. Обновите страницу и повторите выгрузку.';
@@ -66,6 +68,11 @@ export function OrdersPage({
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
   const [exportError, setExportError] = useState('');
+  const [pendingExport, setPendingExport] = useState<ExportRecord | null>(null);
+  const [orderError, setOrderError] = useState('');
+  const [exclusion, setExclusion] = useState<Exclusion | null>(null);
+  const [reviewOnly, setReviewOnly] = usePreference('orders:reviewOnly', false);
+  const [affected, setAffected] = usePreference<string[]>('orders:affected', []);
   const [supplierQuery, setSupplierQuery] = usePreference('orders:query', '');
   const [showBelowThreshold, setShowBelowThreshold] = usePreference(
     'orders:belowThreshold',
@@ -73,22 +80,22 @@ export function OrdersPage({
   );
 
   const orders = derived.projection.orders;
-  const visibleOrders = useMemo(() => {
+  const matchingOrders = useMemo(() => {
     const query = supplierQuery.trim().toLocaleLowerCase('ru-RU');
+    const affectedIds = new Set(affected);
     return orders.filter((order) => {
+      if (affectedIds.size && !affectedIds.has(order.id)) return false;
+      if (reviewOnly && (order.reviewed || hasHardBlocker(order))) return false;
       if (query && !order.supplier.toLocaleLowerCase('ru-RU').includes(query)) {
-        return false;
-      }
-      if (
-        !showBelowThreshold &&
-        order.belowThreshold &&
-        !hasHardBlocker(order)
-      ) {
         return false;
       }
       return true;
     });
-  }, [orders, supplierQuery, showBelowThreshold]);
+  }, [orders, supplierQuery, reviewOnly, affected]);
+  const visibleOrders = useMemo(() => showBelowThreshold ? matchingOrders
+    : matchingOrders.filter((order) => !order.belowThreshold || hasHardBlocker(order)),
+  [matchingOrders, showBelowThreshold]);
+  const hiddenBelowThreshold = matchingOrders.length - visibleOrders.length;
 
   const ordersBySupplier = useMemo(() => {
     const index = new Map<string, WorkflowOrder[]>();
@@ -128,9 +135,30 @@ export function OrdersPage({
     : [];
 
   const exportedIds = new Set(state.exportedOrderIds);
+  const savedExports = new Map((state.exportedOrders ?? []).map((order) => [order.id, order]));
+  const visibleReviewIds = visibleOrders.filter((order) => !order.reviewed && !hasHardBlocker(order)).map(({ id }) => id);
+  const nextReviewId = selected && orders.slice(orders.indexOf(selected) + 1).find((order) =>
+    visibleOrderIds.has(order.id) && !order.reviewed && !hasHardBlocker(order),
+  )?.id;
+  const thresholdAmount = selected?.belowThreshold && state.settings.thresholdMode === 'SUPPLIER_TOTAL'
+    ? summarizeOrders((ordersBySupplier.get(selected.supplier) ?? []).filter((order) => !hasHardBlocker(order))).amount
+    : selected?.totalAmount;
+  const exclusionTargets = exclusion ? orders.filter(({ id }) => exclusion.orderIds.includes(id)) : [];
+  const exclusionChecks = exclusionTargets.filter(({ reviewed }) => reviewed).length;
+  const exclusionRemovedAmounts = exclusionTargets.flatMap((order) =>
+    order.lines.filter((line) => line.skuCode === exclusion?.skuCode && line.orderQty > 0).map(({ amount }) => amount),
+  );
+  const exportRecovery = pendingExport && (
+    <Alert tone="warning">
+      Скачивание запущено. Версия выгрузки не записалась в сеанс.{' '}
+      <Button className="secondary" disabled={Boolean(busy || saving)} onClick={() => void retryExportRecord()}>
+        Повторить запись отметки
+      </Button>
+    </Alert>
+  );
   const eligibleSupplierOrderIds = onReconcile
     ? selectedSupplierOrders
-      .filter((order) => canReconcileOrder(order, exportedIds.has(order.id)))
+      .filter((order) => canReconcileOrder(order, exportedIds.has(order.id)) || savedExports.has(order.id))
       .map((order) => order.id)
     : [];
 
@@ -151,17 +179,14 @@ export function OrdersPage({
     set({ toast: detail });
   }
 
-  const markExported = async (
-    exported: WorkflowOrder[],
-    allowBelowThreshold = false,
-  ) => {
+  const markExported = async ({ orders: exported, allowBelowThreshold, time }: ExportRecord) => {
     const payloads = new Map(exported.map((o) => [o.id, orderToCsv(o)]));
     const patch = (current: typeof state) => {
       if (
         current.workspaceId !== state.workspaceId ||
         current.snapshotId !== state.snapshotId
       )
-        return {};
+        throw new StaleOrderExportError('Активный сеанс сменился. Отметка о выгрузке не записана.');
       const ids = derive(current)
         .projection.orders.filter(
           (o) =>
@@ -173,7 +198,9 @@ export function OrdersPage({
         .map((o) => o.id);
       const snapshots = new Map((current.exportedOrders ?? []).map((order) => [order.id, order]));
       for (const { reviewed, manualEditCount, ...order } of exported) {
-        snapshots.set(order.id, { ...order, lines: order.lines.filter((line) => line.orderQty > 0) });
+        const previous = snapshots.get(order.id);
+        if (!previous?.exportedAt || previous.exportedAt <= time)
+          snapshots.set(order.id, { ...order, exportedAt: time, lines: order.lines.filter((line) => line.orderQty > 0) });
       }
       return {
         exportedOrderIds: [...new Set([...current.exportedOrderIds, ...ids])],
@@ -184,20 +211,43 @@ export function OrdersPage({
     else set(patch);
   };
 
-  async function zip(mode: ExportMode) {
-    const target = mode === 'REVIEWED' ? reviewedExportable : exportable;
+  async function recordDownload(orders: WorkflowOrder[], success: string, allowBelowThreshold = false) {
+    const record = { orders, allowBelowThreshold, time: new Date().toISOString() };
+    try {
+      await markExported(record);
+      set({ toast: success });
+    } catch {
+      setPendingExport(record);
+      set({ toast: 'Скачивание запущено. Не удалось записать версию выгрузки.' });
+    }
+  }
+
+  async function retryExportRecord() {
+    if (!pendingExport || busy || saving) return;
+    setBusy('Запись отметки…');
+    try {
+      await markExported(pendingExport);
+      setPendingExport(null);
+      set({ toast: 'Версия выгрузки сохранена.' });
+    } catch {
+      set({ toast: 'Версия выгрузки ещё не записана. Повторите попытку.' });
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function zip(mode: ExportMode, inFilter = false) {
+    if (pendingExport || busy || saving) return;
+    const candidates = mode === 'REVIEWED' ? reviewedExportable : exportable;
+    const target = inFilter ? candidates.filter((order) => visibleOrderIds.has(order.id)) : candidates;
     if (target.length === 0) return;
     setExportError('');
     setBusy(`Формирование ${target.length} CSV…`);
     try {
       await downloadReadyOrdersZip(target, verifyExportRevision);
-      await markExported(target);
-      set({
-        toast:
-          mode === 'REVIEWED'
-            ? `Создан ZIP проверенных заказов: ${target.length} CSV.`
-            : `Создан ZIP: ${target.length} CSV.`,
-      });
+      await recordDownload(target, mode === 'REVIEWED'
+        ? `Скачивание ZIP проверенных заказов запущено: ${target.length} CSV.`
+        : `Скачивание ZIP запущено: ${target.length} CSV.`);
     } catch (error) {
       if (!(error instanceof StaleOrderExportError))
         console.error('Failed to export orders ZIP', error);
@@ -211,6 +261,7 @@ export function OrdersPage({
   }
 
   async function excel(supplier: string, mode: ExportMode) {
+    if (pendingExport || busy || saving) return;
     const supplierOrders = orders.filter(
       (order) =>
         order.supplier === supplier &&
@@ -234,13 +285,7 @@ export function OrdersPage({
         }),
         supplierWorkbookFilename(supplier),
       );
-      await markExported(supplierOrders);
-      set({
-        toast:
-          mode === 'REVIEWED'
-            ? `Excel проверенных заказов для ${supplier} сформирован.`
-            : `Excel для ${supplier} сформирован.`,
-      });
+      await recordDownload(supplierOrders, `Скачивание Excel для ${supplier} запущено. Заказов: ${supplierOrders.length}.`);
     } catch (error) {
       if (!(error instanceof StaleOrderExportError))
         console.error(`Failed to export supplier workbook for ${supplier}`, error);
@@ -273,16 +318,19 @@ export function OrdersPage({
           qty
         )
           return {};
-        return {
-          ...applyOrderQtyChange({
+        const change = applyOrderQtyChange({
             edits: s.edits,
             reviewedOrderIds: s.reviewedOrderIds,
             exportedOrderIds: s.exportedOrderIds,
             order: current,
             skuCode,
             qty,
-          }),
-        };
+        });
+        const flags = [
+          current.reviewed ? 'проверка снята' : '',
+          s.exportedOrderIds.includes(current.id) ? 'состав отличается от выгруженного' : '',
+        ].filter(Boolean);
+        return flags.length ? { ...change, toast: `${skuCode}: ${flags.join(' · ')}.` } : change;
       };
       if (commit) await commit(patch);
       else set(patch);
@@ -313,7 +361,7 @@ export function OrdersPage({
         ) {
           throw new Error('Состав заказов изменился.');
         }
-        return applyOrderSkuExclusion({
+        const patch = applyOrderSkuExclusion({
           edits: current.edits,
           reviewedOrderIds: current.reviewedOrderIds,
           exportedOrderIds: current.exportedOrderIds,
@@ -321,47 +369,53 @@ export function OrdersPage({
           skuCode,
           excluded,
         });
+        const changed = targets.filter((order) => Boolean(order.lines.find(({ skuCode: code }) => code === skuCode)?.excluded) !== excluded).length;
+        const cleared = current.reviewedOrderIds.length - patch.reviewedOrderIds.length;
+        return { ...patch, toast: `${skuCode}: ${excluded ? 'исключён' : 'восстановлен'}. Заказов изменено: ${changed}. Проверок снято: ${cleared}.` };
       };
+      setOrderError('');
       if (commit) await commit(patch);
       else set(patch);
+      setExclusion(null);
     } catch (error) {
       console.error('Failed to change order SKU exclusion', error);
-      set({
-        toast: excluded
-          ? 'Не удалось исключить позицию из заказа.'
-          : 'Не удалось восстановить позицию в заказе.',
-      });
+      setOrderError(excluded
+        ? 'Не удалось исключить позицию. Состав заказов сохранён.'
+        : 'Не удалось восстановить позицию. Состав заказов сохранён.');
     }
   }
 
-  function setReviewed(orderId: string, reviewed: boolean): void {
-    set((current) => ({
-      reviewedOrderIds: setOrderReviewed(
-        current.reviewedOrderIds,
-        orderId,
-        reviewed,
-      ),
-      toast: reviewed ? 'Заказ отмечен проверенным.' : 'Проверка заказа снята.',
-    }));
+  async function setAllReviewed(orderIds: string[], reviewed: boolean): Promise<boolean> {
+    setOrderError('');
+    const patch = (current: typeof state) => {
+      if (current.workspaceId !== state.workspaceId || current.snapshotId !== state.snapshotId)
+        throw new Error('Рабочий сеанс сменился.');
+      const available = new Set(derive(current).projection.orders.map(({ id }) => id));
+      if (orderIds.some((id) => !available.has(id))) throw new Error('Состав заказов изменился.');
+      const reviewedOrderIds = setOrdersReviewed(current.reviewedOrderIds, orderIds, reviewed);
+      const changed = Math.abs(reviewedOrderIds.length - current.reviewedOrderIds.length);
+      return {
+        reviewedOrderIds,
+        toast: reviewed ? `Проверены заказы: ${changed}.` : `Проверок снято: ${changed}.`,
+      };
+    };
+    try {
+      if (commit) await commit(patch);
+      else set(patch);
+      return true;
+    } catch {
+      setOrderError('Не удалось сохранить проверку. Предыдущие отметки сохранены.');
+      return false;
+    }
   }
 
-  function setAllReviewed(orderIds: string[], reviewed: boolean): void {
-    set((current) => ({
-      reviewedOrderIds: setOrdersReviewed(
-        current.reviewedOrderIds,
-        orderIds,
-        reviewed,
-      ),
-      toast: reviewed
-        ? `Проверены заказы: ${orderIds.length}.`
-        : `Проверка снята: ${orderIds.length}.`,
-    }));
-  }
+  const setReviewed = (orderId: string, reviewed: boolean) => setAllReviewed([orderId], reviewed);
 
   async function exportSingle(
     order: WorkflowOrder,
     allowBelowThreshold: boolean,
   ) {
+    if (pendingExport || busy || saving) return;
     setExportError('');
     const hardBlockers = order.blockers.filter(
       (blocker) => blocker !== 'Ниже минимальной суммы',
@@ -376,10 +430,7 @@ export function OrdersPage({
     try {
       await verifyExportRevision();
       downloadCsv(order);
-      await markExported([order], allowBelowThreshold);
-      set({
-        toast: `CSV заказа ${order.branch} → ${order.supplier} сформирован.`,
-      });
+      await recordDownload([order], `Скачивание CSV заказа ${order.branch} → ${order.supplier} запущено.`, allowBelowThreshold);
     } catch (error) {
       if (!(error instanceof StaleOrderExportError))
         console.error(`Failed to export CSV for order ${order.id}`, error);
@@ -393,7 +444,7 @@ export function OrdersPage({
   }
 
   return (
-    <main>
+    <main className="compact-workspace orders-page">
       <header className="header-actions">
         <div>
           <p className="eyebrow">Рабочая потребность</p>
@@ -405,56 +456,83 @@ export function OrdersPage({
         </div>
         <div className="export-actions">
           <Button
-            disabled={exportable.length === 0 || Boolean(busy || saving)}
+            disabled={exportable.length === 0 || Boolean(busy || saving || pendingExport)}
             onClick={() => zip('ALL')}
           >
-            {busy || `Скачать все (${exportable.length})`}
+            {busy || `ZIP по всей сети (${exportable.length})`}
           </Button>
           <Button
             className="secondary"
             disabled={
-              reviewedExportable.length === 0 || Boolean(busy || saving)
+              reviewedExportable.length === 0 || Boolean(busy || saving || pendingExport)
             }
             onClick={() => zip('REVIEWED')}
           >
-            Скачать проверенные ({reviewedExportable.length})
+            ZIP проверенных по сети ({reviewedExportable.length})
           </Button>
+          <small className="muted">Сетевые выгрузки включают заказы вне фильтров матрицы.</small>
         </div>
       </header>
+      {exportRecovery}
+      {orderError && !selected && !selectedSupplier && <Alert tone="danger">{orderError}</Alert>}
       <PurchasingDataAlert issues={derived.projection.dataIssues} />
+      {derived.projection.unassigned.length > 0 && (
+        <Button className="secondary" onClick={() => set((current) => ({
+          page: 'suppliers',
+          uiPreferences: { ...current.uiPreferences, 'suppliers:productFilters': {
+            query: '', primary: 'without-primary', supplier: '', role: 'any', hasDemand: true,
+          } },
+        }))}>Открыть товары без основного поставщика</Button>
+      )}
       {exportError && <Alert tone="danger">{exportError}</Alert>}
 
-      <ThresholdControls
-        settings={state.settings}
-        onChange={async (settings) => {
-          const patch = { settings };
-          if (commit) await commit(patch);
-          else set(patch);
-        }}
-        showBelowThreshold={showBelowThreshold}
-        onShowBelowThresholdChange={setShowBelowThreshold}
-      />
+      <div className="order-filter-grid">
+        <ThresholdControls
+          settings={state.settings}
+          onChange={async (settings) => {
+            const patch = { settings };
+            if (commit) await commit(patch);
+            else set(patch);
+          }}
+          showBelowThreshold={showBelowThreshold}
+          onShowBelowThresholdChange={setShowBelowThreshold}
+        />
 
-      <section className="filters compact-filters">
-        <label>
-          Поиск поставщика
-          <SearchInput
-            value={supplierQuery}
-            onValueChange={setSupplierQuery}
-            placeholder="Название поставщика"
-          />
-        </label>
-        <span>
-          В матрице: <strong>{visibleOrders.length}</strong> заказов
-        </span>
-        {supplierQuery && (
-          <button className="link" onClick={() => setSupplierQuery('')}>
-            Сбросить поиск
-          </button>
-        )}
-      </section>
+        <section className="filters compact-filters">
+          <label>
+            Поиск поставщика
+            <SearchInput
+              value={supplierQuery}
+              onValueChange={setSupplierQuery}
+              placeholder="Название поставщика"
+            />
+          </label>
+          <label className="checkbox-control">
+            <input type="checkbox" checked={reviewOnly} onChange={(event) => setReviewOnly(event.target.checked)} />
+            К проверке
+          </label>
+          {reviewOnly && <Button className="secondary" disabled={!visibleReviewIds.length || saving}
+            onClick={() => void setAllReviewed(visibleReviewIds, true)}>
+            Отметить по фильтру ({visibleReviewIds.length})
+          </Button>}
+          {affected.length > 0 && <Button className="secondary" onClick={() => setAffected([])}>
+            Изменившиеся заказы ({affected.length}) · снять фильтр
+          </Button>}
+          {(supplierQuery || reviewOnly || affected.length > 0) && <Button className="secondary"
+            disabled={Boolean(busy || saving || pendingExport) || !exportable.some(({ id }) => visibleOrderIds.has(id))}
+            onClick={() => void zip('ALL', true)}>ZIP по фильтру</Button>}
+          <span>
+            В матрице: <strong>{visibleOrders.length}</strong> заказов
+          </span>
+          {supplierQuery && (
+            <button className="link" onClick={() => setSupplierQuery('')}>
+              Сбросить поиск
+            </button>
+          )}
+        </section>
+      </div>
 
-      <div className="metrics">
+      <div className="metrics compact-metrics">
         <MetricCard
           label="Готовы"
           icon="cart"
@@ -521,6 +599,7 @@ export function OrdersPage({
                 const supplierReviewedExportable = supplierExportable.filter(
                   (order) => order.reviewed,
                 );
+                const fileAmount = summarizeOrders(supplierReviewedExportable).amount;
                 const supplierSkuCount = new Set(
                   allSupplierOrders.flatMap((order) =>
                     order.lines
@@ -662,7 +741,7 @@ export function OrdersPage({
                           className="secondary"
                           disabled={
                             supplierExportable.length === 0 ||
-                            Boolean(busy || saving)
+                            Boolean(busy || saving || pendingExport)
                           }
                           onClick={() => excel(supplier, 'ALL')}
                         >
@@ -672,13 +751,20 @@ export function OrdersPage({
                           className="secondary"
                           disabled={
                             supplierReviewedExportable.length === 0 ||
-                            Boolean(busy || saving)
+                            Boolean(busy || saving || pendingExport)
                           }
                           onClick={() => excel(supplier, 'REVIEWED')}
                         >
                           Проверенные {supplierReviewedExportable.length}/
                           {supplierExportable.length}
                         </Button>
+                        {supplierReviewedExportable.length > 0 && fileAmount !== null && (
+                          <small className={state.settings.thresholdMode === 'SUPPLIER_TOTAL' && fileAmount < state.settings.minimumOrderAmount ? 'warning-text' : 'muted'}>
+                            Excel проверенных: {money(fileAmount)}
+                            {state.settings.minimumOrderAmount > 0 && state.settings.thresholdMode === 'SUPPLIER_TOTAL'
+                              ? ` · минимум поставщика ${money(state.settings.minimumOrderAmount)}` : ''}
+                          </small>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -690,6 +776,9 @@ export function OrdersPage({
       ) : (
         <EmptyState>
           Нет заказов, соответствующих текущему порогу и фильтрам.
+          {hiddenBelowThreshold > 0 && <> <Button className="secondary" onClick={() => setShowBelowThreshold(true)}>
+            Показать заказы ниже порога ({hiddenBelowThreshold})
+          </Button></>}
         </EmptyState>
       )}
 
@@ -698,7 +787,16 @@ export function OrdersPage({
           order={selected}
           dataIssues={derived.projection.dataIssues}
           exported={exportedIds.has(selected.id)}
-          exportError={exportError}
+          exportError={exportError || orderError}
+          exportRecovery={exportRecovery}
+          lastExport={savedExports.get(selected.id)}
+          threshold={thresholdAmount == null ? undefined : {
+            scope: state.settings.thresholdMode === 'SUPPLIER_TOTAL' ? 'По поставщику в целом' : 'По заказу подразделения',
+            limit: state.settings.minimumOrderAmount,
+            amount: thresholdAmount,
+          }}
+          reviewQueue={reviewOnly}
+          exportDisabled={Boolean(pendingExport)}
           saving={Boolean(busy || saving)}
           renderMovement={renderOrderMovement}
           onClose={() => setSelectedId(null)}
@@ -707,8 +805,11 @@ export function OrdersPage({
             setSkuExcluded([selected.id], skuCode, excluded)
           }
           onReviewedChange={(reviewed) => setReviewed(selected.id, reviewed)}
+          onReviewAndNext={nextReviewId ? async () => {
+            if (await setReviewed(selected.id, true)) setSelectedId(nextReviewId);
+          } : undefined}
           onReconcile={
-            onReconcile && canReconcileOrder(selected, exportedIds.has(selected.id))
+            onReconcile && (savedExports.has(selected.id) || canReconcileOrder(selected, exportedIds.has(selected.id)))
               ? () => onReconcile([selected.id])
               : undefined
           }
@@ -721,6 +822,7 @@ export function OrdersPage({
       {selectedSupplier && selectedSupplierOrders.length > 0 && (
         <SupplierOrdersDrawer
           supplier={selectedSupplier}
+          feedback={orderError}
           dataIssues={derived.projection.dataIssues}
           saving={Boolean(busy || saving)}
           renderMovement={renderOrderMovement}
@@ -740,7 +842,12 @@ export function OrdersPage({
           }
           onClose={() => setSelectedSupplier(null)}
           onEdit={editOrder}
-          onSetExcluded={setSkuExcluded}
+          onSetExcluded={(orderIds, skuCode, excluded) => {
+            if (orderIds.length > 1) {
+              setOrderError('');
+              setExclusion({ orderIds, skuCode, excluded });
+            } else void setSkuExcluded(orderIds, skuCode, excluded);
+          }}
           onSetReviewed={setReviewed}
           onSetAllReviewed={setAllReviewed}
           onReconcile={
@@ -749,6 +856,22 @@ export function OrdersPage({
               : undefined
           }
         />
+      )}
+      {exclusion && (
+        <Dialog title={exclusion.excluded ? `Исключить ${exclusion.skuCode} из заказов?` : `Восстановить ${exclusion.skuCode} в заказах?`}
+          onClose={() => { if (!saving) setExclusion(null); }}
+          actions={<>
+            <Button className="secondary" disabled={saving} onClick={() => setExclusion(null)}>Отмена</Button>
+            <Button disabled={saving} onClick={() => void setSkuExcluded(exclusion.orderIds, exclusion.skuCode, exclusion.excluded)}>
+              {exclusion.excluded ? 'Исключить' : 'Восстановить'}
+            </Button>
+          </>}>
+          <p>Заказов в операции: {exclusionTargets.length}. Проверок к снятию: {exclusionChecks}.</p>
+          <p>Подразделения: {exclusionTargets.map(({ branch }) => branch).join(', ')}.</p>
+          {exclusion.excluded && !exclusionRemovedAmounts.includes(null) &&
+            <p>Сумма исключаемых позиций: {money(moneySum(exclusionRemovedAmounts as number[]))}.</p>}
+          {orderError && <Alert tone="danger">{orderError}</Alert>}
+        </Dialog>
       )}
     </main>
   );

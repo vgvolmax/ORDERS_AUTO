@@ -55,6 +55,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
   const derived = useDerivedState(state);
   const tablePreferences = useTablePreferences(
     `demand:${branch ?? 'all'}:table`,
+    branch ? [] : ['branches', 'below'],
   );
   const [savedFilters, setFilters] = usePreference<DemandFilters>(
     `demand:${branch ?? 'all'}:filters`,
@@ -110,6 +111,12 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     (line) => line.purchaseStatus === 'NO_NORM',
   ).length;
 
+  const coveredToggle = (
+    <label className="checkbox-control">
+      <input type="checkbox" checked={showCovered} onChange={(event) => setShowCovered(event.target.checked)} />
+      Показать покрытые перемещениями
+    </label>
+  );
   if (!branch) {
     const diagnosticStatus = getDiagnosticNormStatus(filters.status);
     const groups = filterNetworkGroups(
@@ -148,13 +155,14 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       {
         key: 'name',
         header: 'Наименование',
-        width: 'minmax(240px, 1.8fr)',
+        width: 'minmax(190px, 1.8fr)',
         sticky: true,
         hideable: false,
         sortValue: (group) => group.name,
         render: (group) => (
           <button
             className="row-expand"
+            aria-expanded={expandedSku === group.skuCode}
             onClick={() =>
               setExpandedSku(
                 expandedSku === group.skuCode ? null : group.skuCode,
@@ -174,7 +182,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         key: 'status',
         sortValue: (group) => severity[group.worstStatus],
         header: 'Статус',
-        width: '150px',
+        width: '125px',
         render: (group) => <StatusBadge status={group.worstStatus} />,
       },
       {
@@ -220,7 +228,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         key: 'supplier',
         sortValue: (group) => group.selectedSupplier,
         header: 'Поставщик / статус',
-        width: '190px',
+        width: '172px',
         render: (group) => group.selectedSupplier ?? 'Требует решения',
       },
     ];
@@ -232,7 +240,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       >
         <PurchasingDataAlert issues={derived.projection.dataIssues} />
         <Metrics
-          count={groups.length}
+          count={groups.filter((group) => group.totalDeficitQty > 0).length}
           below={belowMin}
           qty={
             <QuantitySummary
@@ -249,19 +257,12 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
           missing={missing}
         />
         <NormAlerts invalid={invalidNormCount} missing={noNormCount} />
-        <label className="checkbox-control">
-          <input
-            type="checkbox"
-            checked={showCovered}
-            onChange={(e) => setShowCovered(e.target.checked)}
-          />
-          Показать покрытые перемещениями
-        </label>
         <FiltersBar
           value={filters}
           onChange={setFilters}
           suppliers={supplierOptions}
           resultCount={groups.length}
+          additionalToggle={coveredToggle}
         />
         <VirtualTable
           {...tablePreferences}
@@ -432,7 +433,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     >
       <PurchasingDataAlert issues={derived.projection.dataIssues} />
       <Metrics
-        count={rows.length}
+        count={rows.filter((row) => row.purchaseQty > 0).length}
         below={belowMin}
         qty={
           <QuantitySummary
@@ -447,26 +448,19 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         missing={missing}
       />
       <NormAlerts invalid={invalidNormCount} missing={noNormCount} />
-      <label className="checkbox-control">
-        <input
-          type="checkbox"
-          checked={showCovered}
-          onChange={(e) => setShowCovered(e.target.checked)}
-        />
-        Показать покрытые перемещениями
-      </label>
       <FiltersBar
         value={filters}
         onChange={setFilters}
         suppliers={supplierOptions}
         resultCount={rows.length}
+        additionalToggle={coveredToggle}
       />
       <VirtualTable
         {...tablePreferences}
         rows={rows}
         columns={columns}
         getRowKey={(line) => `${line.skuCode}:${line.branch}`}
-        emptyMessage="Все позиции подразделения находятся на MAX или выше либо исключены текущими фильтрами."
+        emptyMessage="По текущим фильтрам нет позиций с потребностью."
       />
     </Workspace>
   );
@@ -694,7 +688,7 @@ function Metrics({
   missing: number;
 }) {
   return (
-    <div className="metrics">
+    <div className="metrics compact-metrics" role="group" aria-label="Сводка по текущим фильтрам">
       <MetricCard label="SKU ниже MAX" icon="box" tone="accent" value={count} />
       <MetricCard
         label="SKU ниже MIN"
@@ -729,7 +723,7 @@ function Workspace({
   children: ReactNode;
 }) {
   return (
-    <main>
+    <main className="compact-workspace demand-page">
       <header>
         <p className="eyebrow">Потребность</p>
         <h1>{title}</h1>

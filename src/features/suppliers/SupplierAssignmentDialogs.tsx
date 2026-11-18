@@ -177,6 +177,7 @@ export function ProductSupplierDialog({
 
 export function BulkSupplierDialog({
   skuCodes,
+  visibleCodes,
   assignmentsByCode,
   suppliers = SUPPLIER_POOL,
   saving,
@@ -185,10 +186,14 @@ export function BulkSupplierDialog({
   onClose,
 }: SaveProps & {
   skuCodes: string[];
+  visibleCodes: string[];
   assignmentsByCode: ReadonlyMap<string, SupplierAssignment>;
 }) {
   const [supplier, setSupplier] = useState('');
-  const primaries = skuCodes.map((skuCode) => assignmentsByCode.get(skuCode)?.primary ?? null);
+  const [scope, setScope] = useState<'visible' | 'all'>('visible');
+  const hiddenCount = skuCodes.length - visibleCodes.length;
+  const targets = scope === 'all' || hiddenCount === 0 ? skuCodes : visibleCodes;
+  const primaries = targets.map((skuCode) => assignmentsByCode.get(skuCode)?.primary ?? null);
   const replacements = supplier ? primaries.filter((primary) => primary && primary !== supplier).length : 0;
   const firstAssignments = supplier ? primaries.filter((primary) => !primary).length : 0;
 
@@ -202,7 +207,7 @@ export function BulkSupplierDialog({
           <Button
             disabled={saving || !supplier || replacements + firstAssignments === 0}
             onClick={() => void onSave(
-              { kind: 'set-primary', skuCodes, supplier },
+              { kind: 'set-primary', skuCodes: targets, supplier },
               `Основной поставщик назначен для товаров: ${replacements + firstAssignments}.`,
             )}
           >
@@ -212,7 +217,16 @@ export function BulkSupplierDialog({
       }
     >
       <div className="supplier-dialog-content" aria-busy={saving}>
-        <p>Выбрано товаров: {skuCodes.length}</p>
+        <p>Выбрано товаров: {skuCodes.length}.
+          {hiddenCount > 0 && ` По фильтру: ${visibleCodes.length} · Скрыто фильтрами: ${hiddenCount}.`}</p>
+        {hiddenCount > 0 && <label>
+          Область назначения
+          <Select value={scope} disabled={saving}
+            onChange={(event) => setScope(event.target.value as 'visible' | 'all')}>
+            <option value="visible">Выбранные по фильтру ({visibleCodes.length})</option>
+            <option value="all">Все выбранные ({skuCodes.length}, скрыто {hiddenCount})</option>
+          </Select>
+        </label>}
         <SupplierChoice label="Основной поставщик" value={supplier} onChange={setSupplier} options={suppliers} disabled={saving} />
         {supplier && (
           <div role="status">

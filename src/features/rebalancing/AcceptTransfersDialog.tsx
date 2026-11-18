@@ -17,6 +17,8 @@ import { fmtQty } from '../demand/DemandPage';
 export function AcceptTransfersDialog({
   kind,
   count,
+  hiddenLines = 0,
+  clearedChecks,
   scopeSummary,
   before,
   after,
@@ -28,6 +30,8 @@ export function AcceptTransfersDialog({
 }: {
   kind: 'accept' | 'revoke';
   count: number;
+  hiddenLines?: number;
+  clearedChecks?: number;
   scopeSummary?: AcceptanceScopeSummary | undefined;
   before: PurchaseDemandLine[];
   after: PurchaseDemandLine[];
@@ -114,6 +118,7 @@ export function AcceptTransfersDialog({
           Цены перемещений — справочные MIN/MAX.
         </p>
       )}
+      {hiddenLines > 0 && <Alert tone="warning">В подтверждение входят скрытые фильтрами строки: {hiddenLines}.</Alert>}
       <section
         role="group"
         aria-label="Изменение закупки"
@@ -167,7 +172,8 @@ export function AcceptTransfersDialog({
           {clearedEdits}. Остальные ручные количества сохраняются.
         </Alert>
       )}
-      <p>Для изменившихся заказов будут сняты отметки проверки и выгрузки.</p>
+      <p>Для изменившихся заказов будут сняты отметки проверки и выгрузки.
+        {clearedChecks !== undefined && ` Проверок к снятию: ${clearedChecks}.`}</p>
       {error && <Alert tone="danger">{error}</Alert>}
     </Dialog>
   );

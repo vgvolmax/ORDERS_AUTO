@@ -75,17 +75,18 @@ export async function buildSupplierWorkbook(
   );
   const skuCount = new Set(positiveLines.map((line) => line.skuCode)).size;
   const branchCount = new Set(supplierOrders.map((order) => order.branch)).size;
-  const totalQty = positiveLines.reduce((sum, line) => sum + line.orderQty, 0);
+  const totalQty = comparableQuantity(positiveLines);
   const totalAmount = moneySum(positiveLines.map((line) => line.amount ?? 0));
 
   const aggregated = new Map<string, AggregatedLine>();
   for (const line of positiveLines) {
-    const current = aggregated.get(line.skuCode);
+    const identity = JSON.stringify([line.skuCode, line.unit]);
+    const current = aggregated.get(identity);
     if (current) {
       current.qty += line.orderQty;
       current.amounts.push(line.amount ?? 0);
     } else {
-      aggregated.set(line.skuCode, {
+      aggregated.set(identity, {
         sample: line,
         qty: line.orderQty,
         amounts: [line.amount ?? 0],
@@ -100,7 +101,8 @@ export async function buildSupplierWorkbook(
     { label: 'АРТИКУЛОВ', value: skuCount },
     { label: 'ПОДРАЗДЕЛЕНИЙ', value: branchCount },
   ]);
-  sectionTitle(dashboard, 'СОСТАВ ОБЩЕГО ЗАКАЗА', 'Единиц по строкам: ' + formatQty(totalQty));
+  sectionTitle(dashboard, 'СОСТАВ ОБЩЕГО ЗАКАЗА', totalQty === null
+    ? 'Количество указано по строкам и единицам' : 'Количество: ' + formatQty(totalQty));
   appendTableHeader(dashboard);
 
   const summaryLines = [...aggregated.values()];
@@ -125,10 +127,12 @@ export async function buildSupplierWorkbook(
     const sheet = workbook.addWorksheet(uniqueSheetName(order.branch, usedSheetNames));
     applySheetFrame(sheet, logoImage, 'ЗАКАЗ ПОДРАЗДЕЛЕНИЯ', mode, generatedAt, false);
     applySupplierRow(sheet, supplier, order.branch);
+    const branchQty = comparableQuantity(lines);
     applyMetricBlocks(sheet, [
       { label: 'СУММА ЗАКАЗА', value: moneySum(lines.map((line) => line.amount ?? 0)), format: MONEY_FORMAT },
       { label: 'АРТИКУЛОВ', value: new Set(lines.map((line) => line.skuCode)).size },
-      { label: 'ЕДИНИЦ ПО СТРОКАМ', value: lines.reduce((sum, line) => sum + line.orderQty, 0), format: NUMBER_FORMAT },
+      branchQty === null ? { label: 'ТОВАРНЫХ СТРОК', value: lines.length }
+        : { label: 'КОЛИЧЕСТВО', value: branchQty, format: NUMBER_FORMAT },
     ]);
     sectionTitle(sheet, 'ПОЗИЦИИ ПОДРАЗДЕЛЕНИЯ', order.branch);
     appendTableHeader(sheet);
@@ -146,13 +150,20 @@ export async function buildSupplierWorkbook(
     }
     finishTable(
       sheet,
-      lines.reduce((sum, line) => sum + line.orderQty, 0),
+      branchQty,
       moneySum(lines.map((line) => line.amount ?? 0)),
       FIRST_DATA_ROW + lines.length - 1,
     );
   }
 
   return (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+}
+
+function comparableQuantity(lines: readonly OrderLine[]): number | null {
+  if (!lines.length) return 0;
+  const unit = lines[0]?.unit?.trim();
+  if (!unit || lines.some((line) => line.unit?.trim() !== unit)) return null;
+  return moneySum(lines.map(({ orderQty }) => orderQty));
 }
 
 function applySheetFrame(
@@ -303,7 +314,7 @@ function addProductRow(sheet: Sheet, values: Array<string | number | null>): voi
 
 function finishTable(
   sheet: Sheet,
-  totalQty: number,
+  totalQty: number | null,
   totalAmount: number,
   lastDataRow: number,
 ): void {

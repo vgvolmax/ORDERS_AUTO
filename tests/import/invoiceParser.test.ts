@@ -226,3 +226,25 @@ it('refuses equally plausible quantity columns and identifies them for the opera
   ]);
   expect(() => parseInvoiceWorkbook(workbook([products]))).toThrow(/количество.*B.*C/i);
 });
+
+it('reads an explicit amount payable separately from the item sum', () => {
+  const parsed = parseInvoiceWorkbook(workbook([sheet([
+    ['Артикул', 'Наименование', 'Количество', 'Ед.', 'Цена', 'Сумма'],
+    ['ABC', 'Товар', 5, 'шт', 100, 500],
+    [null, 'Итого', null, null, null, 500],
+    [null, 'К оплате', null, null, null, 550],
+  ])]));
+  expect(parsed.items.map(({ amount }) => amount)).toEqual([500]);
+  expect(parsed.payable).toEqual({ amount: 550, row: 4, sheet: 'Лист 1' });
+});
+
+it('leaves contradictory totals unresolved instead of choosing the last one', () => {
+  const parsed = parseInvoiceWorkbook(workbook([sheet([
+    ['Артикул', 'Наименование', 'Количество', 'Цена', 'Сумма'],
+    ['ABC', 'Товар', 5, 100, 500],
+    [null, 'К оплате', null, null, 550],
+    [null, 'Всего к оплате', null, null, 600],
+  ])]));
+  expect(parsed.payable).toBeNull();
+  expect(parsed.items).toHaveLength(1);
+});

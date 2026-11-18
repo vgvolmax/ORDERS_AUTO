@@ -10,11 +10,12 @@ import type {
   WorkspaceMetadata,
 } from '../../domain/workspace';
 import { Dialog } from '../../components/Dialog';
-import { Alert, Button } from '../../components/ui';
+import { Alert, Button, SearchInput } from '../../components/ui';
 import { VirtualTable } from '../../components/VirtualTable';
 import { save } from '../../export/download';
-export function WorkspaceHistoryPage() {
-  const { state, restore } = useStore();
+export function WorkspaceHistoryPage({ onReconcile }: { onReconcile?: (sourceId: string) => void } = {}) {
+  const [query, setQuery] = useState('');
+  const { state, set, restore } = useStore();
   const [rows, setRows] = useState<WorkspaceMetadata[]>([]),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(true),
@@ -72,6 +73,11 @@ export function WorkspaceHistoryPage() {
   for (const row of [...rows].reverse()) {
     if (!originals.has(row.snapshotId)) originals.set(row.snapshotId, row.workspaceId);
   }
+  const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU');
+  const visibleRows = rows.filter((row) => [
+    row.minMaxFileName, row.supplierFileName, new Date(row.updatedAt).toLocaleDateString('ru-RU'),
+  ].some((value) => value?.toLocaleLowerCase('ru-RU').includes(normalizedQuery)))
+    .sort((left, right) => Number(right.workspaceId === state.workspaceId) - Number(left.workspaceId === state.workspaceId));
   return (
     <main>
       <header>
@@ -83,22 +89,28 @@ export function WorkspaceHistoryPage() {
           сохранённого сеанса.
         </p>
       </header>
+      {rows.length > 0 && <label className="filter-search">Поиск по файлу или дате
+        <SearchInput value={query} onValueChange={setQuery} />
+      </label>}
       {error && <Alert tone="danger">{error}</Alert>}
       {loading ? (
         <p role="status">Загрузка истории…</p>
       ) : rows.length === 0 ? (
-        <p>Сохранённых сеансов пока нет.</p>
+        <p>Сохранённых сеансов пока нет. <Button className="secondary" onClick={() => set({ page: 'import' })}>
+          К импорту отчётов
+        </Button></p>
       ) : (
         <VirtualTable
-          rows={rows}
+          rows={visibleRows}
+          emptyMessage="По заданному поиску сеансы не найдены."
           getRowKey={(w) => w.workspaceId}
           columns={[
             {
               key: 'date',
-              header: 'Начало сеанса',
+              header: 'Последнее обновление',
               width: '220px',
               render: (w) =>
-                new Date(w.createdAt).toLocaleString('ru-RU', {
+                new Date(w.updatedAt).toLocaleString('ru-RU', {
                   timeZoneName: 'short',
                 }),
             },
@@ -126,9 +138,11 @@ export function WorkspaceHistoryPage() {
             {
               key: 'actions',
               header: 'Действия',
-              width: '330px',
+              width: '390px',
               render: (w) => (
                 <div className="history-actions">
+                  {onReconcile && w.minMaxFileName && <Button className="secondary" disabled={busy}
+                    onClick={() => onReconcile(w.workspaceId)}>Сверить счета</Button>}
                   <Button
                     className="secondary"
                     disabled={
@@ -198,13 +212,12 @@ export function WorkspaceHistoryPage() {
           <p>
             {selected.data.minMaxFileName} · {selected.data.supplierFileName}
           </p>
-          <p>
-            Принятых перемещений: {selected.data.rebalance.accepted.length}.
-            Ручных количеств: {selected.data.edits.length}. Заказы будут
-            сформированы по актуальному справочнику и ценам MIN/MAX выбранного
-            снимка. Принятые перемещения сохранят зафиксированные реквизиты.
-            Текущий сеанс останется в истории.
-          </p>
+          <ul>
+            <li><strong>Скопируется.</strong> Принятых перемещений: {selected.data.rebalance.accepted.length}.
+            Ручных количеств: {selected.data.edits.length}. Реквизиты принятых перемещений сохранятся.</li>
+            <li><strong>Обновится.</strong> Заказы сформируются по актуальному справочнику и ценам MIN/MAX выбранного снимка.</li>
+            <li><strong>Останется в истории.</strong> Текущий сеанс будет доступен для восстановления.</li>
+          </ul>
           {error && <Alert tone="danger">{error}</Alert>}
         </Dialog>
       )}

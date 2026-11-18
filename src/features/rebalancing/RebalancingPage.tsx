@@ -1,3 +1,4 @@
+import { changedOrderIds } from '../../domain/rebalanceWorkflow';
 import { moneySum } from '../../domain/money';
 import { VirtualTable } from '../../components/VirtualTable';
 import { productColumns } from '../../components/productColumns';
@@ -109,6 +110,7 @@ export function RebalancingPage() {
   const tab = r.tab === 'priorities' ? 'routes' : r.tab;
   const [showSkipped, setShowSkipped] = useState(false);
   const [acceptanceCompleted, setAcceptanceCompleted] = useState(0);
+  const [affectedOrders, setAffectedOrders] = useState<string[]>([]);
   const coverage = useMemo(
     () =>
       buildFullCoverageSummary({
@@ -125,6 +127,7 @@ export function RebalancingPage() {
   const [confirmation, setConfirmation] = useState<{
     kind: 'accept' | 'revoke';
     ids: string[];
+    hiddenLines: number;
     expectedRevision: number;
     workspaceRevision: number;
     workspaceId: string;
@@ -284,7 +287,7 @@ export function RebalancingPage() {
       selectedLineIds: decisions.selectedLineIds.filter((value) => value !== id),
     }).catch((error: unknown) => setError(rebalanceMessage(error)));
   }
-  function open(kind: 'accept' | 'revoke', ids: string[]) {
+  function open(kind: 'accept' | 'revoke', ids: string[], hiddenLines = 0) {
     if (busy) return;
     setError('');
     const show = (current: AppState, requireSavedSelection = false) => {
@@ -317,6 +320,7 @@ export function RebalancingPage() {
       setConfirmation({
         kind,
         ids: chosen,
+        hiddenLines,
         expectedRevision: current.rebalance.acceptedRevision,
         workspaceRevision: current.workspaceRevision,
         workspaceId: current.workspaceId,
@@ -414,6 +418,7 @@ export function RebalancingPage() {
     setBusy(true);
     setError('');
     try {
+      let changes: string[] = [];
       await save((s) => {
         if (
           s.workspaceId !== confirmation.workspaceId ||
@@ -422,8 +427,12 @@ export function RebalancingPage() {
           s.rebalance.proposal?.runId !== confirmation.runId
         )
           throw new Error('REVISION_CONFLICT');
+        const { patch } = prepareAcceptedChange(s, confirmation);
+        const after = derive({ ...s, ...patch }).projection.orders;
+        const changed = changedOrderIds(derive(s).projection.orders, after);
+        changes = after.filter(({ id }) => changed.has(id)).map(({ id }) => id);
         return {
-          ...prepareAcceptedChange(s, confirmation).patch,
+          ...patch,
           toast:
             confirmation.kind === 'accept'
               ? 'Перемещения приняты. Потребность и заказы пересчитаны.'
@@ -431,6 +440,7 @@ export function RebalancingPage() {
         };
       });
       setConfirmation(null);
+      setAffectedOrders(changes);
       if (confirmation.kind === 'accept') setAcceptanceCompleted((n) => n + 1);
     } catch (e) {
       setError(rebalanceMessage(e));
@@ -639,7 +649,7 @@ export function RebalancingPage() {
       </header>
       <div className="metrics coverage-metrics">
         <MetricCard
-          label="К перемещению"
+          label="Предложено к перемещению"
           icon="swap"
           tone="accent"
           value={
@@ -654,7 +664,7 @@ export function RebalancingPage() {
         <MetricCard
           label="Не распределено"
           icon="warning"
-          tone="warning"
+          tone={coverage.skipped.skuCount > 0 || (r.proposal && r.proposal.algorithmVersion !== ALGORITHM_VERSION) ? 'warning' : 'neutral'}
           value={
             <>
               {r.proposal?.algorithmVersion === ALGORITHM_VERSION ? (
@@ -691,6 +701,14 @@ export function RebalancingPage() {
         />
       </div>
       {error && !confirmation && <Alert tone="danger">{error}</Alert>}
+      {affectedOrders.length > 0 && <Button className="secondary"
+        onClick={() => set((current) => ({
+          page: 'orders',
+          uiPreferences: {
+            ...current.uiPreferences, 'orders:affected': affectedOrders,
+            'orders:query': '', 'orders:reviewOnly': false, 'orders:belowThreshold': true,
+          },
+        }))}>К изменившимся заказам ({affectedOrders.length})</Button>}
       {stale && (
         <Alert tone="warning">
           Предложения устарели после изменения условий. Выполните новый расчёт.
@@ -734,7 +752,7 @@ export function RebalancingPage() {
               documents={acceptedDocuments}
               filters={acceptedFilters}
               onFilters={changeAcceptedFilters}
-              onRevoke={(ids) => open('revoke', ids)}
+              onRevoke={(ids, hiddenLines) => open('revoke', ids, hiddenLines)}
               busy={busy}
               saving={Boolean(saving)}
               error={confirmation ? '' : error}
@@ -800,7 +818,7 @@ export function RebalancingPage() {
                     onReject={toggleRejection}
                     onRevoke={(id) => open('revoke', [id])}
                     onRevokeMany={(ids) => open('revoke', ids)}
-                    onAccept={(ids) => open('accept', ids)}
+                    onAccept={(ids, hiddenLines) => open('accept', ids, hiddenLines)}
                     onExport={csv}
                     onExportWorkbook={(id) => acceptedWorkbook([id])}
                     onEditQuantity={editQuantity}
@@ -874,6 +892,8 @@ export function RebalancingPage() {
         <AcceptTransfersDialog
           kind={confirmation.kind}
           count={confirmation.ids.length}
+          hiddenLines={confirmation.hiddenLines}
+          clearedChecks={state.reviewedOrderIds.length - (preview.patch.reviewedOrderIds ?? state.reviewedOrderIds).length}
           scopeSummary={confirmationSummary}
           before={d.purchaseDemand}
           after={previewDemand}

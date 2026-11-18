@@ -1,14 +1,14 @@
 import type { TableSort } from '../components/VirtualTable';
 import { usePreference } from './usePreference';
 
-export function useTablePreferences(key: string) {
+export function useTablePreferences(key: string, defaultHiddenColumns: string[] = []) {
   const [savedSort, onSortChange] = usePreference<TableSort | null>(
     `${key}:sort`,
     null,
   );
   const [savedHidden, onHiddenColumnsChange] = usePreference<string[]>(
     `${key}:hiddenColumns`,
-    [],
+    defaultHiddenColumns,
   );
   const sort =
     savedSort &&

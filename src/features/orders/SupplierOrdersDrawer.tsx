@@ -8,8 +8,9 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { WorkflowOrder } from '../../app/selectors';
+import { QuantitySummary } from '../../components/QuantitySummary';
 import { QuantityInput } from '../../components/QuantityInput';
-import { Button } from '../../components/ui';
+import { Alert, Button } from '../../components/ui';
 import type { OrderLine, ValidationIssue } from '../../domain/types';
 import { OrderReviewButton } from './OrderReviewButton';
 import { OrderBlockerDetails } from './OrderBlockerDetails';
@@ -66,9 +67,11 @@ export function SupplierOrdersDrawer({
   widthPreferences,
   onWidthsChange,
   saving = false,
+  feedback,
   dataIssues,
 }: {
   supplier: string;
+  feedback?: string | undefined;
   dataIssues?: ValidationIssue[] | undefined;
   saving?: boolean | undefined;
   widthPreferences?: Record<string, number> | undefined;
@@ -266,6 +269,7 @@ export function SupplierOrdersDrawer({
           </button>
         </div>
 
+        {feedback && <Alert tone="danger">{feedback}</Alert>}
         <div className="supplier-review-actions">
           {onReconcile && (
             <Button className="secondary" disabled={saving} onClick={onReconcile}>
@@ -408,8 +412,8 @@ export function SupplierOrdersDrawer({
                   className="num total-column sticky-total sticky-total-qty resizable-column"
                   style={sizedStyle(totalQtyWidth, { right: totalAmountWidth })}
                 >
-                  Всего, шт.
-                  {resizer('totalQty', 'Всего, шт.', totalQtyWidth)}
+                  Всего
+                  {resizer('totalQty', 'Всего', totalQtyWidth)}
                 </th>
                 <th
                   className="num total-column sticky-total sticky-total-amount resizable-column"
@@ -505,7 +509,9 @@ export function SupplierOrdersDrawer({
                       right: totalAmountWidth,
                     })}
                   >
-                    <strong>{fmtQty(row.totalQty)}</strong>
+                    <QuantitySummary rows={[...row.cells.values()].map(({ line }) => ({
+                      skuCode: line.skuCode, qty: line.orderQty, unit: line.unit,
+                    }))} />
                   </td>
                   <td
                     className="num total-column sticky-total sticky-total-amount"

@@ -37,7 +37,7 @@ export function ResultsTable({
   onReject: (id: string) => void;
   onRevoke: (id: string) => void;
   onRevokeMany?: (ids: string[]) => void;
-  onAccept: (ids: string[]) => void;
+  onAccept: (ids: string[], hiddenLines?: number) => void;
   onExport: (documentId: string) => void;
   onExportWorkbook?: ((documentId: string) => void) | undefined;
   onEditQuantity?:
@@ -158,9 +158,8 @@ export function ResultsTable({
     )
     .map((t) => t.sourceLineId);
   const eligibleIds = new Set(eligible.map((l) => l.sourceLineId));
-  const hiddenSelectedCount = selectedIds.filter(
-    (id) => !eligibleIds.has(id),
-  ).length;
+  const visibleSelectedIds = selectedIds.filter((id) => eligibleIds.has(id));
+  const hiddenSelectedCount = selectedIds.length - visibleSelectedIds.length;
   return (
     <>
       {(scope.skuCode || scope.branchId) && (
@@ -192,14 +191,22 @@ export function ResultsTable({
         <span>Выбрано к принятию: {selectedIds.length}</span>
         {hiddenSelectedCount > 0 && (
           <small className="selection-scope" role="status">
-            Скрыто фильтрами: {hiddenSelectedCount}
+            По фильтру: {visibleSelectedIds.length} · Скрыто фильтрами: {hiddenSelectedCount}
           </small>
         )}
-        <Button
+        {hiddenSelectedCount > 0 && (
+          <Button disabled={!visibleSelectedIds.length || stale || busy}
+            onClick={() => onAccept(visibleSelectedIds)}>
+            Принять выбранные по фильтру ({visibleSelectedIds.length})
+          </Button>
+        )}
+        <Button className={hiddenSelectedCount ? 'secondary' : ''}
           disabled={!selectedIds.length || stale || busy}
-          onClick={() => onAccept(selectedIds)}
+          onClick={() => onAccept(selectedIds, hiddenSelectedCount)}
         >
-          Принять выбранные ({selectedIds.length})
+          {hiddenSelectedCount
+            ? `Принять все выбранные (${selectedIds.length}, скрыто ${hiddenSelectedCount})`
+            : `Принять выбранные (${selectedIds.length})`}
         </Button>
       </div>
       <section className="rebalance-results">

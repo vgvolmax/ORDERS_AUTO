@@ -56,7 +56,7 @@ it('shows the two uncovered units and the partial proposals in the dashboard', a
       .parentElement,
   ).toHaveTextContent('2 шт');
   expect(
-    screen.getByText('К перемещению', { selector: '.metric > span' })
+    screen.getByText('Предложено к перемещению', { selector: '.metric > span' })
       .parentElement,
   ).toHaveTextContent('1 200,00');
   fireEvent.click(screen.getByRole('button', { name: 'Показать список' }));

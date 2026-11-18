@@ -249,3 +249,28 @@
 .invoices-page .virtual-row-shell:focus-within > .invoice-adjustment-row {
   box-shadow: inset 3px 0 var(--blue);
 }
+
+.invoice-inputs[data-collapsed="true"] { display: none; }
+.invoice-source-summary { margin: 12px 0; align-items: center; }
+.invoice-source-summary > strong { flex: 1 1 240px; overflow-wrap: anywhere; }
+.invoice-document-totals { margin: 8px 0; padding-inline-start: 20px; }
+.invoice-result-counts { margin: 8px 0; }
+
+#invoice-result-heading {
+  scroll-margin-top: calc(var(--feedback-height) + 12px);
+}
+
+.invoice-document-check {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.invoice-document-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+}
+.invoice-document-summary > div { display: grid; gap: 2px; }
+.invoice-document-check .alert { margin-bottom: 0; }
+.invoice-source-summary > div { display: grid; gap: 2px; }

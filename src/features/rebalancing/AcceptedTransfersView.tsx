@@ -35,7 +35,7 @@ export function AcceptedTransfersView({
   onFilters: (filters: AcceptedTransferFilters) => void | Promise<void>;
   onExport: (ids: string[]) => void | Promise<void>;
   onExportCsv?: (ids: string[]) => void | Promise<void>;
-  onRevoke?: ((ids: string[]) => void) | undefined;
+  onRevoke?: ((ids: string[], hiddenLines?: number) => void) | undefined;
   busy?: boolean;
   saving?: boolean;
   error?: string;
@@ -237,7 +237,9 @@ export function AcceptedTransfersView({
             className="secondary"
             disabled={busy || !revokeIds.length}
             aria-label={`Отменить принятие выбранных направлений (${selected.length})`}
-            onClick={() => onRevoke(revokeIds)}
+            onClick={() => onRevoke(revokeIds, documents
+              .filter((doc) => selected.includes(doc.id) && !visibleIds.has(doc.id))
+              .reduce((count, doc) => count + doc.lines.filter((line) => line.decision === 'ACCEPTED').length, 0))}
           >
             Отменить принятие ({selected.length} напр.)
           </Button>

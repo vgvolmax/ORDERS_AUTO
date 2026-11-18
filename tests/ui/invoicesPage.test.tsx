@@ -89,7 +89,7 @@ describe('InvoicesPage', () => {
     expect(totals).toHaveTextContent(/1\s000\s000,00/);
     expect(totals).toHaveTextContent(/1\s000\s100,00/);
     expect(totals).toHaveTextContent(/\+100,00/);
-    expect(within(result).getByText('С расхождениями').closest('.metric')).toHaveTextContent('1');
+    expect(within(result).getByRole('status')).toHaveTextContent('С расхождениями: 1');
     fireEvent.change(within(result).getByRole('combobox', { name: 'Расхождения' }), { target: { value: 'problems' } });
     expect(within(result).getByText('Масло')).toBeVisible();
     expect(within(result).getByText(/Цена в пределах допуска/)).toBeVisible();
