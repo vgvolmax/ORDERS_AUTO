@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { cpSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -3544,9 +3544,10 @@ test('E2E-25 virtualizes a long order and saves a quantity at the end of the lis
   await expect(restoredQuantity).toHaveValue('6');
 });
 
-test('E2E-26 manual transfer quantity, route context and accepted Excel survive offline reload', async ({
+for (const mode of ['file', 'embedded'] as const)
+test(`E2E-26 manual transfer quantities survive reload and Excel export (${mode})`, async ({
   page,
-}) => {
+}, testInfo) => {
   const { buildWorkbook } = await import('../fixtures/workbookBuilders');
   const { default: ExcelJS } = await import('exceljs');
   const evidence = observeRuntime(page);
@@ -3568,29 +3569,40 @@ test('E2E-26 manual transfer quantity, route context and accepted Excel survive 
   ]);
   await page.context().setOffline(true);
   await page.setViewportSize({ width: 1280, height: 600 });
-  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  const entry = pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href;
+  if (mode === 'embedded') {
+    const wrapper = testInfo.outputPath('transfer-frame.html');
+    mkdirSync(path.dirname(wrapper), { recursive: true });
+    writeFileSync(wrapper, `<!doctype html>
+      <iframe sandbox="allow-scripts allow-same-origin allow-downloads" src="${entry}"
+        style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>`);
+    await page.goto(pathToFileURL(wrapper).href);
+  } else {
+    await page.goto(entry);
+  }
+  const app = mode === 'embedded' ? page.frameLocator('iframe') : page;
   for (const [label, filename, bytes] of [
     ['Выбрать файл Отчёт MIN/MAX', 'manual-min.xlsx', min],
     ['Выбрать файл Отчёт поставщиков', 'manual-suppliers.xlsx', suppliers],
   ] as const) {
-    await page.getByLabel(label).setInputFiles({
+    await app.getByLabel(label).setInputFiles({
       name: filename,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       buffer: Buffer.from(bytes),
     });
-    await expect(page.getByText(filename, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Обработка отчёта…', { exact: true })).toHaveCount(0);
+    await expect(app.getByText(filename, { exact: true }).first()).toBeVisible();
+    await expect(app.getByText('Обработка отчёта…', { exact: true })).toHaveCount(0);
   }
-  await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
-  await page.getByRole('button', { name: 'Перемещения', exact: true }).click();
-  await page.getByRole('button', { name: 'Рассчитать перемещения', exact: true }).click();
-  const query = page.getByRole('textbox', { name: 'Поиск по коду, артикулу, товару и маршруту' });
-  const routeA = page.getByRole('button', { name: 'Открыть перемещение Донор А → Получатель', exact: true });
-  const routeB = page.getByRole('button', { name: 'Открыть перемещение Донор Б → Получатель', exact: true });
+  await app.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
+  await app.getByRole('button', { name: 'Перемещения', exact: true }).click();
+  await app.getByRole('button', { name: 'Рассчитать перемещения', exact: true }).click();
+  const query = app.getByRole('textbox', { name: 'Поиск по коду, артикулу, товару и маршруту' });
+  const routeA = app.getByRole('button', { name: 'Открыть перемещение Донор А → Получатель', exact: true });
+  const routeB = app.getByRole('button', { name: 'Открыть перемещение Донор Б → Получатель', exact: true });
   await query.fill('Донор А');
   await expect(routeB).toHaveCount(0);
   await routeA.click();
-  const drawer = page.getByRole('dialog', { name: 'Состав перемещения', exact: true });
+  const drawer = app.getByRole('dialog', { name: 'Состав перемещения', exact: true });
   const quantity = drawer.getByRole('spinbutton', { name: `Количество ${sku}`, exact: true });
   const directions = drawer.getByRole('button', { name: `Направления 2 для ${sku}`, exact: true });
   const popup = drawer.getByRole('dialog', { name: `Направления товара ${sku}`, exact: true });
@@ -3618,29 +3630,35 @@ test('E2E-26 manual transfer quantity, route context and accepted Excel survive 
   await quantity.fill('16');
   await expect(drawer.getByText(/Остаток получателя выше MAX/)).toBeVisible();
   await expect(save).toBeEnabled();
+  await quantity.fill('10');
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(save).toHaveCount(0);
+  await expect(quantity).toHaveValue('10');
+  await expect(drawer.getByText('Вручную · расчёт 15', { exact: true })).toBeVisible();
+  await quantity.fill('11');
   await quantity.press('Enter');
   await expect(save).toHaveCount(0);
-  await expect(drawer.getByText('Вручную · расчёт 15', { exact: true })).toBeVisible();
   await page.reload();
   await routeA.click();
-  await expect(quantity).toHaveValue('16');
+  await expect(quantity).toHaveValue('11');
   await expect(drawer.getByText('Вручную · расчёт 15', { exact: true })).toBeVisible();
   await drawer.getByRole('button', { name: 'Закрыть карточку', exact: true }).click();
   await query.fill('');
   await expect(routeB).toContainText('35 шт');
-  await page.getByRole('checkbox', { name: 'Выбрать видимые предложения', exact: true }).check();
-  await page.getByRole('button', { name: 'Принять выбранные (2)', exact: true }).click();
-  const confirmation = page.getByRole('dialog', { name: 'Принять выбранные перемещения', exact: true });
+  await app.getByRole('checkbox', { name: 'Выбрать видимые предложения', exact: true }).check();
+  await app.getByRole('button', { name: 'Принять выбранные (2)', exact: true }).click();
+  const confirmation = app.getByRole('dialog', { name: 'Принять выбранные перемещения', exact: true });
   await confirmation.getByRole('button', { name: 'Принять перемещения', exact: true }).click();
   await expect(confirmation).toHaveCount(0);
   await page.mouse.move(1, 1);
   await expect(routeA).toHaveCSS('background-color', 'rgb(238, 249, 242)');
   await expect(routeB).toHaveCSS('background-color', 'rgb(238, 249, 242)');
 
-  await page.getByRole('tab', { name: 'Принятые', exact: true }).click();
-  await page.getByRole('checkbox', { name: 'Выбрать все направления по фильтрам', exact: true }).check();
+  await app.getByRole('tab', { name: 'Принятые', exact: true }).click();
+  await app.getByRole('checkbox', { name: 'Выбрать все направления по фильтрам', exact: true }).check();
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Excel выбранных (2)', exact: true }).click();
+  await app.getByRole('button', { name: 'Excel выбранных (2)', exact: true }).click();
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/^Принятые_перемещения__.*\.xlsx$/);
   const workbook = new ExcelJS.Workbook();
@@ -3649,7 +3667,7 @@ test('E2E-26 manual transfer quantity, route context and accepted Excel survive 
   expect(workbook.worksheets[0]?.name).toBe('Сводка');
   const donorSheet = workbook.worksheets.find((sheet) => sheet.getCell('A3').value === 'Донор А → Получатель')!;
   expect(donorSheet.getCell('A6').value).toBe(sku);
-  expect(donorSheet.getCell('D6').value).toBe(16);
+  expect(donorSheet.getCell('D6').value).toBe(11);
   expect(donorSheet.getCell('F6').value).toBe(420.5);
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.consoleErrors).toEqual([]);

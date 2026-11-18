@@ -61,31 +61,31 @@ export function TransferQuantityEditor({
   const error = validation || saveError;
   const warnings = details && !validation ? transferQuantityWarnings(details) : [];
 
+  // Embedded hosts can block native form submission.
+  async function saveQuantity() {
+    if (draft === undefined || validation || disabled || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave(line.sourceLineId, qty);
+      onDraft(undefined);
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : 'Количество не сохранено.');
+    } finally {
+      savingRef.current = false;
+      restoreFocus.current = true;
+      setSaving(false);
+    }
+  }
+
   return (
-    <form
+    <div
       className="transfer-quantity"
-      noValidate
       aria-busy={saving}
       onFocus={() => setReviewing(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setReviewing(false);
-      }}
-      onSubmit={async (event) => {
-        event.preventDefault();
-        if (draft === undefined || validation || disabled || savingRef.current) return;
-        savingRef.current = true;
-        setSaving(true);
-        setSaveError('');
-        try {
-          await onSave(line.sourceLineId, qty);
-          onDraft(undefined);
-        } catch (cause) {
-          setSaveError(cause instanceof Error ? cause.message : 'Количество не сохранено.');
-        } finally {
-          savingRef.current = false;
-          restoreFocus.current = true;
-          setSaving(false);
-        }
       }}
     >
       <div className="transfer-quantity-controls">
@@ -102,6 +102,11 @@ export function TransferQuantityEditor({
           value={draft ?? line.qty}
           disabled={disabled}
           readOnly={saving}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            void saveQuantity();
+          }}
           onChange={(event) => {
             setSaveError('');
             const value = event.currentTarget.value;
@@ -111,7 +116,8 @@ export function TransferQuantityEditor({
         {draft !== undefined && (
           <>
             <Button
-              type="submit"
+              type="button"
+              onClick={() => void saveQuantity()}
               className="secondary"
               aria-label={`Сохранить количество ${line.skuCode}`}
               title="Сохранить количество (Enter)"
@@ -150,7 +156,7 @@ export function TransferQuantityEditor({
           )}
         </div>
       )}
-    </form>
+    </div>
   );
 }
 
