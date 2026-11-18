@@ -220,6 +220,10 @@ describe('OrdersPage', () => {
     fireEvent.click(matrix.getByRole('button', {
       name: 'Исключить SKU1 во всех подразделениях',
     }));
+    const exclusion = screen.getByRole('dialog', { name: 'Исключить SKU1 из заказов?' });
+    expect(exclusion).toHaveTextContent('Заказов в операции: 2. Проверок к снятию: 1.');
+    expect(writes).toEqual([]);
+    fireEvent.click(within(exclusion).getByRole('button', { name: /^Исключить$/ }));
     await waitFor(() => expect(leninaQty).toHaveValue(0));
     expect(leninaQty).toBeDisabled();
     expect(stupinoQty).toBeDisabled();
@@ -239,6 +243,8 @@ describe('OrdersPage', () => {
     fireEvent.click(matrix.getByRole('button', {
       name: 'Восстановить SKU1 во всех подразделениях',
     }));
+    const restore = screen.getByRole('dialog', { name: 'Восстановить SKU1 в заказах?' });
+    fireEvent.click(within(restore).getByRole('button', { name: /^Восстановить$/ }));
     await waitFor(() => expect(stupinoQty).toHaveValue(4));
     expect(leninaQty).toHaveValue(7);
     expect(writes[1]).toEqual([]);

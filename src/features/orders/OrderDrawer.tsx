@@ -26,12 +26,20 @@ export function OrderDrawer({
   onReconcile,
   saving = false,
   exportError = '',
+  exportRecovery,
+  lastExport,
+  exportDisabled = false,
+  onReviewAndNext,
   dataIssues,
 }: {
   order: WorkflowOrder;
   exported: boolean;
   saving?: boolean | undefined;
   exportError?: string;
+  exportRecovery?: ReactNode;
+  lastExport?: Pick<WorkflowOrder, 'totalAmount' | 'exportedAt'> | undefined;
+  exportDisabled?: boolean;
+  onReviewAndNext?: (() => Promise<void>) | undefined;
   dataIssues?: ValidationIssue[] | undefined;
   renderMovement?: ((line: OrderLine) => ReactNode) | undefined;
   onClose: () => void;
@@ -42,7 +50,7 @@ export function OrderDrawer({
     qty: number,
   ) => void | Promise<void>;
   onSetExcluded: (skuCode: string, excluded: boolean) => void | Promise<void>;
-  onReviewedChange: (reviewed: boolean) => void;
+  onReviewedChange: (reviewed: boolean) => void | Promise<boolean>;
   onExport: (allowBelowThreshold: boolean) => void;
 }) {
   const ref = useRef<HTMLElement>(null);
@@ -184,7 +192,12 @@ export function OrderDrawer({
             <OrderBlockerDetails order={order} dataIssues={dataIssues} />
           </Alert>
         )}
+        {lastExport && !exported && <p className="muted">
+          Последняя выгрузка: {lastExport.totalAmount === null ? 'сумма неизвестна' : money(lastExport.totalAmount)}
+          {lastExport.exportedAt && ` · ${new Date(lastExport.exportedAt).toLocaleString('ru-RU')}`}
+        </p>}
         {exportError && <Alert tone="danger">{exportError}</Alert>}
+        {exportRecovery}
 
         <VirtualTable
           rows={order.lines}
@@ -201,22 +214,31 @@ export function OrderDrawer({
             disabled={saving}
             onChange={onReviewedChange}
           />
-          {onReconcile && (
-            <Button className="secondary" disabled={saving} onClick={onReconcile}>
-              Сверить счёт
-            </Button>
-          )}
+          <Button className="secondary" onClick={onClose}>Закрыть состав</Button>
+          <Button className="secondary" disabled={saving} onClick={async () => {
+            if (order.reviewed || await onReviewedChange(true) === true) onClose();
+          }}>Проверить и закрыть</Button>
+          <Button className="secondary" disabled={saving || !onReviewAndNext}
+            onClick={() => void onReviewAndNext?.()}>Проверить и следующий</Button>
+          <span className="order-reconcile-control">
+            <Button className="secondary" disabled={saving || !onReconcile}
+              aria-describedby={!onReconcile ? 'order-reconcile-reason' : undefined}
+              onClick={onReconcile}>Сверить счёт</Button>
+            <small className="muted" id="order-reconcile-reason">
+              {onReconcile ? ' ' : order.reviewed ? 'Проверьте состав заказа' : 'После проверки или выгрузки'}
+            </small>
+          </span>
           {canOverrideThreshold && (
             <Button
               className="secondary danger-action"
-              disabled={saving}
+              disabled={saving || exportDisabled}
               onClick={() => setOverrideOpen(true)}
             >
               Выгрузить несмотря на порог
             </Button>
           )}
           <Button
-            disabled={!canNormalExport || saving}
+            disabled={!canNormalExport || saving || exportDisabled}
             onClick={() => onExport(false)}
           >
             {order.status === 'EXPORTED'

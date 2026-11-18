@@ -207,3 +207,14 @@ it('keeps each branch sheet when names collide or Excel reserves a name', async 
     'SKU-1', 'SKU-2', 'SKU-3', 'SKU-4', 'SKU-5', 'SKU-6',
   ]);
 });
+
+it('keeps different units separate even for one SKU and omits a mixed total quantity', async () => {
+  const [first, second] = orders;
+  const altered = { ...second!, lines: second!.lines.map((line) => ({ ...line, unit: 'м' })) };
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await buildSupplierWorkbook('Поставщик', [first!, altered]));
+  const summary = workbook.getWorksheet('Общий заказ')!;
+  expect([summary.getCell('E9').value, summary.getCell('E10').value]).toEqual(['шт', 'м']);
+  expect(summary.getCell('D11').value).toBeNull();
+  expect(summary.getCell('G11').value).toBe(300);
+});
