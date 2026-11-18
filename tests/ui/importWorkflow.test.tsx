@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -237,7 +238,9 @@ it('keeps the same working week when the identical MIN/MAX file is uploaded agai
   await waitFor(() => expect(proceed).toBeEnabled());
   const original = await loadActiveWorkspace();
   fireEvent.change(inputs[0]!, { target: { files: [asFile(bytes, 'переименованный.xlsx', '')] } });
-  await screen.findByText(/уже загружен/);
+  const duplicate = await screen.findByRole('dialog', { name: 'В файле тот же отчёт MIN/MAX' });
+  expect(duplicate).toHaveTextContent('Выбранный файл: переименованный.xlsx');
+  fireEvent.click(within(duplicate).getByRole('button', { name: 'Продолжить текущий сеанс' }));
   await waitFor(() => expect(proceed).toBeEnabled());
   expect(await loadActiveWorkspace()).toEqual(original);
 });

@@ -6,6 +6,7 @@ import { isSupplierInPool, supplierKey, SUPPLIER_POOL } from '../../domain/suppl
 import type { ValidationIssue } from '../../domain/types';
 import { MIN_MAX_PARSER_VERSION, parseMinMaxWorkbook } from '../../import/minMaxParser';
 import { parseSupplierWorkbook } from '../../import/supplierParser';
+import { Dialog } from '../../components/Dialog';
 import { Alert, Button } from '../../components/ui';
 import { ImportIssues } from './ImportIssues';
 import { loadWorkspaceFile } from '../../persistence/workspaces';
@@ -16,6 +17,7 @@ export function ImportPage() {
   const { state, set, commit, saving } = useStore();
   const reads = useRef({ min: 0, sup: 0 });
   const pendingReads = useRef(new Set<'min' | 'sup'>());
+  const [duplicate, setDuplicate] = useState<File | null>(null);
   const [failures, setFailures] = useState({ min: '', sup: '' });
   const configured = state.supplierAssignments !== undefined;
   const ready = Boolean(state.minMax && configured);
@@ -68,7 +70,7 @@ export function ImportPage() {
     }
   }, [ready, state]);
 
-  async function load(file: File, kind: 'min' | 'sup') {
+  async function load(file: File, kind: 'min' | 'sup', startNewSession = false) {
     const token = ++reads.current[kind],
       epoch = state.importEpoch;
     pendingReads.current.add(kind);
@@ -79,7 +81,7 @@ export function ImportPage() {
       if (reads.current[kind] !== token) return;
       const activeFile = state.rawImports.minMax;
       if (
-        kind === 'min' &&
+        kind === 'min' && !startNewSession &&
         activeFile?.parserVersion === MIN_MAX_PARSER_VERSION &&
         activeFile.size === bytes.byteLength
       ) {
@@ -90,7 +92,8 @@ export function ImportPage() {
           saved?.bytes.byteLength === incoming.byteLength &&
           new Uint8Array(saved.bytes).every((byte, index) => byte === incoming[index])
         ) {
-          set({ toast: 'Этот отчёт MIN/MAX уже загружен. Продолжайте работу в текущем сеансе.' });
+          if (file.name !== activeFile.name) setDuplicate(file);
+          else set({ toast: 'Этот отчёт MIN/MAX уже загружен. Продолжайте работу в текущем сеансе.' });
           return;
         }
       }
@@ -285,6 +288,19 @@ export function ImportPage() {
         <p className="import-ready" role="status">
           Отчёт MIN/MAX сохранён. Можно перейти к работе с потребностью.
         </p>
+      )}
+      {duplicate && (
+        <Dialog title="В файле тот же отчёт MIN/MAX" onClose={() => setDuplicate(null)} actions={<>
+          <Button className="secondary" onClick={() => setDuplicate(null)}>Продолжить текущий сеанс</Button>
+          <Button disabled={saving || anyLoading} onClick={() => {
+            const file = duplicate;
+            setDuplicate(null);
+            void load(file, 'min', true);
+          }}>Начать новый сеанс</Button>
+        </>}>
+          <p>Активный файл: {state.minMaxFileName}. Выбранный файл: {duplicate.name}.</p>
+          <p>В новом сеансе останутся условия и маршруты. Перемещения, правки и отметки текущего сеанса сохранятся в истории.</p>
+        </Dialog>
       )}
     </main>
   );

@@ -1583,6 +1583,9 @@ test('E2E-07 accepted movements drive orders, export and survive reload offline'
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     buffer: Buffer.from(min),
   });
+  const duplicateWeek = page.getByRole('dialog', { name: 'В файле тот же отчёт MIN/MAX' });
+  await expect(duplicateWeek).toContainText('Выбранный файл: week-2.xlsx');
+  await duplicateWeek.getByRole('button', { name: 'Начать новый сеанс' }).click();
   await expect(page.getByText('week-2.xlsx', { exact: true }).first()).toBeVisible();
   await page.getByRole('button', { name: 'История сеансов' }).click();
   const archived = page
@@ -3755,6 +3758,7 @@ test('E2E-27 masked articles and explicit invoice sheets produce a safe correcti
     ['000123', 'Кран', 10, 'шт', 100, 1000],
   ]);
   for (const unit of ['упак', null]) {
+    await page.getByRole('button', { name: 'Показать источники' }).click();
     await page.getByRole('button', { name: 'Удалить счёт invoice.xlsx' }).click();
     await page.getByLabel('Файл счёта поставщика').setInputFiles(invoice([[10, unit]]));
     await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
@@ -3787,6 +3791,11 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
   const uploadWeek = async (name: string, both: boolean) => {
     await nav.getByRole('button', { name: 'Обновить MIN/MAX', exact: true }).click();
     await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles(min(name, both));
+    if (name === 'catalog-week-3.xlsx') {
+      const sameReport = page.getByRole('dialog', { name: 'В файле тот же отчёт MIN/MAX' });
+      await expect(sameReport).toContainText('Выбранный файл: catalog-week-3.xlsx');
+      await sameReport.getByRole('button', { name: 'Начать новый сеанс' }).click();
+    }
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
     await page.getByRole('button', { name: 'Перейти к потребности', exact: true }).click();
   };
