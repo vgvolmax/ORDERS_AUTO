@@ -27,6 +27,7 @@ export function AcceptedMovementsPopover({
   const skuMap = new Map(skus.map((s) => [s.code, s]));
   return (
     <Dialog
+      size="wide"
       title="Учтённые перемещения"
       onClose={onClose}
       actions={
