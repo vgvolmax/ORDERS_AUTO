@@ -330,3 +330,33 @@ thead th, .virtual-header, .virtual-header > .is-frozen { background: var(--tabl
   .sidebar nav button[aria-current='page'], .workspace-shortcuts button[aria-current='page'], .workspace-tabs button[aria-selected='true'] { border: 2px solid Highlight; }
   .stock-multiplier:not(:disabled) label:has(:checked) { border-color: Highlight; color: Highlight; }
 }
+
+/* Keep table rows above the fold while the sidebar carries navigation. */
+@media (min-width: 1200px) and (max-height: 700px) {
+  .content:has(> .compact-workspace) .workspace-shortcuts { display: none; }
+  .compact-workspace { --page-y: 8px; }
+  .compact-workspace > header { margin-bottom: 4px; }
+  .compact-workspace > header p { margin-block: 3px 0; }
+  .compact-workspace :is(.filters, .settings) {
+    gap: 4px 10px;
+    padding: 6px 8px;
+    margin: 6px 0;
+  }
+  .compact-metrics { gap: 8px; margin: 6px 0; }
+  .compact-metrics .metric { min-height: auto; padding-block: 5px; }
+  .compact-metrics .metric > strong, .compact-metrics .quantity-summary { font-size: 16px; }
+  .compact-metrics .metric[data-icon] { padding-left: 35px; }
+  .compact-metrics .metric > .brand-icon { inset: 9px auto auto 9px; width: 18px; height: 18px; }
+  .order-filter-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+  .order-filter-grid .compact-filters { align-items: end; }
+  .order-filter-grid .settings label:first-child .input { width: 135px; }
+  .order-filter-grid .settings .checkbox-control { font-size: var(--font-help); }
+  .orders-page .order-cell { padding-block: 5px; }
+  .orders-page .order-cell span, .orders-page .order-cell small { margin-top: 2px; }
+  .demand-page .table-tools { padding-block: 3px; }
+  .demand-page .virtual-row > [role="cell"] { padding-block: 4px; }
+}

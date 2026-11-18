@@ -140,3 +140,11 @@
   display: grid;
   gap: 8px;
 }
+
+.shared-catalog-compact {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+.shared-catalog-compact h2 { font-size: var(--font-body); }
+.shared-catalog-heading .muted { font-size: var(--font-help); }
+.shared-catalog-details > p { margin: 8px 0 0; }

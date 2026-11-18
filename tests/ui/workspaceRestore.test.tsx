@@ -48,7 +48,7 @@ it('restores an excluded choice as unresolved and persists an explicit allowed r
     screen.queryByRole('button', { name: `Все заказы ${hidden}` }),
   ).not.toBeInTheDocument();
   expect(
-    screen.getByRole('button', { name: 'Скачать все (0)' }),
+    screen.getByRole('button', { name: 'ZIP по всей сети (0)' }),
   ).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Поставщики' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Связи SKU1' }));

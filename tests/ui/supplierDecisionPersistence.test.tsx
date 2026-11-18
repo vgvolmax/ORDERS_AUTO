@@ -153,3 +153,28 @@ it('previews only explicit bulk choices and retains the selection and supplier a
   ]);
   expect(screen.getByRole('checkbox', { name: 'Выбрать SKU1' })).not.toBeChecked();
 });
+
+it('defaults a hidden bulk selection to the current filter and retains the other marks', async () => {
+  const state = assignedState();
+  state.minMax!.skus.push({ ...state.minMax!.skus[0]!, code: 'SKU2' });
+  const harness = renderDurable(state);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать SKU1' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Выбрать SKU2' }));
+  const search = screen.getByRole('textbox', { name: 'Поиск товара' });
+  fireEvent.change(search, { target: { value: 'SKU1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Назначить основного выбранным' }));
+  const dialog = screen.getByRole('dialog', { name: 'Назначить основного выбранным' });
+  expect(within(dialog).getByRole('combobox', { name: 'Область назначения' })).toHaveValue('visible');
+  expect(dialog).toHaveTextContent('Скрыто фильтрами: 1');
+  fireEvent.change(within(dialog).getByLabelText('Основной поставщик'), { target: { value: cheapSupplier } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Назначить' }));
+  await waitFor(() => expect(harness.attempts).toBe(1));
+  await act(async () => harness.release());
+  await waitFor(() => expect(harness.saved).toHaveLength(1));
+  expect(harness.session.getState().supplierAssignments).toEqual([
+    { skuCode: 'SKU1', primary: cheapSupplier, additional: [manualSupplier] },
+  ]);
+  fireEvent.change(search, { target: { value: '' } });
+  expect(screen.getByRole('checkbox', { name: 'Выбрать SKU2' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Выбрать SKU1' })).not.toBeChecked();
+});

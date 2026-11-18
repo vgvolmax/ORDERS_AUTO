@@ -48,6 +48,10 @@ export function SkippedRebalanceList({
   const units = new Map(policies.map((p) => [p.skuCode, p.unit]));
   const normalized = query.trim().toLocaleLowerCase('ru');
   const compareSku = buildSkuOrder(skus.map((s) => s.code));
+  const remainingAmount = (row: SkippedRebalanceSku) => {
+    const price = skuMap.get(row.skuCode)?.referencePrice;
+    return price != null && Number.isFinite(price) && price >= 0 ? moneyProduct(row.missingQty, price) : null;
+  };
   const rows = (proposal?.skippedSkus ?? []).filter((r) =>
     [
       r.skuCode,
@@ -57,7 +61,9 @@ export function SkippedRebalanceList({
       .join(' ')
       .toLocaleLowerCase('ru')
       .includes(normalized),
-  ).sort((left, right) => compareSku(left.skuCode, right.skuCode));
+  ).sort((left, right) =>
+    (remainingAmount(right) ?? -1) - (remainingAmount(left) ?? -1)
+      || compareSku(left.skuCode, right.skuCode));
   const current =
     proposal?.algorithmVersion === ALGORITHM_VERSION &&
     proposal.skippedSkus !== undefined;
@@ -138,10 +144,7 @@ export function SkippedRebalanceList({
                 header: 'Причина · сумма остатка',
                 width: 'minmax(230px, 1.3fr)',
                 render: (r) => {
-                  const price = skuMap.get(r.skuCode)?.referencePrice;
-                  const amount = price != null && Number.isFinite(price) && price >= 0
-                    ? moneyProduct(r.missingQty, price)
-                    : null;
+                  const amount = remainingAmount(r);
                   return (
                     <div className="skip-cell">
                       <span>{skippedReasonLabel[r.reason]}</span>

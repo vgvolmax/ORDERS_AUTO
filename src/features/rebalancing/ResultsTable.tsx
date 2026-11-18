@@ -191,13 +191,13 @@ export function ResultsTable({
         <span>Выбрано к принятию: {selectedIds.length}</span>
         {hiddenSelectedCount > 0 && (
           <small className="selection-scope" role="status">
-            Скрыто фильтрами: {hiddenSelectedCount}
+            По фильтру: {visibleSelectedIds.length} · Скрыто фильтрами: {hiddenSelectedCount}
           </small>
         )}
         {hiddenSelectedCount > 0 && (
           <Button disabled={!visibleSelectedIds.length || stale || busy}
             onClick={() => onAccept(visibleSelectedIds)}>
-            Принять в текущем фильтре ({visibleSelectedIds.length})
+            Принять выбранные по фильтру ({visibleSelectedIds.length})
           </Button>
         )}
         <Button className={hiddenSelectedCount ? 'secondary' : ''}
@@ -205,7 +205,7 @@ export function ResultsTable({
           onClick={() => onAccept(selectedIds, hiddenSelectedCount)}
         >
           {hiddenSelectedCount
-            ? `Принять весь набор (${selectedIds.length}, скрыто ${hiddenSelectedCount})`
+            ? `Принять все выбранные (${selectedIds.length}, скрыто ${hiddenSelectedCount})`
             : `Принять выбранные (${selectedIds.length})`}
         </Button>
       </div>

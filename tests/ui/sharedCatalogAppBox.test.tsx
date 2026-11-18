@@ -47,7 +47,7 @@ it('opens shared AppBox JSON and saves current catalog with the AppBox revision 
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Открыть из AppBox' }));
   await waitFor(() => expect(open).toHaveBeenCalledOnce());
-  fireEvent.click(await screen.findByRole('button', { name: 'Продолжить' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Заменить локальную копию' }));
   await screen.findByText(/Общий справочник подключён/);
   // A current MIN/MAX product not yet in the remote document is added only locally.
   fireEvent.click(screen.getByRole('button', { name: 'Сохранить в AppBox' }));
@@ -69,7 +69,7 @@ it('honours canEdit=false and never attempts to overwrite a read-only shared doc
   window.AppBoxFiles = { open, save };
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Открыть из AppBox' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Продолжить' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Заменить локальную копию' }));
   await screen.findByText(/Общий справочник подключён/);
   expect(screen.getByRole('button', { name: 'Сохранить в AppBox' })).toBeDisabled();
   expect(save).not.toHaveBeenCalled();
@@ -105,7 +105,7 @@ it('does not mark an unchanged opened JSON dirty because parsing reordered objec
   };
   render(<Harness />);
   fireEvent.click(screen.getByRole('button', { name: 'Открыть из AppBox' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Продолжить' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Заменить локальную копию' }));
   await screen.findByText(/Общий справочник подключён/);
   expect(screen.getByRole('button', { name: 'Сохранить в AppBox' })).toBeDisabled();
 });

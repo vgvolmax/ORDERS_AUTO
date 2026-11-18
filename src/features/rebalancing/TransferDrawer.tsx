@@ -124,9 +124,12 @@ export function TransferDrawer({
       !acceptedRows.includes(l),
   ).length;
   const hasProposals = doc.lines.some((l) => l.decision !== 'ACCEPTED');
-  const routeSelected = eligible
-    .filter((l) => l.selected)
-    .map((l) => l.sourceLineId);
+  const routeSelected = eligible.filter((line) => line.selected).map((line) => line.sourceLineId);
+  const hiddenSelectedCount = doc.lines.filter((line) => line.decision === 'PROPOSED' && line.selected).length
+    - routeSelected.length;
+  const acceptLabel = query.trim()
+    ? `Принять выбранные по фильтру (${routeSelected.length})`
+    : `Принять выбранные в перемещении (${routeSelected.length})`;
   const disabled = stale || busy;
   const summary = summarizeTransferDocuments([doc]);
   const selectedAmount = summarizeTransferDocuments([
@@ -489,6 +492,7 @@ export function TransferDrawer({
               <>
                 <strong>Выбрано к принятию: {routeSelected.length}</strong>
                 <span>{amount(selectedAmount)}</span>
+                {hiddenSelectedCount > 0 && <small role="status">Скрыто фильтром: {hiddenSelectedCount} · не войдут в принятие</small>}
               </>
             )}
             {onRevokeMany && (
@@ -541,12 +545,9 @@ export function TransferDrawer({
             {hasProposals && (
               <Button
                 disabled={disabled || hasUnsavedQuantities || !routeSelected.length}
-                aria-label={`Принять выбранные в перемещении (${routeSelected.length})`}
                 onClick={() => onAccept(routeSelected)}
               >
-                {busy
-                  ? 'Подготовка…'
-                  : `Принять выбранные (${routeSelected.length})`}
+                {busy ? 'Подготовка…' : acceptLabel}
               </Button>
             )}
           </div>

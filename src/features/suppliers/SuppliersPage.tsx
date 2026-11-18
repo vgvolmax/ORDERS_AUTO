@@ -23,7 +23,7 @@ import {
 import { SupplierRoster } from './SupplierRoster';
 import './SuppliersPage.css';
 
-type AssignmentDialog = { skuCode: string } | { skuCodes: string[]; hiddenCount: number };
+type AssignmentDialog = { skuCode: string } | { skuCodes: string[]; visibleCodes: string[] };
 interface SupplierSelection {
   snapshotId: string;
   skuCodes: string[];
@@ -32,13 +32,13 @@ interface SupplierSelection {
 export function SuppliersPage() {
   const { state } = useStore();
   return (
-    <main className="suppliers-page">
+    <main className="suppliers-page compact-workspace">
       <header>
         <p className="eyebrow">Закупка</p>
         <h1>Поставщики</h1>
         <p>Постоянный справочник товаров и поставщиков. Назначения сохраняются независимо от рабочих сеансов.</p>
       </header>
-      <SharedCatalogPanel />
+      <SharedCatalogPanel compact />
       {!state.catalog && state.supplierAssignments === undefined ? (
         <EmptyState>Загрузите отчёты, чтобы открыть каталог и связи поставщиков.</EmptyState>
       ) : (
@@ -176,7 +176,6 @@ function SupplierWorkspace({
   return (
     <>
       <PurchasingDataAlert issues={derived.projection.dataIssues} />
-      {state.catalog && <p className="muted">Связи сохраняются в справочнике и используются рабочими сеансами. Потребность и суммы относятся к выбранному MIN/MAX. Принятые документы сохраняют свои реквизиты.</p>}
       <div className="workspace-tabs supplier-views" role="group" aria-label="Представления поставщиков">
         <button ref={productTab} aria-pressed={view === 'products'} onClick={() => setView('products')}>
           Товары · {state.minMax ? currentCodes.size : '—'}
@@ -203,7 +202,7 @@ function SupplierWorkspace({
           selectedCodes={selectedCodes}
           onSelect={select}
           onOpenProduct={(skuCode) => openDialog({ skuCode })}
-          onOpenBulk={(hiddenCount) => openDialog({ skuCodes: selectedCodes, hiddenCount })}
+          onOpenBulk={(visibleCodes) => openDialog({ skuCodes: selectedCodes, visibleCodes })}
         />
         {view === 'suppliers' && (
           <>
@@ -233,7 +232,7 @@ function SupplierWorkspace({
       {dialog && 'skuCodes' in dialog && (
         <BulkSupplierDialog
           skuCodes={dialog.skuCodes}
-          hiddenCount={dialog.hiddenCount}
+          visibleCodes={dialog.visibleCodes}
           assignmentsByCode={assignmentsByCode}
           suppliers={suppliers}
           saving={saving}
@@ -241,7 +240,10 @@ function SupplierWorkspace({
           onSave={async (command, success) => {
             const saved = await save(command, success);
             if (saved) {
-              select([]);
+              if (command.kind === 'set-primary') {
+                const changed = new Set(command.skuCodes);
+                select(selectedCodes.filter((code) => !changed.has(code)));
+              }
               closeDialog();
             }
             return saved;

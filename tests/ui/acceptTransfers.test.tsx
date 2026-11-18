@@ -102,9 +102,9 @@ it('makes selection hidden by result filters explicit before a global acceptance
     }),
     { target: { value: 'Донор А' } },
   );
-  expect(screen.getByText('Скрыто фильтрами: 1')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Принять в текущем фильтре (1)' })).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Принять весь набор (2, скрыто 1)' }));
+  expect(screen.getByText('По фильтру: 1 · Скрыто фильтрами: 1')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Принять выбранные по фильтру (1)' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Принять все выбранные (2, скрыто 1)' }));
   expect(screen.getByRole('dialog')).toHaveTextContent('В подтверждение входят скрытые фильтрами строки: 1.');
 });
 it('selection is independent; accept subset, cancel dialog, accept rest, recalculate and revoke', async () => {

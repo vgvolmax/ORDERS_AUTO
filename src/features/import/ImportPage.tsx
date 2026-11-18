@@ -181,7 +181,7 @@ export function ImportPage() {
             {resumeSetup
               ? 'Оба отчёта сохранены. Нажмите «Перейти к потребности», чтобы подготовить связи поставщиков.'
               : configured
-                ? 'Для следующей недели загрузите только отчёт MIN/MAX.'
+                ? state.minMax ? 'Для следующей недели загрузите только отчёт MIN/MAX.' : 'Справочник готов. Загрузите MIN/MAX, чтобы начать работу.'
                 : 'Загрузите MIN/MAX и подключите справочник JSON либо стартовый отчёт поставщиков.'}{' '}
             Файлы обрабатываются только в браузере.
           </p>
@@ -193,7 +193,6 @@ export function ImportPage() {
           {failures.min && state.minMax ? 'Продолжить со старым отчётом' : 'Перейти к потребности'}
         </Button>
       </header>
-      {(!configured || !state.minMax) && <SharedCatalogPanel />}
       <details className="import-help">
         <summary>Какие отчёты загрузить</summary>
         <p>
@@ -216,44 +215,45 @@ export function ImportPage() {
           Принятые перемещения, ручные количества и отметки заказов сбросятся.
         </p>
       )}
-      {!configured && state.suppliers && !state.minMax && (
-        <p>Осталось загрузить отчёт MIN/MAX.</p>
-      )}
-      {!configured && state.minMax && !state.suppliers && (
-        <p>Осталось подключить справочник JSON или загрузить отчёт поставщиков.</p>
-      )}
-
       <div className="upload-grid">
-        <FileCard
-          title="Отчёт MIN/MAX"
-          accept=".xlsx"
-          fileName={state.minMaxFileName}
-          ready={Boolean(state.minMax)}
-          busy={state.minMaxLoading}
-          summary={
-            state.minMax
-              ? `${state.minMax.skus.length} SKU · ${state.minMax.branches.length} подразделений`
-              : null
-          }
-          issues={minMaxIssues}
-          onFile={(file) => load(file, 'min')}
-        />
-        <FileCard
-          title="Отчёт поставщиков"
-          accept=".xls,.xlsx"
-          fileName={state.supplierFileName}
-          ready={Boolean(state.suppliers)}
-          busy={state.supplierLoading}
-          locked={configured}
-          catalogReady={configured && !state.suppliers}
-          summary={
-            state.suppliers
-              ? `${supplierPoolCount} поставщиков в рабочем пуле · ${state.suppliers.history.length} связок в исходном отчёте`
-              : null
-          }
-          issues={state.supplierIssues}
-          onFile={(file) => load(file, 'sup')}
-        />
+        <section aria-label="Загрузка остатков и нормативов">
+          {!configured && <h2>1. Остатки и нормативы</h2>}
+          <FileCard
+            title="Отчёт MIN/MAX"
+            accept=".xlsx"
+            fileName={state.minMaxFileName}
+            ready={Boolean(state.minMax)}
+            busy={state.minMaxLoading}
+            summary={
+              state.minMax
+                ? `${state.minMax.skus.length} SKU · ${state.minMax.branches.length} подразделений`
+                : null
+            }
+            issues={minMaxIssues}
+            onFile={(file) => load(file, 'min')}
+          />
+        </section>
+        <section aria-label="Подключение поставщиков">
+          {!configured && <><h2>2. Источник поставщиков</h2>
+            <p>Откройте справочник JSON или выберите стартовый Excel.</p></>}
+          {(!configured || !state.minMax) && <SharedCatalogPanel compact />}
+          <FileCard
+            title="Отчёт поставщиков"
+            accept=".xls,.xlsx"
+            fileName={state.supplierFileName}
+            ready={Boolean(state.suppliers)}
+            busy={state.supplierLoading}
+            locked={configured}
+            catalogReady={configured && !state.suppliers}
+            summary={
+              state.suppliers
+                ? `${supplierPoolCount} поставщиков в рабочем пуле · ${state.suppliers.history.length} связок в исходном отчёте`
+                : null
+            }
+            issues={state.supplierIssues}
+            onFile={(file) => load(file, 'sup')}
+          />
+        </section>
       </div>
 
       {supplierResolutionSummary && (
@@ -291,8 +291,8 @@ export function ImportPage() {
       )}
       {duplicate && (
         <Dialog title="В файле тот же отчёт MIN/MAX" onClose={() => setDuplicate(null)} actions={<>
-          <Button className="secondary" onClick={() => setDuplicate(null)}>Продолжить текущий сеанс</Button>
-          <Button disabled={saving || anyLoading} onClick={() => {
+          <Button onClick={() => setDuplicate(null)}>Продолжить текущий сеанс</Button>
+          <Button className="secondary" disabled={saving || anyLoading} onClick={() => {
             const file = duplicate;
             setDuplicate(null);
             void load(file, 'min', true);

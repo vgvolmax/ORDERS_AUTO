@@ -81,7 +81,7 @@ it('R2 does not silently overwrite local unpublished assignments after reload', 
   expect(screen.getByTestId('persisted-primary')).toHaveTextContent(second);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Открыть из AppBox' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Открыть из AppBox' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Продолжить' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Заменить локальную копию' }));
   await screen.findByText(/Общий справочник подключён/);
   expect(screen.getByTestId('persisted-primary')).toHaveTextContent(first);
 });

@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { moneySum } from '../../domain/money';
 import { Dialog, useModalLayer } from '../../components/Dialog';
 import type { OrderLine, ValidationIssue } from '../../domain/types';
 import type { WorkflowOrder } from '../../app/selectors';
@@ -31,8 +32,12 @@ export function OrderDrawer({
   exportDisabled = false,
   onReviewAndNext,
   dataIssues,
+  threshold,
+  reviewQueue = false,
 }: {
   order: WorkflowOrder;
+  threshold?: { scope: string; limit: number; amount: number } | undefined;
+  reviewQueue?: boolean;
   exported: boolean;
   saving?: boolean | undefined;
   exportError?: string;
@@ -62,9 +67,12 @@ export function OrderDrawer({
     order.status === 'BLOCKED' &&
     order.blockers.length === 1 &&
     order.blockers[0] === 'Ниже минимальной суммы';
-  const hardBlocked = order.blockers.some(
-    (blocker) => blocker !== 'Ниже минимальной суммы',
-  );
+  const reviewNextIsPrimary = reviewQueue && Boolean(onReviewAndNext);
+  const reconcileIsPrimary = order.reviewed && Boolean(onReconcile) && !reviewNextIsPrimary;
+  const thresholdDetails = threshold && <>
+    {threshold.scope}: {money(threshold.amount)} · Минимум: {money(threshold.limit)} · Не хватает:{' '}
+    {threshold.limit - threshold.amount < 0.005 ? `меньше ${money(0.01)}` : money(moneySum([threshold.limit, -threshold.amount]))}.
+  </>;
   const codeWidth = order.lines.reduce(
     (width, line) => Math.max(width, line.skuCode.length * 9 + 22),
     130,
@@ -189,7 +197,9 @@ export function OrderDrawer({
                 ? 'Заказ ниже минимального порога.'
                 : 'Заказ заблокирован.'}
             </strong>{' '}
-            <OrderBlockerDetails order={order} dataIssues={dataIssues} />
+            {canOverrideThreshold && thresholdDetails
+              ? <p>{thresholdDetails}</p>
+              : <OrderBlockerDetails order={order} dataIssues={dataIssues} />}
           </Alert>
         )}
         {lastExport && !exported && <p className="muted">
@@ -214,20 +224,31 @@ export function OrderDrawer({
             disabled={saving}
             onChange={onReviewedChange}
           />
-          <Button className="secondary" onClick={onClose}>Закрыть состав</Button>
-          <Button className="secondary" disabled={saving} onClick={async () => {
-            if (order.reviewed || await onReviewedChange(true) === true) onClose();
-          }}>Проверить и закрыть</Button>
-          <Button className="secondary" disabled={saving || !onReviewAndNext}
-            onClick={() => void onReviewAndNext?.()}>Проверить и следующий</Button>
-          <span className="order-reconcile-control">
-            <Button className="secondary" disabled={saving || !onReconcile}
-              aria-describedby={!onReconcile ? 'order-reconcile-reason' : undefined}
-              onClick={onReconcile}>Сверить счёт</Button>
-            <small className="muted" id="order-reconcile-reason">
-              {onReconcile ? ' ' : order.reviewed ? 'Проверьте состав заказа' : 'После проверки или выгрузки'}
-            </small>
-          </span>
+          {!order.reviewed && (
+            <Button className={reviewNextIsPrimary ? 'secondary' : ''} disabled={saving} onClick={async () => {
+              if (await onReviewedChange(true) === true) onClose();
+            }}>Проверить и закрыть</Button>
+          )}
+          {onReviewAndNext && (
+            <Button className={reviewNextIsPrimary ? '' : 'secondary'} disabled={saving}
+              onClick={() => void onReviewAndNext()}>
+              {order.reviewed ? 'Следующий к проверке' : 'Проверить и следующий'}
+            </Button>
+          )}
+          {order.reviewed && (
+            <Button className={reconcileIsPrimary || reviewNextIsPrimary ? 'secondary' : ''} onClick={onClose}>
+              Закрыть состав
+            </Button>
+          )}
+          {onReconcile && (
+            <span className="order-reconcile-control">
+              <Button className={reconcileIsPrimary ? '' : 'secondary'} disabled={saving}
+                aria-describedby="order-reconcile-basis" onClick={onReconcile}>Сверить счёт</Button>
+              <small className="muted" id="order-reconcile-basis">
+                {lastExport ? 'По последней выгрузке' : exported ? 'По составу сеанса' : 'По текущему составу'}
+              </small>
+            </span>
+          )}
           {canOverrideThreshold && (
             <Button
               className="secondary danger-action"
@@ -237,14 +258,11 @@ export function OrderDrawer({
               Выгрузить несмотря на порог
             </Button>
           )}
-          <Button
-            disabled={!canNormalExport || saving || exportDisabled}
-            onClick={() => onExport(false)}
-          >
-            {order.status === 'EXPORTED'
-              ? 'Скачать CSV ещё раз'
-              : 'Скачать CSV заказа'}
-          </Button>
+          {!canOverrideThreshold && (
+            <Button className="secondary" disabled={!canNormalExport || saving || exportDisabled} onClick={() => onExport(false)}>
+              {order.status === 'EXPORTED' ? 'Скачать CSV ещё раз' : 'Скачать CSV заказа'}
+            </Button>
+          )}
         </div>
       </aside>
       {overrideOpen && (
@@ -270,6 +288,7 @@ export function OrderDrawer({
             </>
           }
         >
+          {thresholdDetails && <p>{thresholdDetails}</p>}
           <p>
             Заказ ниже установленной минимальной суммы. Он будет выгружен с
             текущими количествами.

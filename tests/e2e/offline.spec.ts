@@ -975,7 +975,7 @@ test('E2E-17 calculation integrity survives import, export and reload offline', 
   );
   await page.getByLabel('Минимальная сумма закупки, ₽').fill('30.3');
   await expect(
-    page.getByRole('button', { name: 'Скачать все (2)', exact: true }),
+    page.getByRole('button', { name: 'ZIP по всей сети (2)', exact: true }),
   ).toBeEnabled();
   const decimalCell = page.locator('.order-cell').filter({ hasText: '30,30' });
   await decimalCell.click();
@@ -991,7 +991,7 @@ test('E2E-17 calculation integrity survives import, export and reload offline', 
   expect(csv).not.toContain('999999');
   await page.reload();
   await expect(
-    page.getByRole('button', { name: 'Скачать все (2)', exact: true }),
+    page.getByRole('button', { name: 'ZIP по всей сети (2)', exact: true }),
   ).toBeEnabled();
   await expect(page.getByLabel('Минимальная сумма закупки, ₽')).toHaveValue(
     '30.3',
@@ -1017,7 +1017,7 @@ test('E2E-17 calculation integrity survives import, export and reload offline', 
     page.getByText('Расчёт неполный: есть ошибки в MIN/MAX'),
   ).toBeVisible();
   await expect(
-    page.getByRole('button', { name: 'Скачать все (1)', exact: true }),
+    page.getByRole('button', { name: 'ZIP по всей сети (1)', exact: true }),
   ).toBeEnabled();
   const blocked = page
     .locator('.order-cell')
@@ -1248,7 +1248,7 @@ test('E2E-08 only approved suppliers are selectable and exported after offline r
   await expect(page.getByText(hidden, { exact: true })).toHaveCount(0);
   const downloadPromise = page.waitForEvent('download');
   await page
-    .getByRole('button', { name: 'Скачать все (2)', exact: true })
+    .getByRole('button', { name: 'ZIP по всей сети (2)', exact: true })
     .click();
   const download = await downloadPromise;
   const zip = await JSZip.loadAsync(await readFile((await download.path())!));
@@ -2411,7 +2411,7 @@ test('E2E-11 partial coverage preserves twelve units, two remain, and accepted s
   await importFullCoverageFixture(page);
   await configureFullCoverage(page);
   await expect(
-    coverageMetric(page, 'К перемещению').locator('.coverage-quantity'),
+    coverageMetric(page, 'Предложено к перемещению').locator('.coverage-quantity'),
   ).toHaveText('40 шт');
   const skippedMetric = coverageMetric(page, 'Не распределено');
   await expect(skippedMetric.locator('.coverage-quantity')).toHaveText('2 шт');
@@ -2566,7 +2566,7 @@ test('E2E-11 partial coverage preserves twelve units, two remain, and accepted s
   expect(csv.split('\r\n').filter(Boolean)).toHaveLength(2);
   await page.keyboard.press('Escape');
   await expect(
-    coverageMetric(page, 'К перемещению').locator('.coverage-quantity'),
+    coverageMetric(page, 'Предложено к перемещению').locator('.coverage-quantity'),
   ).toHaveText('32 шт');
   await expect(coverageMetric(page, 'Принято на сумму')).toContainText(
     '800,00',
@@ -3252,6 +3252,17 @@ test('E2E-22 Volmax workspace ships local artwork and distinct native control st
   await page.mouse.move(1580, 16);
   await expect(page.getByText('Потребность рассчитана.', { exact: true })).toBeHidden();
   await page.screenshot({ path: testInfo.outputPath('01-demand.png') });
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await expect(page.locator('.workspace-shortcuts')).toBeHidden();
+  const thirdProduct = page.locator('main .virtual-row-shell[data-index]').nth(2);
+  const bottom = await thirdProduct.evaluate((row) => {
+    const table = row.closest('.virtual-scroll')!;
+    return row.getBoundingClientRect().bottom - Math.min(table.getBoundingClientRect().bottom, window.innerHeight);
+  });
+  await page.screenshot({ path: testInfo.outputPath('22-demand-short.png') });
+  expect(bottom).toBeLessThanOrEqual(0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await page.setViewportSize({ width: 1600, height: 900 });
 
   await page.getByRole('button', { name: 'Раздел: Перемещения', exact: true }).click();
   await page.getByRole('tab', { name: 'Условия', exact: true }).click();
@@ -3365,7 +3376,7 @@ test('E2E-23 weekly MIN/MAX carries supplier links and blocks stale and unpriced
     .getByRole('button', { name: 'Поставщики', exact: true }).click();
   await expect(browsing.getByRole('heading', { name: 'Поставщики', exact: true })).toBeVisible();
   const readyZip = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Скачать все (2)', exact: true }).click();
+  await page.getByRole('button', { name: 'ZIP по всей сети (2)', exact: true }).click();
   expect((await readyZip).suggestedFilename()).toMatch(/\.zip$/);
   await browsing.close();
 
@@ -3404,7 +3415,7 @@ test('E2E-23 weekly MIN/MAX carries supplier links and blocks stale and unpriced
   await expect(page.locator('.order-cell').filter({ hasText: 'Не хватает цены' })).toHaveCount(1);
   await page.reload();
   await expect(page.locator('.order-cell').filter({ hasText: 'Не хватает цены' })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Скачать все (1)', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'ZIP по всей сети (1)', exact: true })).toBeEnabled();
 });
 
 test('E2E-24 reconciles a supplier invoice against reviewed orders and an archived week offline', async ({ page }, testInfo) => {
@@ -3888,7 +3899,7 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
 });
 
 
-test('E2E-34 preserves the exact downloaded version and diagnoses an invoice payable total', async ({ page }) => {
+test('E2E-34 preserves the exact downloaded version and diagnoses an invoice payable total', async ({ page }, testInfo) => {
   const { buildWorkbook } = await import('../fixtures/workbookBuilders');
   const supplier = 'ИП Баранов Роман Борисович';
   const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -3911,11 +3922,11 @@ test('E2E-34 preserves the exact downloaded version and diagnoses an invoice pay
   await page.locator('.order-cell').click();
   const order = page.getByRole('dialog', { name: 'Состав заказа' });
   const review = order.getByRole('switch', { name: 'Заказ проверен' });
+  await expect(order.getByRole('button', { name: 'Проверить и закрыть' })).toBeInViewport();
   const beforeReview = await review.boundingBox();
   await review.click();
   await expect(review).toBeChecked();
   expect(await review.boundingBox()).toEqual(beforeReview);
-  await expect(order.getByRole('button', { name: 'Проверить и закрыть' })).toBeInViewport();
   await review.click();
   await expect(review).not.toBeChecked();
   await page.evaluate(() => {
@@ -3940,6 +3951,8 @@ test('E2E-34 preserves the exact downloaded version and diagnoses an invoice pay
   const qty = order.getByRole('spinbutton', { name: 'Количество 001', exact: true });
   await qty.fill('5');
   await expect(order.getByText(/Последняя выгрузка: 600,00/)).toBeVisible();
+  await expect(order.getByRole('button', { name: 'Сверить счёт' })).toHaveAccessibleDescription('По последней выгрузке');
+  await page.screenshot({ path: testInfo.outputPath('34-order-basis.png') });
   await order.getByRole('button', { name: 'Сверить счёт', exact: true }).click();
   await expect(page.getByText('Состав из выгрузки', { exact: true })).toBeVisible();
   await page.getByLabel('Файл счёта поставщика').setInputFiles(file('audit-invoice.xlsx', [
@@ -3951,6 +3964,24 @@ test('E2E-34 preserves the exact downloaded version and diagnoses an invoice pay
   await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeFocused();
   await expect(page.getByRole('list', { name: 'Итоги по файлам' })).toContainText('К оплате: 650,00');
   await expect(page.getByRole('list', { name: 'Итоги по файлам' })).toContainText('+50,00');
+  const result = page.getByRole('region', { name: 'Результат сверки' });
+  const totals = result.getByRole('group', { name: 'Итоги документов' });
+  await expect(totals).toContainText('650,00');
+  await expect(totals).toContainText('+50,00');
+  const adjustment = page.getByRole('region', { name: 'Корректировка и экспорт в 1С' });
+  const warning = adjustment.getByRole('note', { name: 'Перед выгрузкой в 1С' });
+  await expect(warning).toContainText('+50,00');
+  await expect(adjustment.getByRole('button', { name: 'Excel для 1С' })).toBeEnabled();
+  const heading = result.getByRole('heading', { name: 'Результат сверки' });
+  expect((await heading.boundingBox())!.y).toBeGreaterThanOrEqual(36);
+  await page.screenshot({ path: testInfo.outputPath('34-invoice-document-result.png') });
+  await warning.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('34-invoice-export-warning.png') });
+  const quantity = adjustment.getByRole('textbox', { name: /Количество.*ABC/ });
+  await quantity.fill('ошибка');
+  await adjustment.getByRole('button', { name: 'К первой ошибке' }).click();
+  await expect(quantity).toBeFocused();
+  await quantity.fill('6');
   await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
   await nav.getByRole('button', { name: 'Счета', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeVisible();

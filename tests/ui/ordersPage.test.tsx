@@ -291,7 +291,7 @@ describe('OrdersPage', () => {
     expect(card).toHaveClass('BLOCKED');
     const metric = screen.getByText('Выгружены').closest('.metric');
     expect(metric?.querySelector('strong')).toHaveTextContent('1');
-    expect(screen.getByRole('button', { name: 'Скачать все (1)' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'ZIP по всей сети (1)' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', {
       name: /все заказы ип баранов роман борисович/i,
@@ -333,7 +333,7 @@ describe('OrdersPage', () => {
     mocks.downloadReadyOrdersZip.mockRejectedValueOnce(new Error('zip failed'));
     renderWithStore(<OrdersPage />, baseState(), set);
 
-    fireEvent.click(screen.getByRole('button', { name: /скачать все \(2\)/i }));
+    fireEvent.click(screen.getByRole('button', { name: /ZIP по всей сети \(2\)/i }));
 
     await waitFor(() =>
       expect(set).toHaveBeenCalledWith({
@@ -454,13 +454,13 @@ describe('OrdersPage', () => {
       target: { value: 'ИП Баранов Роман Борисович' },
     });
     expect(
-      screen.getByRole('button', { name: /скачать все \(4\)/i }),
+      screen.getByRole('button', { name: /ZIP по всей сети \(4\)/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /скачать проверенные \(2\)/i }),
+      screen.getByRole('button', { name: /ZIP проверенных по сети \(2\)/i }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /скачать все \(4\)/i }));
+    fireEvent.click(screen.getByRole('button', { name: /ZIP по всей сети \(4\)/i }));
     await waitFor(() =>
       expect(mocks.downloadReadyOrdersZip).toHaveBeenCalled(),
     );
@@ -658,7 +658,7 @@ describe('OrdersPage', () => {
     expect(blockerCard).toHaveClass('has-blocker', 'BLOCKED');
     expect(blockerCard).not.toHaveClass('is-reviewed');
     expect(
-      screen.getByRole('button', { name: /скачать проверенные \(0\)/i }),
+      screen.getByRole('button', { name: /ZIP проверенных по сети \(0\)/i }),
     ).toBeDisabled();
     expect(
       screen.getByRole('button', {

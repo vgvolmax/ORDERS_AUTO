@@ -649,7 +649,7 @@ export function RebalancingPage() {
       </header>
       <div className="metrics coverage-metrics">
         <MetricCard
-          label="К перемещению"
+          label="Предложено к перемещению"
           icon="swap"
           tone="accent"
           value={
@@ -664,7 +664,7 @@ export function RebalancingPage() {
         <MetricCard
           label="Не распределено"
           icon="warning"
-          tone="warning"
+          tone={coverage.skipped.skuCount > 0 || (r.proposal && r.proposal.algorithmVersion !== ALGORITHM_VERSION) ? 'warning' : 'neutral'}
           value={
             <>
               {r.proposal?.algorithmVersion === ALGORITHM_VERSION ? (

@@ -80,7 +80,7 @@ export function OrdersPage({
   );
 
   const orders = derived.projection.orders;
-  const visibleOrders = useMemo(() => {
+  const matchingOrders = useMemo(() => {
     const query = supplierQuery.trim().toLocaleLowerCase('ru-RU');
     const affectedIds = new Set(affected);
     return orders.filter((order) => {
@@ -89,16 +89,13 @@ export function OrdersPage({
       if (query && !order.supplier.toLocaleLowerCase('ru-RU').includes(query)) {
         return false;
       }
-      if (
-        !showBelowThreshold &&
-        order.belowThreshold &&
-        !hasHardBlocker(order)
-      ) {
-        return false;
-      }
       return true;
     });
-  }, [orders, supplierQuery, showBelowThreshold, reviewOnly, affected]);
+  }, [orders, supplierQuery, reviewOnly, affected]);
+  const visibleOrders = useMemo(() => showBelowThreshold ? matchingOrders
+    : matchingOrders.filter((order) => !order.belowThreshold || hasHardBlocker(order)),
+  [matchingOrders, showBelowThreshold]);
+  const hiddenBelowThreshold = matchingOrders.length - visibleOrders.length;
 
   const ordersBySupplier = useMemo(() => {
     const index = new Map<string, WorkflowOrder[]>();
@@ -140,9 +137,12 @@ export function OrdersPage({
   const exportedIds = new Set(state.exportedOrderIds);
   const savedExports = new Map((state.exportedOrders ?? []).map((order) => [order.id, order]));
   const visibleReviewIds = visibleOrders.filter((order) => !order.reviewed && !hasHardBlocker(order)).map(({ id }) => id);
-  const currentPosition = selected ? visibleOrders.indexOf(selected) : -1;
-  const nextReviewId = selected && visibleOrders
-    .slice(currentPosition + 1).find((order) => !order.reviewed && !hasHardBlocker(order))?.id;
+  const nextReviewId = selected && orders.slice(orders.indexOf(selected) + 1).find((order) =>
+    visibleOrderIds.has(order.id) && !order.reviewed && !hasHardBlocker(order),
+  )?.id;
+  const thresholdAmount = selected?.belowThreshold && state.settings.thresholdMode === 'SUPPLIER_TOTAL'
+    ? summarizeOrders((ordersBySupplier.get(selected.supplier) ?? []).filter((order) => !hasHardBlocker(order))).amount
+    : selected?.totalAmount;
   const exclusionTargets = exclusion ? orders.filter(({ id }) => exclusion.orderIds.includes(id)) : [];
   const exclusionChecks = exclusionTargets.filter(({ reviewed }) => reviewed).length;
   const exclusionRemovedAmounts = exclusionTargets.flatMap((order) =>
@@ -444,7 +444,7 @@ export function OrdersPage({
   }
 
   return (
-    <main>
+    <main className="compact-workspace orders-page">
       <header className="header-actions">
         <div>
           <p className="eyebrow">Рабочая потребность</p>
@@ -459,7 +459,7 @@ export function OrdersPage({
             disabled={exportable.length === 0 || Boolean(busy || saving || pendingExport)}
             onClick={() => zip('ALL')}
           >
-            {busy || `Скачать все (${exportable.length})`}
+            {busy || `ZIP по всей сети (${exportable.length})`}
           </Button>
           <Button
             className="secondary"
@@ -468,9 +468,9 @@ export function OrdersPage({
             }
             onClick={() => zip('REVIEWED')}
           >
-            Скачать проверенные ({reviewedExportable.length})
+            ZIP проверенных по сети ({reviewedExportable.length})
           </Button>
-          <small className="muted">ZIP всех доступных заказов сети. Поиск и фильтры матрицы на этот файл не влияют.</small>
+          <small className="muted">Сетевые выгрузки включают заказы вне фильтров матрицы.</small>
         </div>
       </header>
       {exportRecovery}
@@ -486,51 +486,53 @@ export function OrdersPage({
       )}
       {exportError && <Alert tone="danger">{exportError}</Alert>}
 
-      <ThresholdControls
-        settings={state.settings}
-        onChange={async (settings) => {
-          const patch = { settings };
-          if (commit) await commit(patch);
-          else set(patch);
-        }}
-        showBelowThreshold={showBelowThreshold}
-        onShowBelowThresholdChange={setShowBelowThreshold}
-      />
+      <div className="order-filter-grid">
+        <ThresholdControls
+          settings={state.settings}
+          onChange={async (settings) => {
+            const patch = { settings };
+            if (commit) await commit(patch);
+            else set(patch);
+          }}
+          showBelowThreshold={showBelowThreshold}
+          onShowBelowThresholdChange={setShowBelowThreshold}
+        />
 
-      <section className="filters compact-filters">
-        <label>
-          Поиск поставщика
-          <SearchInput
-            value={supplierQuery}
-            onValueChange={setSupplierQuery}
-            placeholder="Название поставщика"
-          />
-        </label>
-        <label className="checkbox-control">
-          <input type="checkbox" checked={reviewOnly} onChange={(event) => setReviewOnly(event.target.checked)} />
-          К проверке
-        </label>
-        {reviewOnly && <Button className="secondary" disabled={!visibleReviewIds.length || saving}
-          onClick={() => void setAllReviewed(visibleReviewIds, true)}>
-          Отметить по фильтру ({visibleReviewIds.length})
-        </Button>}
-        {affected.length > 0 && <Button className="secondary" onClick={() => setAffected([])}>
-          Изменившиеся заказы ({affected.length}) · снять фильтр
-        </Button>}
-        {(supplierQuery || reviewOnly || affected.length > 0) && <Button className="secondary"
-          disabled={Boolean(busy || saving || pendingExport) || !exportable.some(({ id }) => visibleOrderIds.has(id))}
-          onClick={() => void zip('ALL', true)}>ZIP по фильтру</Button>}
-        <span>
-          В матрице: <strong>{visibleOrders.length}</strong> заказов
-        </span>
-        {supplierQuery && (
-          <button className="link" onClick={() => setSupplierQuery('')}>
-            Сбросить поиск
-          </button>
-        )}
-      </section>
+        <section className="filters compact-filters">
+          <label>
+            Поиск поставщика
+            <SearchInput
+              value={supplierQuery}
+              onValueChange={setSupplierQuery}
+              placeholder="Название поставщика"
+            />
+          </label>
+          <label className="checkbox-control">
+            <input type="checkbox" checked={reviewOnly} onChange={(event) => setReviewOnly(event.target.checked)} />
+            К проверке
+          </label>
+          {reviewOnly && <Button className="secondary" disabled={!visibleReviewIds.length || saving}
+            onClick={() => void setAllReviewed(visibleReviewIds, true)}>
+            Отметить по фильтру ({visibleReviewIds.length})
+          </Button>}
+          {affected.length > 0 && <Button className="secondary" onClick={() => setAffected([])}>
+            Изменившиеся заказы ({affected.length}) · снять фильтр
+          </Button>}
+          {(supplierQuery || reviewOnly || affected.length > 0) && <Button className="secondary"
+            disabled={Boolean(busy || saving || pendingExport) || !exportable.some(({ id }) => visibleOrderIds.has(id))}
+            onClick={() => void zip('ALL', true)}>ZIP по фильтру</Button>}
+          <span>
+            В матрице: <strong>{visibleOrders.length}</strong> заказов
+          </span>
+          {supplierQuery && (
+            <button className="link" onClick={() => setSupplierQuery('')}>
+              Сбросить поиск
+            </button>
+          )}
+        </section>
+      </div>
 
-      <div className="metrics">
+      <div className="metrics compact-metrics">
         <MetricCard
           label="Готовы"
           icon="cart"
@@ -774,6 +776,9 @@ export function OrdersPage({
       ) : (
         <EmptyState>
           Нет заказов, соответствующих текущему порогу и фильтрам.
+          {hiddenBelowThreshold > 0 && <> <Button className="secondary" onClick={() => setShowBelowThreshold(true)}>
+            Показать заказы ниже порога ({hiddenBelowThreshold})
+          </Button></>}
         </EmptyState>
       )}
 
@@ -785,6 +790,12 @@ export function OrdersPage({
           exportError={exportError || orderError}
           exportRecovery={exportRecovery}
           lastExport={savedExports.get(selected.id)}
+          threshold={thresholdAmount == null ? undefined : {
+            scope: state.settings.thresholdMode === 'SUPPLIER_TOTAL' ? 'По поставщику в целом' : 'По заказу подразделения',
+            limit: state.settings.minimumOrderAmount,
+            amount: thresholdAmount,
+          }}
+          reviewQueue={reviewOnly}
           exportDisabled={Boolean(pendingExport)}
           saving={Boolean(busy || saving)}
           renderMovement={renderOrderMovement}

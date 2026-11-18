@@ -69,6 +69,7 @@ test('E2E-32 shared catalog bootstraps a clean workstation and protects drafts, 
   await expect(links.getByRole('region', { name: 'Текущий основной поставщик' })).toContainText(second);
   await links.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
   await page.reload();
+  await app.getByRole('button', { name: 'Управление справочником', exact: true }).click();
   await app.getByRole('button', { name: 'Открыть из AppBox', exact: true }).click();
   const confirmation = app.getByRole('dialog', { name: 'Подтвердить обновление справочника', exact: true });
   await expect(confirmation).toContainText('неопубликованные изменения');
@@ -77,7 +78,7 @@ test('E2E-32 shared catalog bootstraps a clean workstation and protects drafts, 
   await expect(links.getByRole('region', { name: 'Текущий основной поставщик' })).toContainText(second);
   await links.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
   await app.getByRole('button', { name: 'Открыть из AppBox', exact: true }).click();
-  await confirmation.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Заменить локальную копию', exact: true }).click();
   await expect(app.getByText(/Общий справочник подключён/)).toBeVisible();
   await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
   await app.locator('.order-cell').click();
@@ -87,9 +88,10 @@ test('E2E-32 shared catalog bootstraps a clean workstation and protects drafts, 
   await order.getByRole('button', { name: 'Закрыть', exact: true }).click();
   unit = 'упак'; revision++;
   await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  await app.getByRole('button', { name: 'Управление справочником', exact: true }).click();
   await app.getByRole('button', { name: 'Открыть / обновить из AppBox', exact: true }).click();
   await expect(confirmation).toContainText('единицы');
-  await confirmation.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Заменить локальную копию', exact: true }).click();
   await expect(app.getByText(/Общий справочник подключён/)).toBeVisible();
   await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
   await app.locator('.order-cell').click();

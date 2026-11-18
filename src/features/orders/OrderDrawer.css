@@ -60,6 +60,8 @@
   bottom: -20px;
   z-index: var(--z-sticky);
   justify-content: flex-start;
+  align-items: flex-start;
+  min-block-size: 64px;
   background: var(--surface);
   border-top: 1px solid var(--line);
 }
@@ -69,5 +71,5 @@
 }
 .order-drawer-actions .button { white-space: nowrap; }
 
-.order-reconcile-control { display: grid; gap: 2px; inline-size: 176px; }
+.order-reconcile-control { display: grid; gap: 2px; min-inline-size: 152px; }
 .order-reconcile-control small { line-height: 1.2; }

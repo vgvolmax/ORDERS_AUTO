@@ -56,6 +56,7 @@ test('E2E-33 accepted documents freeze fields while restored working weeks use t
   await acceptA();
   unit = 'упак'; primary = second; revision++;
   await nav.getByRole('button', { name: 'Поставщики', exact: true }).click();
+  await page.getByRole('button', { name: 'Управление справочником', exact: true }).click();
   await page.getByRole('button', { name: 'Открыть / обновить из AppBox', exact: true }).click();
   await expect(page.getByText(/Общий справочник подключён/)).toBeVisible();
   await nav.getByRole('button', { name: 'Заказы', exact: true }).click();

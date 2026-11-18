@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
 import { Button } from '../../components/ui';
 import { Dialog } from '../../components/Dialog';
@@ -21,23 +21,25 @@ import {
 
 const message = (error: unknown): string => error instanceof Error ? error.message : 'Операция со справочником не выполнена.';
 
-export function SharedCatalogPanel() {
+export function SharedCatalogPanel({ compact = false }: { compact?: boolean }) {
   const { state, commit, saving } = useStore();
   const [link, setLink] = useState<SharedCatalogLink | null>(currentCatalogLink);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{ message: string; action: string } | null>(null);
+  const [showControls, setShowControls] = useState(false);
+  const controlsId = useId();
   const resolveConfirmation = useRef<((approved: boolean) => void) | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const inFlight = useRef(false);
   const latestCatalog = useRef(state.catalog);
   latestCatalog.current = state.catalog;
   useEffect(() => () => { resolveConfirmation.current?.(false); resolveConfirmation.current = null; }, []);
-  function approve(message: string): Promise<boolean> {
+  function approve(message: string, action: string): Promise<boolean> {
     return new Promise((resolve) => {
       resolveConfirmation.current = resolve;
-      setConfirmation(message);
+      setConfirmation({ message, action });
     });
   }
   function answerConfirmation(approved: boolean) {
@@ -78,7 +80,7 @@ export function SharedCatalogPanel() {
           : '',
         affectsReviewed ? 'Связи поставщиков или единицы изменятся. Проверка и отметки выгрузки затронутых заказов будут сняты.' : '',
       ].filter(Boolean).join(' ');
-      if (!(await approve(warning))) return;
+      if (!(await approve(warning, 'Заменить локальную копию'))) return;
     }
     const workspaceId = state.workspaceId;
     const catalog = state.catalog;
@@ -117,7 +119,7 @@ export function SharedCatalogPanel() {
     if (!api || !state.catalog) return;
     void run(async () => {
       if (link?.document?.canEdit === false) throw new Error('У документа нет права редактирования.');
-      if (!link && !(await approve('Общий документ не подключён. Сохранение создаст новый JSON в AppBox, а не обновит старый. Продолжить?'))) return;
+      if (!link && !(await approve('Общий документ не подключён. Сохранение создаст новый JSON в AppBox, а не обновит старый. Продолжить?', 'Создать документ в AppBox'))) return;
       const snapshot = sharedCatalogFromLocal(state.catalog!);
       ensureAppBoxSize(snapshot);
       const content = sharedCatalogJson(snapshot);
@@ -161,59 +163,67 @@ export function SharedCatalogPanel() {
     });
   }
 
+  const canCollapse = compact && Boolean(state.catalog);
+  const expanded = !canCollapse || showControls;
+  const publishButton = bridge && (
+    <Button disabled={busy || saving || !state.catalog || readOnly || (Boolean(link) && !dirty)} onClick={saveAppBox}>
+      Сохранить в AppBox
+    </Button>
+  );
+
   return (
-    <section className="shared-catalog-panel panel" aria-label="Общий справочник JSON">
+    <section className={`shared-catalog-panel panel${canCollapse ? ' shared-catalog-compact' : ''}`} aria-label="Общий справочник JSON">
       <div className="shared-catalog-heading">
         <div>
           <h2>Общий справочник JSON</h2>
-          <p className="muted">
-            {bridge
-              ? 'Откройте общий документ AppBox. Изменения в нём сохраняются только по кнопке.'
-              : 'Автономный режим: импорт и резервная копия JSON на компьютере.'}
-          </p>
+          {state.catalog ? <p className="muted">На этом ПК: сохранён
+            {bridge && <> · AppBox: <span className={dirty && !readOnly ? 'warning-text' : undefined}>
+              {link
+                ? readOnly ? 'Только чтение' : dirty ? 'Есть локальные изменения' : 'Синхронизирован'
+                : 'Общий документ не подключён'}
+            </span></>}
+          </p> : <p className="muted">{bridge ? 'Общий документ не подключён' : 'Источник ещё не выбран'}</p>}
         </div>
-        <span className={dirty ? 'warning-text' : 'muted'}>
-          {bridge
-            ? link ? (readOnly ? 'Только чтение' : dirty ? 'Есть локальные изменения' : 'Подключён') : 'Общий документ не подключён'
-            : state.catalog ? 'Локальный справочник сохранён' : 'Источник ещё не выбран'}
-        </span>
+        {canCollapse && <div className="shared-catalog-actions">
+          {!expanded && dirty && !readOnly && publishButton}
+          <Button className="secondary" aria-expanded={expanded} aria-controls={controlsId}
+            onClick={() => setShowControls(!expanded)}>
+            {expanded ? 'Свернуть управление' : 'Управление справочником'}
+          </Button>
+        </div>}
       </div>
-      <div className="shared-catalog-actions">
-        {bridge && <Button className="secondary" disabled={busy || saving} onClick={openAppBox}>
-          {link ? 'Открыть / обновить из AppBox' : 'Открыть из AppBox'}
-        </Button>}
-        {bridge && <Button disabled={busy || saving || !state.catalog || readOnly || (Boolean(link) && !dirty)} onClick={saveAppBox}>
-          Сохранить в AppBox
-        </Button>}
-        <Button className="secondary" disabled={busy || saving} onClick={() => input.current?.click()}>
-          Импорт JSON с компьютера
-        </Button>
-        <input
-          ref={input} type="file" accept=".json,application/json" hidden
-          aria-label="Файл справочника JSON"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            onComputerFile(file);
-          }}
-        />
-        <Button className="secondary" disabled={busy || saving || !state.catalog} onClick={download}>
-          Скачать резервную копию
-        </Button>
-      </div>
-      {state.catalog && (
-        <p className="muted">
+      <div id={controlsId} className="shared-catalog-details" hidden={!expanded}>
+        <div className="shared-catalog-actions">
+          {bridge && <Button className="secondary" disabled={busy || saving} onClick={openAppBox}>
+            {link ? 'Открыть / обновить из AppBox' : 'Открыть из AppBox'}
+          </Button>}
+          {expanded && publishButton}
+          <Button className="secondary" disabled={busy || saving} onClick={() => input.current?.click()}>
+            Импорт JSON с компьютера
+          </Button>
+          <Button className="secondary" disabled={busy || saving || !state.catalog} onClick={download}>
+            Скачать резервную копию
+          </Button>
+        </div>
+        {state.catalog && <p className="muted">
           {state.catalog.products.length} товаров · {(state.catalog.suppliers ?? []).length} поставщиков ·
-          {state.catalog.assignments.filter((item) => item.primary).length} основных назначений.
-          {bridge && link && (dirty ? ' Есть сохранённые локальные правки для публикации.' : ' Локальный справочник совпадает с открытой общей версией.')}
-          {bridge && !link && ' После перезапуска AppBox нужно снова открыть общий JSON.'}
-        </p>
-      )}
-      {bridge && link?.document && <p className="muted">
-        {typeof link.document.name === 'string' ? link.document.name : 'Общий документ AppBox'}
-        {link.openedAt && ` · открыт ${new Date(link.openedAt).toLocaleString('ru-RU')}`}
-        {link.publishedAt && ` · опубликовано ${new Date(link.publishedAt).toLocaleString('ru-RU')}`}
-      </p>}
+          {' '}{state.catalog.assignments.filter((item) => item.primary).length} основных назначений.
+        </p>}
+        {bridge && link?.document && <p className="muted">
+          {typeof link.document.name === 'string' ? link.document.name : 'Общий документ AppBox'}
+          {link.openedAt && ` · открыт ${new Date(link.openedAt).toLocaleString('ru-RU')}`}
+          {link.publishedAt && ` · опубликовано ${new Date(link.publishedAt).toLocaleString('ru-RU')}`}
+        </p>}
+      </div>
+      <input
+        ref={input} type="file" accept=".json,application/json" hidden
+        aria-label="Файл справочника JSON"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          onComputerFile(file);
+        }}
+      />
       {readOnly && <p className="muted">Редактирование связей недоступно: у общего документа права только на чтение.</p>}
       {error && <p role="alert" className="danger-text">{error}</p>}
       {notice && <p role="status" className="muted">{notice}</p>}
@@ -224,11 +234,11 @@ export function SharedCatalogPanel() {
           actions={
             <>
               <Button className="secondary" onClick={() => answerConfirmation(false)}>Отмена</Button>
-              <Button onClick={() => answerConfirmation(true)}>Продолжить</Button>
+              <Button onClick={() => answerConfirmation(true)}>{confirmation.action}</Button>
             </>
           }
         >
-          <p>{confirmation}</p>
+          <p>{confirmation.message}</p>
         </Dialog>
       )}
     </section>
