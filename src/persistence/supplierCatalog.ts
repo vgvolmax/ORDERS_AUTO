@@ -1,4 +1,5 @@
 import { createSupplierCatalog, type SupplierCatalog } from '../domain/supplierCatalog';
+import { upgradeStarterSupplierPool } from '../domain/supplierPool';
 import type { StoredWorkspace, WorkspaceData } from '../domain/workspace';
 import { db } from './db';
 import { listWorkspaces, loadWorkspace } from './workspaces';
@@ -31,10 +32,21 @@ export async function recoverSupplierCatalog(data: WorkspaceData): Promise<Suppl
 
 /** Idempotent migration: never merge historic supplier choices into the catalog. */
 export async function loadOrCreateSupplierCatalog(active: StoredWorkspace | null): Promise<SupplierCatalog | null> {
-  const existing = await loadSupplierCatalog();
+  const database = await db();
+  const upgrade = database.transaction('supplierCatalog', 'readwrite');
+  void upgrade.done.catch(() => undefined);
+  let existing = checkedSupplierCatalog(await upgrade.store.get('main'));
+  if (existing?.suppliers) {
+    const suppliers = upgradeStarterSupplierPool(existing.suppliers);
+    if (suppliers !== existing.suppliers) {
+      existing = { ...existing, suppliers, revision: existing.revision + 1 };
+      await upgrade.store.put(existing, 'main');
+    }
+  }
+  await upgrade.done;
   if (existing || active?.data.supplierAssignments === undefined) return existing;
   const catalog = (await recoverSupplierCatalog(active.data))!;
-  const tx = (await db()).transaction(['supplierCatalog', 'workspaceMeta'], 'readwrite');
+  const tx = database.transaction(['supplierCatalog', 'workspaceMeta'], 'readwrite');
   void tx.done.catch(() => undefined);
   try {
     const current = checkedSupplierCatalog(await tx.objectStore('supplierCatalog').get('main'));
