@@ -247,7 +247,7 @@ export function InvoiceResults({
 
   const adjustmentColumns: VirtualColumn<InvoiceAdjustment>[] = [
     {
-      key: 'included', header: 'Вкл.', width: '55px',
+      key: 'included', header: 'Вкл.', width: '40px',
       render: (row) => (
         <input
           type="checkbox"
@@ -258,16 +258,16 @@ export function InvoiceResults({
       ),
     },
     {
-      key: 'article', header: 'Артикул', width: '110px',
+      key: 'article', header: 'Артикул', width: '82px',
       render: (row) => <span className="invoice-code">{row.article || '—'}</span>,
     },
     {
-      key: 'item', header: 'Номенклатура', width: 'minmax(160px, 1fr)',
+      key: 'item', header: 'Номенклатура', width: 'minmax(136px, 1.24fr)',
       render: (row) => <ItemName row={row} />,
     },
-    { key: 'unit', header: 'Ед.', width: '58px', render: (row) => row.unit || '—' },
+    { key: 'unit', header: 'Ед.', width: '42px', render: (row) => row.unit || '—' },
     {
-      key: 'qty', header: 'Количество', width: '112px', className: 'num',
+      key: 'qty', header: 'Количество', width: 'minmax(82px, .72fr)', className: 'num',
       render: (row) => (
         <Input
           type="text"
@@ -282,7 +282,7 @@ export function InvoiceResults({
       ),
     },
     {
-      key: 'price', header: 'Цена за ед.', width: '115px', className: 'num',
+      key: 'price', header: 'Цена за ед.', width: 'minmax(84px, .75fr)', className: 'num',
       render: (row) => (
         <Input
           type="text"
@@ -297,11 +297,11 @@ export function InvoiceResults({
       ),
     },
     {
-      key: 'amount', header: 'Сумма', width: '112px', className: 'num invoice-emphasis',
+      key: 'amount', header: 'Сумма', width: 'minmax(94px, .8fr)', className: 'num invoice-emphasis',
       render: (row) => display(row.amount, money),
     },
     {
-      key: 'status', header: 'По итогам сверки', width: 'minmax(145px, .65fr)',
+      key: 'status', header: 'По итогам сверки', width: 'minmax(122px, .95fr)',
       render: (row) => <DifferenceList row={originals.get(row.id)!} />,
     },
   ];
@@ -650,28 +650,28 @@ function OrderAndInvoiceValues({ order, invoice, format }: {
 
 const comparisonColumns: VirtualColumn<InvoiceComparisonRow>[] = [
   {
-    key: 'article', header: 'Артикул', width: '100px', sticky: true,
+    key: 'article', header: 'Артикул', width: '86px', sticky: true,
     render: (row) => <span className="invoice-code">{row.article || '—'}</span>,
   },
   {
-    key: 'item', header: 'Номенклатура', width: 'minmax(175px, 1fr)', sticky: true,
+    key: 'item', header: 'Номенклатура', width: 'minmax(140px, 1.25fr)', sticky: true,
     render: (row) => <ItemName row={row} />,
   },
-  { key: 'unit', header: 'Ед.', width: '50px', render: (row) => row.unit || '—' },
+  { key: 'unit', header: 'Ед.', width: '42px', render: (row) => row.unit || '—' },
   {
-    key: 'qty', header: 'Количество', width: '110px', className: 'num',
+    key: 'qty', header: 'Количество', width: 'minmax(82px, .7fr)', className: 'num',
     render: (row) => <OrderAndInvoiceValues order={row.orderQty} invoice={row.invoiceQty} format={fmtQty} />,
   },
   {
-    key: 'price', header: 'Цена за ед.', width: '140px', className: 'num',
+    key: 'price', header: 'Цена за ед.', width: 'minmax(102px, .82fr)', className: 'num',
     render: (row) => <OrderAndInvoiceValues order={row.orderPrice} invoice={row.invoicePrice} format={money} />,
   },
   {
-    key: 'amount', header: 'Сумма', width: '145px', className: 'num',
+    key: 'amount', header: 'Сумма', width: 'minmax(110px, .9fr)', className: 'num',
     render: (row) => <OrderAndInvoiceValues order={row.orderAmount} invoice={row.invoiceAmount} format={money} />,
   },
   {
-    key: 'differences', header: 'Расхождения', width: 'minmax(145px, .8fr)',
+    key: 'differences', header: 'Расхождения', width: 'minmax(124px, 1fr)',
     render: (row) => <><DifferenceList row={row} /><InvoiceRowDetails row={row} /></>,
   },
 ];

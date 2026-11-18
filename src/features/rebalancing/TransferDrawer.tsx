@@ -154,7 +154,7 @@ export function TransferDrawer({
       <aside
         ref={ref}
         tabIndex={-1}
-        className="drawer transfer-drawer"
+        className="drawer table-sheet transfer-drawer"
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
@@ -329,10 +329,10 @@ export function TransferDrawer({
               ...productColumns<TransferDocumentLine>(
                 (l) => ({ code: l.skuCode, article: l.article, name: l.name }),
                 {
-                  code: { width: '130px' },
-                  article: { width: '110px' },
+                  code: { width: '94px' },
+                  article: { width: '90px' },
                   name: {
-                    width: 'minmax(200px,1.5fr)',
+                    width: 'minmax(144px, 1.5fr)',
                     render: (l) => {
                       const directionCount = directionsBySku?.get(l.skuCode)?.length ?? 0;
                       const expanded = directionLine?.id === l.id;
@@ -375,19 +375,19 @@ export function TransferDrawer({
               {
                 key: 'from',
                 header: 'Отправитель · остаток',
-                width: 'minmax(155px, 1fr)',
+                width: 'minmax(112px, 1fr)',
                 render: (l) => <Stock values={l.from} line={l} />,
               },
               {
                 key: 'to',
                 header: 'Получатель · остаток',
-                width: 'minmax(155px, 1fr)',
+                width: 'minmax(112px, 1fr)',
                 render: (l) => <Stock values={l.to} line={l} />,
               },
               {
                 key: 'qty',
                 header: 'Количество',
-                width: '168px',
+                width: 'minmax(136px, .85fr)',
                 render: (l) =>
                   l.decision === 'PROPOSED' && onEditQuantity ? (
                     <TransferQuantityEditor
@@ -411,7 +411,7 @@ export function TransferDrawer({
               {
                 key: 'decision',
                 header: 'Решение',
-                width: 'minmax(125px, 1fr)',
+                width: 'minmax(98px, .8fr)',
                 render: (l) => (
                   <div className="transfer-line-actions">
                     <span data-decision={l.decision}>
@@ -452,7 +452,7 @@ export function TransferDrawer({
               {
                 key: 'cost',
                 header: 'Цена · сумма',
-                width: 'minmax(115px, 1fr)',
+                width: 'minmax(106px, 1fr)',
                 className: 'transfer-cost num',
                 render: (l) => (
                   <>

@@ -73,33 +73,28 @@ export function OrderDrawer({
     {threshold.scope}: {money(threshold.amount)} · Минимум: {money(threshold.limit)} · Не хватает:{' '}
     {threshold.limit - threshold.amount < 0.005 ? `меньше ${money(0.01)}` : money(moneySum([threshold.limit, -threshold.amount]))}.
   </>;
-  const codeWidth = order.lines.reduce(
-    (width, line) => Math.max(width, line.skuCode.length * 9 + 22),
-    130,
-  );
-
   const columns: VirtualColumn<OrderLine>[] = [
     {
       key: 'sku',
       header: 'Код',
-      width: `${codeWidth}px`,
+      width: '96px',
       className: 'order-drawer-code',
       render: (line) => <strong>{line.skuCode}</strong>,
     },
-    { key: 'article', header: 'Артикул', width: '110px', render: (line) => line.article ?? '—' },
-    { key: 'name', header: 'Наименование', width: 'minmax(170px, 1fr)', render: (line) => line.name },
+    { key: 'article', header: 'Артикул', width: '92px', render: (line) => line.article ?? '—' },
+    { key: 'name', header: 'Наименование', width: 'minmax(135px, 1.5fr)', render: (line) => line.name },
     {
-      key: 'stock', header: 'Остаток по отчёту', width: '100px', className: 'num',
+      key: 'stock', header: 'Остаток по отчёту', width: 'minmax(82px, .7fr)', className: 'num',
       render: (line) => fmtQty(line.stock),
     },
-    { key: 'min', header: 'MIN', width: '55px', className: 'num', render: (line) => line.min ?? '—' },
-    { key: 'max', header: 'MAX', width: '55px', className: 'num', render: (line) => line.max ?? '—' },
+    { key: 'min', header: 'MIN', width: '44px', className: 'num', render: (line) => line.min ?? '—' },
+    { key: 'max', header: 'MAX', width: '44px', className: 'num', render: (line) => line.max ?? '—' },
     {
-      key: 'calculated', header: 'Расчёт до MAX', width: '108px', className: 'num',
+      key: 'calculated', header: 'Расчёт до MAX', width: 'minmax(76px, .7fr)', className: 'num',
       render: (line) => <>{fmtQty(line.calculatedQty)}{renderMovement?.(line)}</>,
     },
     {
-      key: 'quantity', header: 'К заказу', width: '125px', className: 'order-drawer-quantity',
+      key: 'quantity', header: 'К заказу', width: 'minmax(110px, 1fr)', className: 'order-drawer-quantity',
       render: (line) => (
         <>
           <QuantityInput
@@ -129,15 +124,15 @@ export function OrderDrawer({
       ),
     },
     {
-      key: 'price', header: 'Цена', width: '95px', className: 'num',
+      key: 'price', header: 'Цена', width: 'minmax(86px, .7fr)', className: 'num',
       render: (line) => line.unitPrice == null ? 'Нет цены' : money(line.unitPrice),
     },
     {
-      key: 'price-source', header: 'Источник цены', width: '108px',
+      key: 'price-source', header: 'Источник цены', width: 'minmax(90px, .7fr)',
       render: (line) => priceSourceLabel(line.priceSource),
     },
     {
-      key: 'amount', header: 'Сумма', width: '115px', className: 'num',
+      key: 'amount', header: 'Сумма', width: 'minmax(92px, .8fr)', className: 'num',
       render: (line) => line.amount == null ? '—' : money(line.amount),
     },
   ];
@@ -153,7 +148,7 @@ export function OrderDrawer({
       <aside
         ref={ref}
         tabIndex={-1}
-        className="drawer order-drawer"
+        className="drawer table-sheet order-drawer"
         role="dialog"
         aria-modal="true"
         aria-label="Состав заказа"

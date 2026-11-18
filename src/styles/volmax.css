@@ -280,7 +280,6 @@ thead th, .virtual-header, .virtual-header > .is-frozen { background: var(--tabl
 .toast { background: #e1f3fc; color: #153e5e; border-color: #a8d4e8; }
 
 @media (min-width: 1400px) and (min-height: 800px) {
-  .transfer-drawer { max-width: 1180px; }
   .rebalancing-page > header p:not(.eyebrow) { display: block; }
   .rebalancing-page .coverage-metrics .metric > strong { font-size: 21px; }
   .rebalancing-page .coverage-metrics .metric > small { display: block; }

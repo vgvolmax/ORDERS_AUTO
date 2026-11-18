@@ -135,6 +135,8 @@
   overflow-wrap: anywhere;
 }
 
+.invoice-result .section-heading > div { min-width: 0; overflow-wrap: anywhere; }
+
 .invoice-result .section-heading h2 {
   margin-bottom: 3px;
 }
@@ -158,6 +160,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.invoice-differences .badge {
+  max-inline-size: 100%;
+  white-space: normal;
 }
 
 .invoice-count {
@@ -194,6 +201,7 @@
 }
 
 @media (max-width: 1060px) {
+  .invoices-page .invoice-result { padding-inline: 10px; }
   .invoice-inputs {
     grid-template-columns: 1fr;
   }
@@ -252,7 +260,7 @@
 
 .invoice-inputs[data-collapsed="true"] { display: none; }
 .invoice-source-summary { margin: 12px 0; align-items: center; }
-.invoice-source-summary > strong { flex: 1 1 240px; overflow-wrap: anywhere; }
+.invoice-source-summary > div { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
 .invoice-document-totals { margin: 8px 0; padding-inline-start: 20px; }
 .invoice-result-counts { margin: 8px 0; }
 

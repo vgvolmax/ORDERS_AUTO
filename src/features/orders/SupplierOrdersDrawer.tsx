@@ -1,5 +1,5 @@
 import { moneySum } from '../../domain/money';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, useModalLayer } from '../../components/Dialog';
 import type {
@@ -97,6 +97,18 @@ export function SupplierOrdersDrawer({
   onSetAllReviewed: (orderIds: string[], reviewed: boolean) => void;
 }) {
   const modalRef = useRef<HTMLElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  useLayoutEffect(() => {
+    const surface = tableRef.current;
+    if (!surface) return;
+    const measure = () => setAvailableWidth(surface.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, []);
   useModalLayer(modalRef, onClose);
   const [blockerOrderId, setBlockerOrderId] = useState<string | null>(null);
   const blockerOrder = orders.find(order => order.id === blockerOrderId);
@@ -115,11 +127,9 @@ export function SupplierOrdersDrawer({
   ).length;
   const supplierTotal = completeOrderTotal(orders);
 
-  const widthFor = (key: string) =>
-    clampColumnWidth(
-      key,
-      widthOverrides[key] ?? defaultWidths[key] ?? fallbackColumnWidth(key),
-    );
+  const columnWidths = fitColumnWidths(defaultWidths, widthOverrides, availableWidth);
+  const tableWidth = Object.values(columnWidths).reduce((total, width) => total + width, 0);
+  const widthFor = (key: string) => columnWidths[key]!;
 
   const setColumnWidth = (key: string, value: number) => {
     const nextWidth = clampColumnWidth(key, value);
@@ -305,8 +315,14 @@ export function SupplierOrdersDrawer({
           </Button>
         </div>
 
-        <div className="table-wrap supplier-matrix-wrap">
-          <table className="supplier-order-matrix">
+        <div
+          ref={tableRef}
+          className="table-wrap supplier-matrix-wrap"
+          role="region"
+          tabIndex={0}
+          aria-label="Прокрутка матрицы поставщика"
+        >
+          <table className="supplier-order-matrix" style={{ width: tableWidth }}>
             <colgroup>
               <col style={{ width: `${codeWidth}px` }} />
               <col style={{ width: `${articleWidth}px` }} />
@@ -656,11 +672,44 @@ function branchColumnKey(branch: string): string {
   return `branch:${branch}`;
 }
 
-function fallbackColumnWidth(key: string): number {
-  if (key.startsWith('branch:')) {
-    return 140;
+function fitColumnWidths(
+  defaults: Record<string, number>,
+  overrides: Record<string, number>,
+  availableWidth: number,
+): Record<string, number> {
+  const keys = Object.keys(defaults);
+  const widths = Object.fromEntries(keys.map((key) => [
+    key, clampColumnWidth(key, overrides[key] ?? defaults[key]!),
+  ]));
+  if (!availableWidth) return widths;
+
+  const total = keys.reduce((sum, key) => sum + widths[key]!, 0);
+  const automatic = keys.filter((key) => overrides[key] === undefined);
+  if (total > availableWidth) {
+    const shrinkable = automatic.map((key) => {
+      const min = columnBounds(key).min;
+      const readableMin = key === 'code' ? 92 : key === 'article' ? 94 : min;
+      return {
+        key,
+        readableSlack: Math.max(0, widths[key]! - readableMin),
+        compactSlack: widths[key]! - min,
+      };
+    });
+    const excess = total - availableWidth;
+    const readable = shrinkable.reduce((sum, column) => sum + column.readableSlack, 0);
+    const compact = shrinkable.reduce((sum, column) => sum + column.compactSlack, 0);
+    const useCompact = excess > readable && excess <= compact;
+    const capacity = useCompact ? compact : readable;
+    if (capacity > 0) {
+      const fraction = Math.min(1, excess / capacity);
+      for (const { key, readableSlack, compactSlack } of shrinkable) {
+        widths[key] = Math.floor(widths[key]! - (useCompact ? compactSlack : readableSlack) * fraction);
+      }
+    }
+  } else if (overrides.name === undefined) {
+    widths.name = clampColumnWidth('name', widths.name! + availableWidth - total);
   }
-  return 120;
+  return widths;
 }
 
 function columnBounds(key: string): { min: number; max: number } {

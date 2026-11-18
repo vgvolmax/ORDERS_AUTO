@@ -47,7 +47,9 @@
 
 .transfer-quantity-controls {
   display: grid;
-  grid-template-columns: 74px 30px 26px;
+  width: 100%;
+  max-width: 150px;
+  grid-template-columns: minmax(0, 1fr) 28px 22px;
   align-items: center;
   gap: 3px;
 }
