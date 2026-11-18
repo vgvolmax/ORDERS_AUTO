@@ -92,7 +92,7 @@ export function SharedCatalogPanel() {
         toast: 'Справочник загружен. Связи поставщиков обновлены.',
       };
     });
-    const next = { document: reference, baseline: sharedCatalogJson(document) };
+    const next = { document: reference, baseline: sharedCatalogJson(document), openedAt: new Date().toISOString() };
     // A computer file is a detached copy; it cannot silently overwrite the old AppBox document.
     rememberCatalogLink(reference ? next : null);
     setLink(reference ? next : null);
@@ -131,7 +131,9 @@ export function SharedCatalogPanel() {
         return;
       }
       if (!result.document) throw new Error('AppBox не вернул ссылку на сохранённый документ. Проверьте библиотеку файлов.');
-      const next = { document: result.document, baseline: content };
+      const next = {
+        ...link, document: result.document, baseline: content, publishedAt: new Date().toISOString(),
+      };
       rememberCatalogLink(next);
       setLink(next);
       setNotice(content === (latestCatalog.current
@@ -171,7 +173,9 @@ export function SharedCatalogPanel() {
           </p>
         </div>
         <span className={dirty ? 'warning-text' : 'muted'}>
-          {link ? (readOnly ? 'Только чтение' : dirty ? 'Есть локальные изменения' : 'Подключён') : 'Общий документ не подключён'}
+          {bridge
+            ? link ? (readOnly ? 'Только чтение' : dirty ? 'Есть локальные изменения' : 'Подключён') : 'Общий документ не подключён'
+            : state.catalog ? 'Локальный справочник сохранён' : 'Источник ещё не выбран'}
         </span>
       </div>
       <div className="shared-catalog-actions">
@@ -201,9 +205,15 @@ export function SharedCatalogPanel() {
         <p className="muted">
           {state.catalog.products.length} товаров · {(state.catalog.suppliers ?? []).length} поставщиков ·
           {state.catalog.assignments.filter((item) => item.primary).length} основных назначений.
+          {bridge && link && (dirty ? ' Есть сохранённые локальные правки для публикации.' : ' Локальный справочник совпадает с открытой общей версией.')}
           {bridge && !link && ' После перезапуска AppBox нужно снова открыть общий JSON.'}
         </p>
       )}
+      {bridge && link?.document && <p className="muted">
+        {typeof link.document.name === 'string' ? link.document.name : 'Общий документ AppBox'}
+        {link.openedAt && ` · открыт ${new Date(link.openedAt).toLocaleString('ru-RU')}`}
+        {link.publishedAt && ` · опубликовано ${new Date(link.publishedAt).toLocaleString('ru-RU')}`}
+      </p>}
       {readOnly && <p className="muted">Редактирование связей недоступно: у общего документа права только на чтение.</p>}
       {error && <p role="alert" className="danger-text">{error}</p>}
       {notice && <p role="status" className="muted">{notice}</p>}

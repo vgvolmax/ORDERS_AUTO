@@ -208,11 +208,15 @@ describe('import workflow', () => {
     expect(proceed).toBeDisabled();
     expect(await loadActiveWorkspace()).toEqual(original);
     await act(async () => invalid.resolve());
-    await waitFor(() => expect(proceed).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Продолжить со старым отчётом' })).toBeEnabled());
+    expect(screen.getByRole('alert')).toHaveTextContent('Активен: original.xlsx');
     expect(await loadActiveWorkspace()).toEqual(original);
 
+    const update = XLSX.read(buildMinMaxFixture(), { type: 'array' });
+    update.Props = { Title: 'Новый отчёт' };
+    const updatedBytes = XLSX.write(update, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
     fireEvent.change(weeklyInput, {
-      target: { files: [asFile(buildMinMaxFixture(), 'weekly.xlsx', '')] },
+      target: { files: [asFile(updatedBytes, 'weekly.xlsx', '')] },
     });
     await screen.findByText('weekly.xlsx');
     const latest = (await loadActiveWorkspace())!;
@@ -232,7 +236,7 @@ it('keeps the same working week when the identical MIN/MAX file is uploaded agai
   const proceed = screen.getByRole('button', { name: /перейти к потребности/i });
   await waitFor(() => expect(proceed).toBeEnabled());
   const original = await loadActiveWorkspace();
-  fireEvent.change(inputs[0]!, { target: { files: [asFile(bytes, 'week.xlsx', '')] } });
+  fireEvent.change(inputs[0]!, { target: { files: [asFile(bytes, 'переименованный.xlsx', '')] } });
   await screen.findByText(/уже загружен/);
   await waitFor(() => expect(proceed).toBeEnabled());
   expect(await loadActiveWorkspace()).toEqual(original);

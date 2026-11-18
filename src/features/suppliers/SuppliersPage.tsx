@@ -23,7 +23,7 @@ import {
 import { SupplierRoster } from './SupplierRoster';
 import './SuppliersPage.css';
 
-type AssignmentDialog = { skuCode: string } | { skuCodes: string[] };
+type AssignmentDialog = { skuCode: string } | { skuCodes: string[]; hiddenCount: number };
 interface SupplierSelection {
   snapshotId: string;
   skuCodes: string[];
@@ -203,7 +203,7 @@ function SupplierWorkspace({
           selectedCodes={selectedCodes}
           onSelect={select}
           onOpenProduct={(skuCode) => openDialog({ skuCode })}
-          onOpenBulk={() => openDialog({ skuCodes: selectedCodes })}
+          onOpenBulk={(hiddenCount) => openDialog({ skuCodes: selectedCodes, hiddenCount })}
         />
         {view === 'suppliers' && (
           <>
@@ -233,6 +233,7 @@ function SupplierWorkspace({
       {dialog && 'skuCodes' in dialog && (
         <BulkSupplierDialog
           skuCodes={dialog.skuCodes}
+          hiddenCount={dialog.hiddenCount}
           assignmentsByCode={assignmentsByCode}
           suppliers={suppliers}
           saving={saving}

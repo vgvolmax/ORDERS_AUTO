@@ -177,6 +177,7 @@ export function ProductSupplierDialog({
 
 export function BulkSupplierDialog({
   skuCodes,
+  hiddenCount = 0,
   assignmentsByCode,
   suppliers = SUPPLIER_POOL,
   saving,
@@ -185,6 +186,7 @@ export function BulkSupplierDialog({
   onClose,
 }: SaveProps & {
   skuCodes: string[];
+  hiddenCount?: number;
   assignmentsByCode: ReadonlyMap<string, SupplierAssignment>;
 }) {
   const [supplier, setSupplier] = useState('');
@@ -212,7 +214,8 @@ export function BulkSupplierDialog({
       }
     >
       <div className="supplier-dialog-content" aria-busy={saving}>
-        <p>Выбрано товаров: {skuCodes.length}</p>
+        <p>Выбрано товаров: {skuCodes.length}.
+          {hiddenCount > 0 && ` В назначение войдут скрытые фильтрами товары: ${hiddenCount}.`}</p>
         <SupplierChoice label="Основной поставщик" value={supplier} onChange={setSupplier} options={suppliers} disabled={saving} />
         {supplier && (
           <div role="status">

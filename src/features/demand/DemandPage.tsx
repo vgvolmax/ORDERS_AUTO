@@ -55,6 +55,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
   const derived = useDerivedState(state);
   const tablePreferences = useTablePreferences(
     `demand:${branch ?? 'all'}:table`,
+    branch ? [] : ['branches', 'below'],
   );
   const [savedFilters, setFilters] = usePreference<DemandFilters>(
     `demand:${branch ?? 'all'}:filters`,
@@ -148,7 +149,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       {
         key: 'name',
         header: 'Наименование',
-        width: 'minmax(240px, 1.8fr)',
+        width: 'minmax(190px, 1.8fr)',
         sticky: true,
         hideable: false,
         sortValue: (group) => group.name,
@@ -174,7 +175,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         key: 'status',
         sortValue: (group) => severity[group.worstStatus],
         header: 'Статус',
-        width: '150px',
+        width: '125px',
         render: (group) => <StatusBadge status={group.worstStatus} />,
       },
       {
@@ -220,7 +221,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
         key: 'supplier',
         sortValue: (group) => group.selectedSupplier,
         header: 'Поставщик / статус',
-        width: '190px',
+        width: '172px',
         render: (group) => group.selectedSupplier ?? 'Требует решения',
       },
     ];
@@ -232,7 +233,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
       >
         <PurchasingDataAlert issues={derived.projection.dataIssues} />
         <Metrics
-          count={groups.length}
+          count={groups.filter((group) => group.totalDeficitQty > 0).length}
           below={belowMin}
           qty={
             <QuantitySummary
@@ -432,7 +433,7 @@ export function DemandPage({ branch }: { branch?: string | undefined }) {
     >
       <PurchasingDataAlert issues={derived.projection.dataIssues} />
       <Metrics
-        count={rows.length}
+        count={rows.filter((row) => row.purchaseQty > 0).length}
         below={belowMin}
         qty={
           <QuantitySummary

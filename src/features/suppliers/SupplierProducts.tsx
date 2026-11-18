@@ -55,7 +55,7 @@ export function SupplierProducts({
   selectedCodes: string[];
   onSelect: (codes: string[]) => void;
   onOpenProduct: (code: string) => void;
-  onOpenBulk: () => void;
+  onOpenBulk: (hiddenCount: number) => void;
 }) {
   const readOnly = mode === 'inactive';
   const tableRef = useRef<HTMLDivElement>(null);
@@ -178,7 +178,7 @@ export function SupplierProducts({
         {selected.size > 0 && (
           <Button className="secondary" onClick={() => onSelect([])}>Снять отметки</Button>
         )}
-        <Button disabled={!selected.size} onClick={onOpenBulk}>Назначить основного выбранным</Button>
+        <Button disabled={!selected.size} onClick={() => onOpenBulk(selected.size - selectedVisible)}>Назначить основного выбранным</Button>
       </div>}
       <div ref={tableRef}>
         <VirtualTable

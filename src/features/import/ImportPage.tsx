@@ -81,7 +81,6 @@ export function ImportPage() {
       if (
         kind === 'min' &&
         activeFile?.parserVersion === MIN_MAX_PARSER_VERSION &&
-        activeFile.name === file.name &&
         activeFile.size === bytes.byteLength
       ) {
         const saved = await loadWorkspaceFile(activeFile.fileId);
@@ -188,7 +187,7 @@ export function ImportPage() {
           disabled={!(ready || resumeSetup) || anyLoading || saving}
           onClick={() => set({ page: 'all', toast: 'Потребность рассчитана.' })}
         >
-          Перейти к потребности
+          {failures.min && state.minMax ? 'Продолжить со старым отчётом' : 'Перейти к потребности'}
         </Button>
       </header>
       {(!configured || !state.minMax) && <SharedCatalogPanel />}
@@ -202,7 +201,10 @@ export function ImportPage() {
       </details>
 
       {anyLoading && <Alert>Обработка отчёта…</Alert>}
-      {failures.min && <Alert tone="danger">MIN/MAX: {failures.min}</Alert>}
+      {failures.min && <Alert tone="danger">
+        MIN/MAX: {failures.min}
+        {state.minMaxFileName && ` Новый файл не принят. Активен: ${state.minMaxFileName}.`}
+      </Alert>}
       {failures.sup && <Alert tone="danger">Поставщики: {failures.sup}</Alert>}
       {configured && (
         <p>
@@ -268,10 +270,18 @@ export function ImportPage() {
             Назначьте им основного поставщика в разделе «Поставщики», чтобы
             добавить потребность в заказы.
           </p>
+          {supplierResolutionSummary.unassigned > 0 && (
+            <Button className="secondary" onClick={() => set((current) => ({
+              page: 'suppliers',
+              uiPreferences: { ...current.uiPreferences, 'suppliers:productFilters': {
+                query: '', primary: 'without-primary', supplier: '', role: 'any', hasDemand: true,
+              } },
+            }))}>Открыть неназначенные товары</Button>
+          )}
         </section>
       )}
 
-      {ready && !anyLoading && (
+      {ready && !anyLoading && !failures.min && (
         <p className="import-ready" role="status">
           Отчёт MIN/MAX сохранён. Можно перейти к работе с потребностью.
         </p>

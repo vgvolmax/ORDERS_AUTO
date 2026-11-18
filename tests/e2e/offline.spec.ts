@@ -3877,3 +3877,63 @@ test('E2E-28 independent catalog survives absent products, archived restore and 
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
 });
+
+
+test('E2E-34 preserves the exact downloaded version and diagnoses an invoice payable total', async ({ page }) => {
+  const { buildWorkbook } = await import('../fixtures/workbookBuilders');
+  const supplier = 'ИП Баранов Роман Борисович';
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const file = (name: string, rows: unknown[][]) => ({ name, mimeType, buffer: Buffer.from(buildWorkbook(rows)) });
+  await page.context().setOffline(true);
+  await page.goto(pathToFileURL(resolve('dist/ORDERS_AUTO/index.html')).href);
+  await page.getByLabel('Выбрать файл Отчёт MIN/MAX').setInputFiles(file('audit-minmax.xlsx', [
+    ['Код', 'Артикул', 'Номенклатура', 'Количество', 'Минимальный остаток', 'Максимальный остаток', 'Цена'],
+    ['001', 'ABC', 'Муфта', null, null, null, 100],
+    [null, null, 'Ленина', 0, 1, 6, null],
+  ]));
+  await page.getByLabel('Выбрать файл Отчёт поставщиков').setInputFiles(file('audit-suppliers.xlsx', [
+    ['Контрагент', 'Код', 'Номенклатура', 'Количество', 'Стоимость', 'Ед. изм.'],
+    [supplier, '001', 'Муфта', 1, 100, 'шт'],
+  ]));
+  await page.getByRole('button', { name: 'Перейти к потребности' }).click();
+  const nav = page.getByRole('navigation', { name: 'Основная навигация' });
+  await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await page.locator('.order-cell').click();
+  const order = page.getByRole('dialog', { name: 'Состав заказа' });
+  await page.evaluate(() => {
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args: Parameters<typeof put>) {
+      if (this.name === 'workspaces') {
+        IDBObjectStore.prototype.put = put;
+        throw new DOMException('Test quota failure', 'QuotaExceededError');
+      }
+      return put.apply(this, args);
+    };
+  });
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    order.getByRole('button', { name: 'Скачать CSV заказа' }).click(),
+  ]);
+  expect(await download.failure()).toBeNull();
+  await expect(order.getByText('Скачивание запущено. Версия выгрузки не записалась в сеанс.')).toBeVisible();
+  await order.getByRole('button', { name: 'Повторить запись отметки' }).click();
+  await expect(order.getByText('Выгружен', { exact: true })).toBeVisible();
+
+  const qty = order.getByRole('spinbutton', { name: 'Количество 001', exact: true });
+  await qty.fill('5');
+  await expect(order.getByText(/Последняя выгрузка: 600,00/)).toBeVisible();
+  await order.getByRole('button', { name: 'Сверить счёт', exact: true }).click();
+  await expect(page.getByText('Состав из выгрузки', { exact: true })).toBeVisible();
+  await page.getByLabel('Файл счёта поставщика').setInputFiles(file('audit-invoice.xlsx', [
+    ['Код 1С', 'Артикул', 'Наименование', 'Количество', 'Ед.', 'Цена', 'Сумма'],
+    ['001', 'ABC', 'Муфта', 6, 'шт', 100, 600],
+    [null, null, 'К оплате', null, null, null, 650],
+  ]));
+  await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeFocused();
+  await expect(page.getByRole('list', { name: 'Итоги по файлам' })).toContainText('К оплате: 650,00');
+  await expect(page.getByRole('list', { name: 'Итоги по файлам' })).toContainText('+50,00');
+  await nav.getByRole('button', { name: 'Заказы', exact: true }).click();
+  await nav.getByRole('button', { name: 'Счета', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeVisible();
+});
