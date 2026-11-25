@@ -6,14 +6,15 @@ import { Alert, Button, Input } from '../../components/ui';
 import { addCatalogSupplier } from '../../domain/supplierCatalog';
 
 export function AddSupplierButton() {
-  const { state, commit, saving: workspaceSaving } = useStore();
+  const { state, commit, shared, saving: workspaceSaving } = useStore();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const editor = useRef<HTMLDivElement>(null);
-  const readOnly = currentCatalogLink()?.document?.canEdit === false;
+  const readOnly = shared ? shared.catalogReadOnly || shared.sourceUnavailable || !shared.editable
+    : currentCatalogLink()?.document?.canEdit === false;
 
   useLayoutEffect(() => {
     if (open) editor.current?.querySelector('input')?.focus();

@@ -14,6 +14,17 @@ const manifest = JSON.parse(await manifestFile.async('string'));
 if (manifest.formatVersion !== 1 || manifest.mode !== 'stateless' || manifest.entry !== 'index.html') {
   throw new Error('Incompatible AppBox manifest');
 }
+const workingDocument = manifest.workingDocument;
+const supplierCatalog = manifest.workingDocumentInputs?.supplier_catalog;
+if (workingDocument?.schemaVersion !== 1 || workingDocument.sdkVersion !== 1 ||
+    ['work', 'catalog', 'invoices'].some((collection) => {
+      const payload = workingDocument.collections?.[collection]?.fields?.payload;
+      return payload?.schema?.type !== 'string' || payload.required !== true;
+    }) || supplierCatalog?.kind !== 'projection' || supplierCatalog.collection !== 'catalog' ||
+    supplierCatalog.fields?.length !== 1 || supplierCatalog.fields[0] !== 'payload' ||
+    supplierCatalog.fieldTypes?.payload !== 'string') {
+  throw new Error('Missing Orders Auto working document or supplier catalog input');
+}
 if (entries.some((file) => file.dir || /\.svg$/i.test(file.name))) {
   throw new Error('Unsupported AppBox ZIP entries');
 }
@@ -30,7 +41,11 @@ try {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, await entry.async('nodebuffer'));
   }
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const executablePath = process.env.ORDERS_AUTO_CHROME_PATH;
+  browser = await chromium.launch({
+    ...(executablePath ? { executablePath } : { channel: 'chrome' }),
+    headless: true,
+  });
   const context = await browser.newContext();
   await context.setOffline(true);
   const page = await context.newPage();

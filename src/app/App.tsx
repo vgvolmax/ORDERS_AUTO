@@ -9,13 +9,16 @@ import { SuppliersPage } from '../features/suppliers/SuppliersPage';
 import { StoreContext, type AppState, type StatePatch } from './appStore';
 import { createInitialState } from './initialState';
 import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
-import { loadActiveWorkspace, saveWorkspace, saveWorkspaceView } from '../persistence/workspaces';
+import { loadActiveWorkspace, loadWorkspaceFile, saveWorkspace, saveWorkspaceView } from '../persistence/workspaces';
 import { loadOrCreateSupplierCatalog, recoverSupplierCatalog } from '../persistence/supplierCatalog';
 import { attachSupplierCatalog } from './catalogSession';
 import { usePageScroll } from './usePageScroll';
 import { AppToast } from '../components/AppToast';
 import { Dialog } from '../components/Dialog';
 import { Button } from '../components/ui';
+import { ordersDocument, type OrdersDocument } from '../appbox/ordersDocument';
+import { save } from '../export/download';
+import type { WorkspaceFile } from '../domain/workspace';
 import { WorkspaceMasthead, WorkspaceSidebar } from './WorkspaceChrome';
 
 export function App() {
@@ -23,6 +26,10 @@ export function App() {
   const [initializing, setInitializing] = useState(true);
   const [pending, setPending] = useState(0);
   const [retry, setRetry] = useState(0);
+  const shared = ordersDocument();
+  const [sharedSession, setSharedSession] = useState<Awaited<ReturnType<OrdersDocument['loadSession']>>>();
+  const [remoteChanged, setRemoteChanged] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
   const [invoiceContext, setInvoiceContext] = useState<{
     workspaceId: string; sourceId?: string | undefined; orderIds?: string[] | undefined; sequence: number;
   } | null>(null);
@@ -55,7 +62,7 @@ export function App() {
           storageError:
             error instanceof Error
               ? error.message
-              : 'Ошибка локального хранилища',
+              : 'Не удалось сохранить сеанс',
           toast: 'Изменения не сохранены. Предыдущая версия сеанса сохранена.',
         });
       throw error;
@@ -109,15 +116,19 @@ export function App() {
     // Invalidate callbacks from the previous owner before reading storage.
     session.current = null;
     setInitializing(true);
+    setRemoteChanged(false);
+    setRefreshError('');
     void (async () => {
       try {
-        const active = await loadActiveWorkspace();
-        const catalog = await loadOrCreateSupplierCatalog(active);
+        const remote = shared ? await shared.loadSession() : undefined;
+        const active = remote ? remote.workspace : await loadActiveWorkspace();
+        const catalog = remote ? remote.catalog : await loadOrCreateSupplierCatalog(active);
         const initial = attachSupplierCatalog(active
           ? stateFromWorkspace(active)
-          : createInitialState(), catalog);
+          : createInitialState(remote ? { workspaceId: remote.document.id } : undefined), catalog);
         if (!cancelled) {
           initial.importEpoch = importEpoch;
+          setSharedSession(remote);
           const nextSession: ReturnType<typeof createWorkspaceSession> =
             createWorkspaceSession({
               initial,
@@ -148,7 +159,35 @@ export function App() {
       cancelled = true;
       session.current = null;
     };
-  }, [retry]);
+  }, [retry, shared]);
+
+  useEffect(() => {
+    if (!shared || !sharedSession || initializing || pending) return;
+    let current = true;
+    let checking = false;
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const changed = await shared.hasUpdate();
+        if (current) {
+          setRemoteChanged(changed);
+          setRefreshError('');
+        }
+      } catch {
+        if (current) setRefreshError('Не удалось проверить актуальность сеанса AppBox.');
+      } finally {
+        checking = false;
+      }
+    };
+    const timer = window.setInterval(() => void check(), 8000);
+    window.addEventListener('focus', check);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', check);
+    };
+  }, [shared, sharedSession, initializing, pending]);
 
   useEffect(() => {
     if (!state.toast) {
@@ -215,6 +254,46 @@ export function App() {
     if (invoiceDirty.current) setInvoiceExit({ run: open, replacesSource: true });
     else open();
   };
+  const refreshSession = () => {
+    const reload = () => setRetry((n) => n + 1);
+    if (invoiceDirty.current) {
+      setInvoiceExit({ run: reload, replacesSource: true });
+    } else reload();
+  };
+  const sharedStore = shared && sharedSession ? {
+    team: sharedSession.document.workspace?.name ?? null,
+    editable: sharedSession.document.role !== 'view',
+    catalogReadOnly: sharedSession.catalogReadOnly,
+    sourceConnected: sharedSession.sourceConnected,
+    sourceUnavailable: sharedSession.sourceUnavailable,
+    async updateCatalog(catalog: Parameters<OrdersDocument['saveCatalog']>[0]) {
+      await shared.saveCatalog(catalog);
+      refreshSession();
+    },
+    ...(sharedSession.document.workspace && { async openReport(patch: Partial<AppState>, file: WorkspaceFile) {
+      const initial = attachSupplierCatalog(createInitialState({
+        settings: state.settings,
+        rebalance: {
+          ...state.rebalance,
+          proposal: null,
+          accepted: [],
+          acceptedRevision: 0,
+          selectedLineIds: [],
+          rejectedLineIds: [],
+        },
+      }), state.catalog);
+      const intake = createWorkspaceSession({
+        initial,
+        async save(value, _expected, files) {
+          const result = await shared.openReport(value, files ?? [], file.bytes);
+          if (result.document.id === sharedSession.document.id)
+            owner?.transient({ toast: 'Этот отчёт уже открыт в текущем сеансе.' });
+        },
+        publish() {},
+      });
+      await intake.commit(patch);
+    } }),
+  } : undefined;
   const statusTone = pending
     ? 'busy'
     : state.storageError
@@ -226,12 +305,13 @@ export function App() {
     busy: 'Сохранение сеанса…',
     error: 'Изменения не сохранены',
     idle: 'Начните с загрузки отчётов',
-    saved: 'Сеанс сохранён на этом компьютере',
+    saved: sharedStore ? sharedStore.editable ? 'Сеанс сохранён в AppBox' : 'AppBox · Только просмотр'
+      : 'Сеанс сохранён на этом компьютере',
   }[statusTone];
 
   return (
     <StoreContext.Provider
-      value={{ state, set, commit, restore, saving: pending > 0 }}
+      value={{ state, set, commit, saving: pending > 0, ...(sharedStore ? { shared: sharedStore } : { restore }) }}
     >
       <div className="shell">
         <WorkspaceSidebar {...navigation} />
@@ -242,6 +322,15 @@ export function App() {
             status={status}
             statusTone={statusTone}
           />
+          {sharedStore && (remoteChanged || refreshError || sharedStore.sourceUnavailable) && (
+            <div className="alert" role="status">
+              {sharedStore.sourceUnavailable ? 'Общий справочник недоступен. Проверьте источник в AppBox.' :
+                remoteChanged ? 'В AppBox есть обновления сеанса или справочника.' : refreshError}{' '}
+              <button className="link" disabled={pending > 0} onClick={refreshSession}>
+                Обновить данные
+              </button>
+            </div>
+          )}
           {state.storageError && (
             <div className="alert danger" role="alert">
               Изменения не применены: {state.storageError}. Повторите действие.
@@ -249,14 +338,27 @@ export function App() {
               <button
                 className="link"
                 disabled={pending > 0}
-                onClick={() => setRetry((n) => n + 1)}
+                onClick={refreshSession}
               >
                 Открыть сохранённый сеанс
               </button>
             </div>
           )}
           {state.page === 'history' ? (
-            <WorkspaceHistoryPage onReconcile={openInvoiceSource} />
+            sharedStore ? (
+              <main>
+                <h1>Рабочие сеансы AppBox</h1>
+                <p>Откройте нужный документ в «Моих документах» AppBox. Отчёты можно держать открытыми в разных вкладках.</p>
+                {state.rawImports.minMax && <Button onClick={() => {
+                  const report = state.rawImports.minMax;
+                  if (!report) return;
+                  void loadWorkspaceFile(report.fileId).then((file) => {
+                    if (!file) throw new Error('Отчёт не найден');
+                    save(new Blob([file.bytes], { type: file.type }), file.name);
+                  }).catch(() => owner?.transient({ toast: 'Не удалось скачать исходный отчёт.' }));
+                }}>Скачать исходный MIN/MAX</Button>}
+              </main>
+            ) : <WorkspaceHistoryPage onReconcile={openInvoiceSource} />
           ) : state.page === 'import' ? (
             <ImportPage />
           ) : state.page === 'all' ? (

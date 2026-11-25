@@ -53,7 +53,7 @@ function SupplierWorkspace({
 }: {
   assignments: SupplierAssignment[];
 }) {
-  const { state, set, commit } = useStore();
+  const { state, set, commit, shared } = useStore();
   const derived = useDerivedState(state);
   const [view, setView] = useState<'products' | 'inactive' | 'suppliers'>('products');
   const [filters, setFilters] = usePreference<ProductFilters>(
@@ -116,7 +116,7 @@ function SupplierWorkspace({
 
   async function save(command: SupplierAssignmentCommand, success: string) {
     if (savingRef.current) return false;
-    if (currentCatalogLink()?.document?.canEdit === false) {
+    if ((shared ? shared.catalogReadOnly || shared.sourceUnavailable || !shared.editable : currentCatalogLink()?.document?.canEdit === false)) {
       setError('Общий документ доступен только для чтения. Изменение связей запрещено.');
       return false;
     }

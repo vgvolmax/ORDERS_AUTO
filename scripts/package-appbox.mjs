@@ -11,6 +11,9 @@ const ALLOWED = new Set([
   '.png', '.jpg', '.jpeg', '.webp', '.gif', '.avif', '.ico',
   '.woff', '.woff2', '.ttf', '.otf',
 ]);
+const payloadCollection = {
+  fields: { payload: { required: true, schema: { type: 'string', maxLength: 50000 } } },
+};
 
 function filesIn(folder) {
   return fs.readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
@@ -117,7 +120,13 @@ export async function packageAppBox(
     if (new Set(basenames).size !== basenames.length) {
       throw new Error('Duplicate SVG basenames prevent safe reference replacement');
     }
-    if (svgs.length) browser = await chromium.launch({ channel: 'chrome', headless: true });
+    if (svgs.length) {
+      const executablePath = process.env.ORDERS_AUTO_CHROME_PATH;
+      browser = await chromium.launch({
+        ...(executablePath ? { executablePath } : { channel: 'chrome' }),
+        headless: true,
+      });
+    }
     for (const svg of svgs) {
       const png = svg.replace(/\.svg$/i, '.png');
       if (fs.existsSync(png)) throw new Error('Target PNG already exists: ' + png);
@@ -141,10 +150,20 @@ export async function packageAppBox(
       formatVersion: 1,
       slug: process.env.APPBOX_SLUG || 'volmax-boost',
       name: 'Волмакс Буст',
-      description: 'Автономная подготовка заказов, проверка счетов и управление перемещениями',
+      description: 'Подготовка заказов, проверка счетов и управление перемещениями',
       version: process.env.APPBOX_VERSION || version + (shortSha ? '+' + shortSha : ''),
       entry: 'index.html',
       mode: 'stateless',
+      workingDocument: {
+        schemaVersion: 1,
+        sdkVersion: 1,
+        collections: { work: payloadCollection, catalog: payloadCollection, invoices: payloadCollection },
+      },
+      workingDocumentInputs: {
+        supplier_catalog: {
+          kind: 'projection', collection: 'catalog', fields: ['payload'], fieldTypes: { payload: 'string' },
+        },
+      },
     };
     fs.writeFileSync(path.join(copy, 'appbox.json'), JSON.stringify(manifest, null, 2) + '\n');
     const names = validate(copy);

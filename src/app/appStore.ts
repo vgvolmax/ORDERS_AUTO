@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import type { SharedSupplierCatalog } from '../domain/sharedSupplierCatalog';
 import type { SupplierCatalog } from '../domain/supplierCatalog';
 import type {
   WorkspaceData,
@@ -29,6 +30,15 @@ export interface Store {
   commit?: (patch: StatePatch) => Promise<void>;
   saving?: boolean;
   restore?: (workspace: StoredWorkspace) => Promise<void>;
+  shared?: {
+    team: string | null;
+    editable: boolean;
+    catalogReadOnly: boolean;
+    sourceConnected: boolean;
+    sourceUnavailable: boolean;
+    updateCatalog: (catalog: SharedSupplierCatalog) => Promise<void>;
+    openReport?: (patch: Partial<AppState>, file: WorkspaceFile) => Promise<void>;
+  };
 }
 
 export const StoreContext = createContext<Store | null>(null);

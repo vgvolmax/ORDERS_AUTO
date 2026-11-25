@@ -1,3 +1,4 @@
+import { ordersDocument } from '../appbox/ordersDocument';
 import { createSupplierCatalog, type SupplierCatalog } from '../domain/supplierCatalog';
 import { upgradeStarterSupplierPool } from '../domain/supplierPool';
 import type { StoredWorkspace, WorkspaceData } from '../domain/workspace';
@@ -14,6 +15,11 @@ export function checkedSupplierCatalog(catalog: SupplierCatalog | undefined): Su
 }
 
 export async function loadSupplierCatalog(): Promise<SupplierCatalog | null> {
+  const shared = ordersDocument();
+  if (shared) {
+    await shared.checkCatalog();
+    return shared.catalog;
+  }
   return checkedSupplierCatalog(await (await db()).get('supplierCatalog', 'main'));
 }
 
