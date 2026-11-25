@@ -96,7 +96,9 @@ test('E2E-35 order, transfer and invoice layouts fit with long identifiers', asy
     [null, null, 'К оплате', null, null, null, 78000],
   ]));
   await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
-  await fitsHorizontally(page.getByRole('region', { name: 'Результат сверки' }).locator('.virtual-scroll'));
+  const result = page.getByRole('region', { name: 'Результат сверки' });
+  await expect(result.getByRole('columnheader', { name: 'Дефицит сейчас' })).toBeVisible();
+  await fitsHorizontally(result.locator('.virtual-scroll'));
   const correction = page.getByRole('region', { name: 'Корректировка и экспорт в 1С' });
   await fitsHorizontally(correction.locator('.virtual-scroll'));
   await buttonsFit(correction.locator('.invoice-export-actions'));

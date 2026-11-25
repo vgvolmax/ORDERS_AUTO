@@ -99,7 +99,7 @@ export function InvoiceResults({
   const resultColumns = useMemo((): VirtualColumn<InvoiceComparisonRow>[] => [
     ...comparisonColumns.slice(0, -1),
     {
-      key: 'deficit', header: 'Дефицит сейчас', width: 'minmax(103px, .76fr)', className: 'invoice-history-deficit',
+      key: 'deficit', header: 'Дефицит сейчас', width: 'minmax(101px, .76fr)', className: 'invoice-history-deficit',
       render: (row) => {
         const status = row.skuCode ? currentDeficits?.get(row.skuCode) : undefined;
         return status ? <StatusBadge status={status} /> : <small>Нет данных</small>;
@@ -670,28 +670,28 @@ function OrderAndInvoiceValues({ order, invoice, format }: {
 
 const comparisonColumns: VirtualColumn<InvoiceComparisonRow>[] = [
   {
-    key: 'article', header: 'Артикул', width: '86px', sticky: true,
+    key: 'article', header: 'Артикул', width: '74px', sticky: true,
     render: (row) => <span className="invoice-code">{row.article || '—'}</span>,
   },
   {
-    key: 'item', header: 'Номенклатура', width: 'minmax(140px, 1.25fr)', sticky: true,
+    key: 'item', header: 'Номенклатура', width: 'minmax(115px, 1.25fr)', sticky: true,
     render: (row) => <ItemName row={row} />,
   },
-  { key: 'unit', header: 'Ед.', width: '42px', render: (row) => row.unit || '—' },
+  { key: 'unit', header: 'Ед.', width: '36px', render: (row) => row.unit || '—' },
   {
-    key: 'qty', header: 'Количество', width: 'minmax(82px, .7fr)', className: 'num',
+    key: 'qty', header: 'Количество', width: 'minmax(74px, .7fr)', className: 'num',
     render: (row) => <OrderAndInvoiceValues order={row.orderQty} invoice={row.invoiceQty} format={fmtQty} />,
   },
   {
-    key: 'price', header: 'Цена за ед.', width: 'minmax(102px, .82fr)', className: 'num',
+    key: 'price', header: 'Цена за ед.', width: 'minmax(86px, .82fr)', className: 'num',
     render: (row) => <OrderAndInvoiceValues order={row.orderPrice} invoice={row.invoicePrice} format={money} />,
   },
   {
-    key: 'amount', header: 'Сумма', width: 'minmax(110px, .9fr)', className: 'num',
+    key: 'amount', header: 'Сумма', width: 'minmax(102px, .9fr)', className: 'num',
     render: (row) => <OrderAndInvoiceValues order={row.orderAmount} invoice={row.invoiceAmount} format={money} />,
   },
   {
-    key: 'differences', header: 'Расхождения', width: 'minmax(124px, 1fr)',
+    key: 'differences', header: 'Расхождения', width: 'minmax(110px, 1fr)',
     render: (row) => <><DifferenceList row={row} /><InvoiceRowDetails row={row} /></>,
   },
 ];
