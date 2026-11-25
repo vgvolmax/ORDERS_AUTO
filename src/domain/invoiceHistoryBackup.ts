@@ -42,23 +42,35 @@ function validRecord(value: unknown): value is InvoiceHistoryRecord {
     || value.orderIds.length === 0 || !value.orderIds.every(nonEmpty)
     || new Set(value.orderIds).size !== value.orderIds.length
     || value.id !== historyOrderKey(value.sourceId, value.orderIds)
+    || (value.orderSupplier !== undefined && !nonEmpty(value.orderSupplier))
     || (value.basis !== 'current' && value.basis !== 'preferred')
     || !Array.isArray(value.revisions) || !value.revisions.length) return false;
   const orderIds = new Set(value.orderIds);
-  return value.revisions.every((revision, index) => {
+  let closed = false;
+  return value.revisions.every((revision) => {
     if (!object(revision) || !date(revision.at)) return false;
-    if (index % 2 === 1) return revision.kind === 'reopened';
-    if (revision.kind !== 'closed' || !object(revision.supplier)
+    if (revision.kind === 'reopened') {
+      if (!closed) return false;
+      closed = false;
+      return true;
+    }
+    if (closed || (revision.kind !== 'closed' && revision.kind !== 'confirmed') || !object(revision.supplier)
       || !nonEmpty(revision.supplier.name) || !validSupplierInn(revision.supplier.inn)
       || !Array.isArray(revision.documents)
       || !revision.documents.every((file: unknown) => object(file) && nonEmpty(file.name)
         && Array.isArray(file.sheets) && file.sheets.every(nonEmpty)
         && nonEmpty(file.base64) && file.base64.length % 4 === 0
-        && /^[A-Za-z0-9+/]+={0,2}$/.test(file.base64))
-      || !Array.isArray(revision.orders) || revision.orders.length !== orderIds.size) return false;
+        && /^[A-Za-z0-9+/]+={0,2}$/.test(file.base64))) return false;
+    if (revision.kind === 'confirmed') {
+      return Array.isArray(revision.positions) && revision.positions.length > 0
+        && revision.positions.every((position: unknown) => object(position) && nonEmpty(position.key)
+          && invoiceHistoryStatuses.some((status) => status === position.stockStatus));
+    }
+    if (!Array.isArray(revision.orders) || revision.orders.length !== orderIds.size) return false;
+    closed = true;
     const seen = new Set<unknown>();
     return revision.orders.every((order: unknown) => {
-      if (!object(order) || !orderIds.has(order.id) || seen.has(order.id) || !nonEmpty(order.branch)
+      if (!object(order) || !nonEmpty(order.id) || !orderIds.has(order.id) || seen.has(order.id) || !nonEmpty(order.branch)
         || (order.exportedAt !== null && !date(order.exportedAt))
         || !Array.isArray(order.positions) || !order.positions.length
         || !order.positions.every(validPosition)
@@ -99,7 +111,7 @@ export function previewInvoiceHistory(
     if (old && JSON.stringify(old) === JSON.stringify(record)) {
       result.duplicates++;
     } else if (old || record.orderIds.some((id) => usedOrders.has(orderKey(record.sourceId, id)))) {
-      result.conflicts.push(record.revisions.find((item) => item.kind === 'closed')?.supplier.name ?? record.id);
+      result.conflicts.push(record.revisions.find((item) => item.kind !== 'reopened')?.supplier.name ?? record.id);
     } else {
       result.added.push(record);
       for (const id of record.orderIds) usedOrders.add(orderKey(record.sourceId, id));

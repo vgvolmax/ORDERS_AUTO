@@ -3508,6 +3508,37 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
     ['VM-1', 'Товар 1', 15, 'шт', 115, 1724.99],
   ]);
 
+  const result = page.getByRole('region', { name: 'Результат сверки' });
+  await expect(result.getByRole('columnheader', { name: 'Дефицит сейчас' })).toBeVisible();
+  await expect(result.getByText('Ниже MIN', { exact: true })).toBeVisible();
+  await result.getByRole('button', { name: 'Завершить сверку' }).click();
+  const finish = page.getByRole('dialog', { name: 'Завершить сверку' });
+  await finish.getByLabel('ИНН поставщика').fill('123456789012');
+  await finish.getByLabel('Выставлено VM-1 · Ленина').fill('7');
+  await finish.getByLabel('Выставлено VM-1 · Ступино').fill('8');
+  await finish.getByLabel('Основание VM-1 · Ступино').selectOption('confirmed');
+  await finish.getByRole('button', { name: 'Сохранить итог' }).click();
+  await expect(page.getByText('Итог сверки сохранён в истории.')).toBeVisible();
+  await page.getByRole('button', { name: 'История отказов', exact: true }).click();
+  const history = page.getByRole('region', { name: 'История отказов по счетам' });
+  const party = history.getByRole('row').filter({ hasText: '123456789012' });
+  await expect(party).toContainText('1 из 2');
+  await expect(party).toContainText('Ниже MIN · 1');
+  const backupReady = page.waitForEvent('download');
+  await history.getByRole('button', { name: 'Скачать всю историю JSON' }).click();
+  const backup = await backupReady;
+  const backupBuffer = await readFile((await backup.path())!);
+  const snapshot = JSON.parse(backupBuffer.toString());
+  expect(snapshot.records[0].revisions[0].documents.map((document: { name: string }) => document.name))
+    .toEqual(['счёт-1.xlsx', 'счёт-2.xlsx']);
+  await history.getByLabel('Резервная копия истории').setInputFiles({
+    name: 'history.json', mimeType: 'application/json', buffer: backupBuffer,
+  });
+  const restore = page.getByRole('dialog', { name: 'Восстановление истории' });
+  await expect(restore.getByText(/Повторов: 1/)).toBeVisible();
+  await restore.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.getByRole('button', { name: 'Сверка', exact: true }).click();
+
   await page.setViewportSize({ width: 1024, height: 768 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(page.getByRole('button', { name: 'Excel для 1С', exact: true })).toBeEnabled();

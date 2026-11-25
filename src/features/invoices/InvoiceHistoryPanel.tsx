@@ -4,7 +4,7 @@ import { stockStatusLabels } from '../../components/StatusBadge';
 import { Alert, Button, Input, Select } from '../../components/ui';
 import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
 import {
-  invoiceHistoryStatuses, lastClosedInvoiceHistory, type InvoiceHistoryRecord, type InvoiceHistoryStatus,
+  invoiceHistoryStatuses, lastInvoiceHistoryDocuments, type InvoiceHistoryRecord, type InvoiceHistoryStatus,
 } from '../../domain/invoiceHistory';
 import {
   decodeInvoiceHistory, encodeInvoiceHistory, previewInvoiceHistory,
@@ -20,7 +20,7 @@ const labels: Record<InvoiceHistoryStatus, string> = { ...stockStatusLabels, unk
 const outcomeLabels = { covered: 'Покрыто', full: 'Полный отказ', partial: 'Частичный отказ', removed: 'Сняли мы' };
 const rankings = {
   belowMin: 'Отказы при остатке ниже MIN', share: 'Доля заказов с отказами',
-  full: 'Полные отказы', partial: 'Частичные отказы', affectedOrders: 'Заказы с отказами',
+  full: 'Полные отказы', partial: 'Частичные отказы', affectedOrders: 'Заказы с отказами', shortagePieces: 'Не выставлено, шт.',
 };
 type Ranking = keyof typeof rankings;
 const date = (value: string) => new Date(value).toLocaleDateString('ru-RU');
@@ -50,7 +50,7 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
     .sort((a, b) => b[ranking] - a[ranking] || b.affectedOrders - a.affectedOrders ||
       b.orders - a.orders || a.name.localeCompare(b.name, 'ru', { numeric: true })), [records, view, filters, minimum, ranking]);
   const preview = restore ? previewInvoiceHistory(records, restore) : null;
-  const reopened = records.filter((record) => record.revisions.at(-1)?.kind === 'reopened');
+  const reopened = records.filter((record) => record.revisions.at(-1)?.kind !== 'closed');
   const openBreakdown = (row: InvoiceHistorySummary) => {
     if (filters.inn && filters.sku) setDetail(row);
     else if (view === 'supplier') {
@@ -173,10 +173,10 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
     <VirtualTable rows={summaries} columns={columns} getRowKey={(row) => row.key} maxHeight="min(55vh, 600px)"
       emptyMessage={records.length ? 'По выбранным условиям завершённых сверок нет.' : 'Завершите первую сверку, чтобы появилась история.'} />
     {reopened.length > 0 && <details>
-      <summary>Переоткрытые сверки ({reopened.length})</summary>
+      <summary>Незавершённые сверки ({reopened.length})</summary>
       <ul>{reopened.map((record) => <li key={record.id}>
         <button type="button" className="invoice-history-link" onClick={() => onOpen(record)}>
-          {lastClosedInvoiceHistory(record)?.supplier.name} · {record.orderIds.length} заказов · {date(record.revisions.at(-1)!.at)}
+          {lastInvoiceHistoryDocuments(record)?.supplier.name} · {record.orderIds.length} заказов · {date(record.revisions.at(-1)!.at)}
         </button>
       </li>)}</ul>
     </details>}
@@ -221,7 +221,8 @@ function HistoryDetails({ summary, onClose, onOpen }: {
     { key: 'files', header: 'Счета комплекта', width: 'minmax(150px, 1fr)', render: ({ revision, record }) =>
       <div className="invoice-identity">
         {revision.documents.length ? revision.documents.map((file, index) => <small key={index}>{file.name}</small>) : <small>Без счёта</small>}
-        {record.revisions.length > 1 && <small>Версий сверки: {Math.ceil(record.revisions.length / 2)}</small>}
+        {record.revisions.filter(({ kind }) => kind === 'closed').length > 1 &&
+          <small>Версий сверки: {record.revisions.filter(({ kind }) => kind === 'closed').length}</small>}
       </div> },
   ];
   return <Dialog title={`Заказы · ${summary.name}`} size="wide" onClose={onClose}>

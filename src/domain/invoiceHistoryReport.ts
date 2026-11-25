@@ -32,6 +32,7 @@ export interface InvoiceHistorySummary {
   share: number;
   belowMin: number;
   shortage: Record<string, number>;
+  shortagePieces: number;
   stockCounts: Partial<Record<InvoiceHistoryStatus, number>>;
   latestRefusal: string;
   details: InvoiceHistoryDetail[];
@@ -85,7 +86,9 @@ export function summarizeInvoiceHistory(
       sublabel: view === 'supplier' ? last.revision.supplier.inn : last.position.name,
       orders, affectedOrders, affectedSkus: new Set(refusals.map(({ position }) => position.skuCode)).size,
       full, partial: refusals.length - full, share: affectedOrders / orders,
-      belowMin: stockCounts.BELOW_MIN ?? 0, shortage: Object.fromEntries(shortage), stockCounts, latestRefusal,
+      belowMin: stockCounts.BELOW_MIN ?? 0, shortage: Object.fromEntries(shortage),
+      shortagePieces: moneySum([...shortage].filter(([unit]) => /^шт[.]?$/iu.test(unit.trim())).map(([, qty]) => qty)),
+      stockCounts, latestRefusal,
       details: filters.status ? refusals : details,
     }];
   });

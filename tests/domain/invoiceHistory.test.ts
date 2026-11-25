@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildHistoryOrders, historyOrderKey, prepareHistoryPositions, type InvoiceHistoryRecord,
+  buildHistoryOrders, historyOrderKey, invoiceHistoryConfirmations, prepareHistoryPositions, type InvoiceHistoryRecord,
 } from '../../src/domain/invoiceHistory';
 import { decodeInvoiceHistory, encodeInvoiceHistory, previewInvoiceHistory } from '../../src/domain/invoiceHistoryBackup';
 import { summarizeInvoiceHistory } from '../../src/domain/invoiceHistoryReport';
@@ -65,6 +65,22 @@ describe('invoice history', () => {
     expect(summarizeInvoiceHistory([record], 'supplier', { status: 'BELOW_MIN' })[0]).toMatchObject({
       orders: 1, affectedOrders: 1, full: 1, partial: 0, belowMin: 1, share: 1,
     });
+  });
+
+  it('keeps the first explicitly confirmed shortage status while awaiting more invoices', () => {
+    const orders = [order('north')];
+    const groups = prepareHistoryPositions(orders, compareInvoice(orders, []), () => 'OK');
+    const key = groups[0]!.lines[0]!.key;
+    const record: InvoiceHistoryRecord = {
+      id: historyOrderKey('week', ['north']), sourceId: 'week', basis: 'preferred', orderIds: ['north'],
+      revisions: [{ kind: 'confirmed', at, supplier: { inn: '1234567890', name: 'ООО Поставщик' },
+        documents: [], positions: [{ key, stockStatus: 'BELOW_MIN' }] }],
+    };
+    expect(decodeInvoiceHistory(encodeInvoiceHistory([record], at))).toEqual([record]);
+    expect(summarizeInvoiceHistory([record], 'supplier', {})).toEqual([]);
+    const result = buildHistoryOrders(orders, groups, new Map([[key, { qty: '0', reason: 'confirmed' }]]),
+      '2026-11-26T10:00:00.000Z', [], invoiceHistoryConfirmations(record));
+    expect(result[0]!.positions[0]).toMatchObject({ stockStatus: 'BELOW_MIN', refusalAt: at });
   });
 
   it('counts one affected order with several short items and leaves the denominator intact under status filters', () => {

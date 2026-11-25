@@ -11,10 +11,12 @@ import {
 } from '../../domain/invoices';
 import { stockStatusSeverity } from '../../domain/demand';
 import {
-  buildHistoryOrders, historyOrderKey, lastClosedInvoiceHistory, prepareHistoryPositions,
-  type ClosedInvoiceHistory, type HistoryDecision, type InvoiceHistoryRecord,
+  buildHistoryOrders, historyOrderKey, invoiceHistoryConfirmations, lastClosedInvoiceHistory,
+  lastInvoiceHistoryDocuments, prepareHistoryPositions,
+  type ClosedInvoiceHistory, type ConfirmedInvoiceHistory, type HistoryDecision, type InvoiceHistoryRecord,
 } from '../../domain/invoiceHistory';
 import { normalizeKey } from '../../domain/normalize';
+import { supplierKey } from '../../domain/supplierPool';
 import type { StockStatus } from '../../domain/types';
 import { appendInvoiceHistory, loadInvoiceHistory } from '../../persistence/invoiceHistory';
 import { moneyProduct, moneySum } from '../../domain/money';
@@ -133,6 +135,7 @@ export function InvoicesPage({
   const historyId = historyOrderKey(sourceId, selectedIds);
   const activeRecord = records.find(({ id }) => id === historyId);
   const saved = lastClosedInvoiceHistory(activeRecord);
+  const confirmations = useMemo(() => invoiceHistoryConfirmations(activeRecord), [activeRecord]);
   const closed = activeRecord?.revisions.at(-1)?.kind === 'closed';
   const stockStatus = useMemo(() => new Map(currentDemand.map((line) => [
     stockKey(line.branch, line.skuCode), line.purchaseStatus,
@@ -184,7 +187,7 @@ export function InvoicesPage({
     }
     try {
       const current = ++fileSequence.current;
-      setFiles((lastClosedInvoiceHistory(resume)?.documents ?? []).map((file, index) =>
+      setFiles((lastInvoiceHistoryDocuments(resume)?.documents ?? []).map((file, index) =>
         openArchivedInvoiceFile(file, `${current}:${index}`)));
     } catch {
       setActionError('Не удалось открыть сохранённые счета. Загрузите полный комплект заново.');
@@ -244,6 +247,7 @@ export function InvoicesPage({
     setComparison(null);
     setExportedDraft(null);
     setInvalidated(false);
+    setHistoryNotice('');
     setInputsOpen(true);
   }
 
@@ -445,6 +449,36 @@ export function InvoicesPage({
       stockStatus.get(stockKey(branch, skuCode)) ?? 'unknown'));
   }
 
+  async function saveConfirmations(party: ClosedInvoiceHistory['supplier'], keys: string[]) {
+    if (!closing || closed || historyBusy || !keys.length) return;
+    setHistoryBusy(true);
+    try {
+      await verifySource();
+      const selected = new Set(keys);
+      const event: ConfirmedInvoiceHistory = {
+        kind: 'confirmed', at: new Date().toISOString(), supplier: party,
+        documents: readyFiles.map(archiveInvoiceFile),
+        positions: closing.flatMap(({ lines }) => lines.filter(({ key }) => selected.has(key))
+          .map(({ key, stockStatus }) => ({ key, stockStatus }))),
+      };
+      setRecords(await appendInvoiceHistory(makeHistoryRecord(event), activeRecord?.revisions.length ?? 0));
+      setClosing(null);
+      setHistoryNotice('Подтверждённые отказы сохранены. Завершите сверку после получения всех счетов.');
+    } catch (failure) {
+      void refreshHistory();
+      throw failure;
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  function makeHistoryRecord(event: ClosedInvoiceHistory | ConfirmedInvoiceHistory): InvoiceHistoryRecord {
+    return {
+      id: historyId, sourceId, basis, ...(supplier ? { orderSupplier: supplier } : {}),
+      orderIds: [...selectedIds].sort(), revisions: [...(activeRecord?.revisions ?? []), event],
+    };
+  }
+
   async function saveHistory(party: ClosedInvoiceHistory['supplier'], decisions: ReadonlyMap<string, HistoryDecision>) {
     if (!closing || closed || historyBusy) return;
     setHistoryBusy(true);
@@ -454,13 +488,9 @@ export function InvoicesPage({
       const event: ClosedInvoiceHistory = {
         kind: 'closed', at, supplier: party,
         documents: readyFiles.map(archiveInvoiceFile),
-        orders: buildHistoryOrders(selectedOrders, closing, decisions, at, saved?.orders),
+        orders: buildHistoryOrders(selectedOrders, closing, decisions, at, saved?.orders, confirmations),
       };
-      const record: InvoiceHistoryRecord = {
-        id: historyId, sourceId, basis, orderIds: [...selectedIds].sort(),
-        revisions: [...(activeRecord?.revisions ?? []), event],
-      };
-      setRecords(await appendInvoiceHistory(record, activeRecord?.revisions.length ?? 0));
+      setRecords(await appendInvoiceHistory(makeHistoryRecord(event), activeRecord?.revisions.length ?? 0));
       setClosing(null);
       setHistoryNotice('Итог сверки сохранён в истории.');
     } catch (failure) {
@@ -491,11 +521,11 @@ export function InvoicesPage({
   }
 
   const matchingParties = new Map(records.flatMap((record) => {
-    const previous = lastClosedInvoiceHistory(record);
-    return previous && previous.orders.some(({ id }) => orders.some((order) => order.id === id && order.supplier === supplier))
+    const previous = lastInvoiceHistoryDocuments(record);
+    return previous && supplier && record.orderSupplier && supplierKey(record.orderSupplier) === supplierKey(supplier)
       ? [[previous.supplier.inn, previous.supplier] as const] : [];
   }));
-  const initialParty = saved?.supplier ?? (matchingParties.size === 1 ? [...matchingParties.values()][0] : undefined);
+  const initialParty = lastInvoiceHistoryDocuments(activeRecord)?.supplier ?? (matchingParties.size === 1 ? [...matchingParties.values()][0] : undefined);
   const orderColumns: VirtualColumn<EligibleOrder>[] = [
     {
       key: 'selected', header: 'Выбор', width: '59px',
@@ -772,7 +802,8 @@ export function InvoicesPage({
       {closing && <CloseInvoiceHistoryDialog groups={closing} previous={saved?.orders ?? []}
         initialName={initialParty?.name ?? supplier ?? ''}
         initialInn={initialParty?.inn ?? ''}
-        noDocuments={!readyFiles.length} busy={historyBusy} onClose={() => setClosing(null)} onSave={saveHistory} />}
+        confirmations={confirmations} noDocuments={!readyFiles.length} busy={historyBusy}
+        onClose={() => setClosing(null)} onSave={saveHistory} onConfirm={saveConfirmations} />}
       {confirmation && (
         <Dialog
           title="Сбросить ручные правки?"

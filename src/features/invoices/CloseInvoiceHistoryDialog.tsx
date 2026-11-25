@@ -15,15 +15,17 @@ interface Entry {
   line: HistoryPositionGroup['lines'][number];
 }
 
-export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initialInn, noDocuments, busy, onClose, onSave }: {
+export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initialInn, confirmations, noDocuments, busy, onClose, onSave, onConfirm }: {
   groups: HistoryPositionGroup[];
   previous: readonly InvoiceHistoryOrder[];
   initialName: string;
   initialInn: string;
+  confirmations: ReadonlyMap<string, { at: string }>;
   noDocuments: boolean;
   busy: boolean;
   onClose: () => void;
   onSave: (supplier: { name: string; inn: string }, decisions: ReadonlyMap<string, HistoryDecision>) => Promise<void>;
+  onConfirm: (supplier: { name: string; inn: string }, keys: string[]) => Promise<void>;
 }) {
   const [name, setName] = useState(initialName);
   const [inn, setInn] = useState(initialInn);
@@ -36,8 +38,10 @@ export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initi
     const defaults = historyDefaultQuantity(group, line.requested);
     const old = oldLines.get(line.key);
     return decisions.get(line.key) ?? {
-      qty: defaults === null ? '' : String(defaults),
-      reason: old?.reason ?? (noDocuments ? 'confirmed' : 'closed'),
+      qty: defaults === null ? (old ? String(Math.min(old.invoiced, line.requested)) : '') : String(defaults),
+      reason: confirmations.has(line.key) ? 'confirmed'
+        : old?.reason === 'buyer' && (defaults ?? old.invoiced) === 0 ? 'buyer'
+        : old?.reason === 'confirmed' || noDocuments ? 'confirmed' : 'closed',
     };
   }
 
@@ -69,14 +73,20 @@ export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initi
       </Select> },
   ];
 
-  async function submit() {
+  const newConfirmations = rows.filter((entry) =>
+    decisions.get(entry.line.key)?.reason === 'confirmed' && !confirmations.has(entry.line.key)
+    && oldLines.get(entry.line.key)?.reason !== 'confirmed');
+
+  async function submit(onlyConfirmations = false) {
     setError('');
     if (!name.trim() || !validSupplierInn(inn.trim())) {
       setError('Укажите название контрагента и ИНН из 10 или 12 цифр.');
       return;
     }
     try {
-      await onSave({ name: name.trim(), inn: inn.trim() }, new Map(rows.map((entry) => [entry.line.key, getDecision(entry)])));
+      const party = { name: name.trim(), inn: inn.trim() };
+      if (onlyConfirmations) await onConfirm(party, newConfirmations.map(({ line }) => line.key));
+      else await onSave(party, new Map(rows.map((entry) => [entry.line.key, getDecision(entry)])));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Не удалось сохранить сверку.');
     }
@@ -84,6 +94,9 @@ export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initi
 
   return <Dialog title="Завершить сверку" size="wide" onClose={() => { if (!busy) onClose(); }} actions={<>
     <Button className="secondary" onClick={onClose} disabled={busy}>Отмена</Button>
+    {!noDocuments && newConfirmations.length > 0 && <Button className="secondary" onClick={() => void submit(true)} disabled={busy}>
+      Зафиксировать подтверждённые отказы
+    </Button>}
     <Button onClick={() => void submit()} disabled={busy}>{busy ? 'Сохраняем…' : 'Сохранить итог'}</Button>
   </>}>
     <p>{noDocuments
@@ -95,6 +108,7 @@ export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initi
         onChange={(event) => setInn(event.target.value)} /></label>
     </div>
     {rows.length > 0 && <VirtualTable rows={rows} columns={columns} getRowKey={({ line }) => line.key} maxHeight="min(42vh, 420px)" />}
+    {!noDocuments && newConfirmations.length > 0 && <p>При ожидании других счетов можно зафиксировать подтверждённые отказы отдельно. В сводку попадёт итог завершённой сверки.</p>}
     {error && <Alert tone="danger">{error}</Alert>}
   </Dialog>;
 }

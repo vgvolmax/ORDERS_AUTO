@@ -47,12 +47,21 @@ export interface ClosedInvoiceHistory {
   orders: InvoiceHistoryOrder[];
 }
 
+export interface ConfirmedInvoiceHistory {
+  kind: 'confirmed';
+  at: string;
+  supplier: ClosedInvoiceHistory['supplier'];
+  documents: InvoiceHistoryDocument[];
+  positions: Array<{ key: string; stockStatus: InvoiceHistoryStatus }>;
+}
+
 export interface InvoiceHistoryRecord {
   id: string;
   sourceId: string;
   basis: 'current' | 'preferred';
+  orderSupplier?: string;
   orderIds: string[];
-  revisions: Array<ClosedInvoiceHistory | { kind: 'reopened'; at: string }>;
+  revisions: Array<ClosedInvoiceHistory | ConfirmedInvoiceHistory | { kind: 'reopened'; at: string }>;
 }
 
 export interface HistoryDecision {
@@ -86,6 +95,22 @@ export function historyOrderKey(sourceId: string, orderIds: readonly string[]): 
 
 export function lastClosedInvoiceHistory(record: InvoiceHistoryRecord | undefined): ClosedInvoiceHistory | undefined {
   return record?.revisions.filter((event): event is ClosedInvoiceHistory => event.kind === 'closed').at(-1);
+}
+
+export function lastInvoiceHistoryDocuments(record: InvoiceHistoryRecord | undefined) {
+  return record?.revisions.filter((event): event is ClosedInvoiceHistory | ConfirmedInvoiceHistory => event.kind !== 'reopened').at(-1);
+}
+
+export function invoiceHistoryConfirmations(record: InvoiceHistoryRecord | undefined) {
+  const recent = new Map<string, { stockStatus: InvoiceHistoryStatus; at: string }>();
+  for (const event of record?.revisions ?? []) {
+    if (event.kind === 'closed') recent.clear();
+    if (event.kind !== 'confirmed') continue;
+    for (const position of event.positions) {
+      if (!recent.has(position.key)) recent.set(position.key, { stockStatus: position.stockStatus, at: event.at });
+    }
+  }
+  return recent;
 }
 
 export function prepareHistoryPositions(
@@ -145,6 +170,7 @@ export function buildHistoryOrders(
   decisions: ReadonlyMap<string, HistoryDecision>,
   at: string,
   previousOrders: readonly InvoiceHistoryOrder[] = [],
+  confirmations = new Map<string, { stockStatus: InvoiceHistoryStatus; at: string }>(),
 ): InvoiceHistoryOrder[] {
   const previous = new Map(previousOrders.flatMap(({ positions }) => positions).map((line) => [line.key, line]));
   const result = new Map(orders.map(({ id, branch, exportedAt }) => [id, {
@@ -173,11 +199,12 @@ export function buildHistoryOrders(
       const reason = outcome === 'covered' ? null : outcome === 'removed' ? 'buyer'
         : requestedReason === 'confirmed' ? 'confirmed' : 'closed';
       const retain = refusal && old?.refusalAt && old.reason === reason;
+      const confirmed = reason === 'confirmed' ? confirmations.get(line.key) : undefined;
       result.get(line.orderId)!.positions.push({
         key: line.key, skuCode: group.skuCode, article: group.article, name: group.name, unit: group.unit,
         requested: line.requested, invoiced, outcome, reason,
-        stockStatus: retain ? old.stockStatus : refusal ? line.stockStatus : 'unknown',
-        refusalAt: retain ? old.refusalAt : refusal ? at : null,
+        stockStatus: retain ? old.stockStatus : refusal ? confirmed?.stockStatus ?? line.stockStatus : 'unknown',
+        refusalAt: retain ? old.refusalAt : refusal ? confirmed?.at ?? at : null,
       });
       allocations.push(invoiced);
     }
