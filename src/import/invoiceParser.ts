@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { readInvoiceIssuerInns } from './invoiceIssuer';
 import { decimal, decimalNumber } from '../domain/decimal';
 import type { InvoiceItem } from '../domain/invoices';
 import { moneyProduct, moneySum } from '../domain/money';
@@ -23,6 +24,8 @@ export interface ParsedInvoice {
   items: InvoiceItem[];
   warnings: string[];
   skippedRows?: number;
+  issuerInns?: string[];
+  unverifiedIssuer?: true;
   payable?: InvoicePayable | null;
 }
 
@@ -51,10 +54,13 @@ export function selectInvoiceSheets(
   if (!included.some((sheet) => sheet.items.length > 0)) {
     throw new Error('На выбранных листах нет распознанных товарных позиций. Исправьте данные счёта.');
   }
+  const issuerInns = [...new Set(included.flatMap((sheet) => sheet.issuerInns ?? []))];
   const skippedRows = included.reduce((total, sheet) => total + (sheet.skippedRows ?? 0), 0);
   return {
     ...(included.length === 1 && included[0]?.payable ? { payable: included[0].payable } : included.some((sheet) => sheet.payable !== undefined) ? { payable: null } : {}),
     ...(skippedRows ? { skippedRows } : {}),
+    ...(issuerInns.length ? { issuerInns } : {}),
+    ...(included.some((sheet) => !sheet.issuerInns?.length) ? { unverifiedIssuer: true } : {}),
     items: included.flatMap((sheet) => sheet.items.map((item) => ({ ...item, sourceSheet: sheet.name }))),
     warnings: [
       ...sheets.flatMap((sheet) => sheet.warnings.map((warning) => `Лист «${sheet.name}»: ${warning}`)),
@@ -331,7 +337,14 @@ export function parseInvoiceWorkbook(bytes: ArrayBuffer): ParsedInvoice {
       }
     }
     if (!header && !hasFixedLayout(rows)) continue;
-    const result = parseRows(rows, header ?? FIXED_HEADER, headerRow);
+    const issuerInns = readInvoiceIssuerInns(rows
+      .filter(([index]) => headerRow < 0 || index < headerRow)
+      .map(([, cells]) => [...cells].sort(([left], [right]) => left - right)
+        .map(([, cell]) => normalizeText(cell.v))));
+    const result = {
+      ...parseRows(rows, header ?? FIXED_HEADER, headerRow),
+      ...(issuerInns.length ? { issuerInns } : {}),
+    };
     if (result.items.length > 0 || result.warnings.length > 0) sheets.push({ name, ...result, ...(result.payable ? { payable: { ...result.payable, sheet: name } } : {}) });
     firstEmptyResult ??= result;
   }

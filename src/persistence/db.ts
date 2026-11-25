@@ -1,4 +1,5 @@
 import { openDB, type DBSchema } from 'idb';
+import type { InvoiceHistoryRecord } from '../domain/invoiceHistory';
 import type { SupplierCatalog } from '../domain/supplierCatalog';
 import type { OrderSettings, SupplierOverride } from '../domain/types';
 import type {
@@ -14,6 +15,7 @@ export type WorkspaceSources = Pick<WorkspaceData,
 export type WorkspaceRecord = StoredWorkspace & { separatedSources?: true };
 
 interface OrdersAutoSchema extends DBSchema {
+  invoiceHistory: { key: string; value: InvoiceHistoryRecord };
   supplierCatalog: { key: string; value: SupplierCatalog; };
   workspaces: {
     key: string;
@@ -45,11 +47,13 @@ interface OrdersAutoSchema extends DBSchema {
 }
 
 export function db() {
-  return openDB<OrdersAutoSchema>('orders-auto', 4, {
+  return openDB<OrdersAutoSchema>('orders-auto', 5, {
     blocking(_current, _next, event) {
       (event.target as IDBDatabase).close();
     },
     upgrade(database) {
+      if (!database.objectStoreNames.contains('invoiceHistory'))
+        database.createObjectStore('invoiceHistory');
       if (!database.objectStoreNames.contains('supplierCatalog'))
         database.createObjectStore('supplierCatalog');
       if (!database.objectStoreNames.contains('workspaces'))

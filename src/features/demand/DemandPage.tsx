@@ -1,3 +1,4 @@
+import { stockStatusSeverity as severity } from '../../domain/demand';
 import { moneySum } from '../../domain/money';
 import { useMemo, type ReactNode } from 'react';
 import { useDerivedState } from '../../app/useDerivedState';
@@ -39,16 +40,6 @@ interface NetworkGroup {
   missingPriceCount: number;
   selectedSupplier: string | null;
 }
-
-const severity: Record<StockStatus, number> = {
-  NO_NORM: 0,
-  OK: 1,
-  YELLOW: 2,
-  ORANGE: 3,
-  LIGHT_RED: 4,
-  BELOW_MIN: 5,
-  INVALID_NORM: 6,
-};
 
 export function DemandPage({ branch }: { branch?: string | undefined }) {
   const { state } = useStore();

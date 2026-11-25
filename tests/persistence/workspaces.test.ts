@@ -85,7 +85,10 @@ describe('complete durable purchasing workspace', () => {
     await saveWorkspace(fixture(), -1);
     expect((await getSettings()).minimumOrderAmount).toBe(123);
     expect((await getSupplierOverrides())[0]!.supplier).toBe('S');
-    expect((await db()).version).toBe(4);
+    const upgraded = await db();
+    expect(upgraded.version).toBe(5);
+    expect(upgraded.objectStoreNames.contains('invoiceHistory')).toBe(true);
+    upgraded.close();
   });
   it('round trips all state and raw bytes separately and keeps old imports in history', async () => {
     const first = fixture();

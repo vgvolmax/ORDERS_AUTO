@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { derive } from '../../app/selectors';
 import { useStore } from '../../app/appStore';
 import { selectArchivedInvoiceOrders, selectInvoiceOrders, type InvoiceOrder, type InvoiceOrderBasis } from '../../app/invoiceOrders';
 import { stateFromWorkspace } from '../../app/workspaceSession';
@@ -63,6 +64,7 @@ export function useInvoiceOrders(initialSourceId?: string, basis: InvoiceOrderBa
   const selectedArchive = archive?.id === archiveId ? archive : null;
 
   return {
+    currentDemand: derive(state).purchaseDemand,
     sources: [
       { id: currentId, label: ['Текущий сеанс', state.minMaxFileName].filter(Boolean).join(' · ') },
       ...history.filter((item) => item.workspaceId !== currentId && item.minMaxFileName)
@@ -78,11 +80,11 @@ export function useInvoiceOrders(initialSourceId?: string, basis: InvoiceOrderBa
     loading: Boolean(archiveId && !selectedArchive),
     error: selectedArchive?.error ?? '',
     historyError,
-    verifySource: async () => {
+    verifySource: async (checkCurrentStock = false) => {
       if (state.catalog && (await loadSupplierCatalog())?.revision !== state.catalog.revision) {
         throw new Error('Справочник изменился. Обновите страницу и повторите сверку.');
       }
-      if (archiveId) return;
+      if (archiveId && !checkCurrentStock) return;
       const active = await readActiveWorkspaceRevision();
       if (active?.workspaceId !== currentId || active.revision !== currentRevision) {
         throw new Error('Сеанс изменился. Обновите страницу и выберите заказы заново.');

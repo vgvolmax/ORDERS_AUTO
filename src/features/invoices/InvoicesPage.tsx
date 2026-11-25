@@ -9,6 +9,16 @@ import {
   compareInvoice,
   type InvoiceItem,
 } from '../../domain/invoices';
+import { stockStatusSeverity } from '../../domain/demand';
+import {
+  buildHistoryOrders, historyOrderKey, invoiceHistoryConfirmations, lastClosedInvoiceHistory,
+  lastInvoiceHistoryDocuments, prepareHistoryPositions,
+  type ClosedInvoiceHistory, type ConfirmedInvoiceHistory, type HistoryDecision, type InvoiceHistoryRecord,
+} from '../../domain/invoiceHistory';
+import { normalizeKey } from '../../domain/normalize';
+import { supplierKey } from '../../domain/supplierPool';
+import type { StockStatus } from '../../domain/types';
+import { appendInvoiceHistory, loadInvoiceHistory } from '../../persistence/invoiceHistory';
 import { moneyProduct, moneySum } from '../../domain/money';
 import { fmtQty, money } from '../../format/numbers';
 import {
@@ -17,6 +27,9 @@ import {
   selectInvoiceSheets,
   type ParsedInvoiceSheet,
 } from '../../import/invoiceParser';
+import { CloseInvoiceHistoryDialog } from './CloseInvoiceHistoryDialog';
+import { InvoiceHistoryPanel } from './InvoiceHistoryPanel';
+import { archiveInvoiceFile, openArchivedInvoiceFile, type ArchivedInvoiceFile } from './invoiceHistoryFiles';
 import { InvoiceSheets } from './InvoiceSheets';
 import {
   InvoiceResults,
@@ -30,14 +43,14 @@ type EligibleOrder = InvoiceOrder;
 type SheetChoice = { sheets: ParsedInvoiceSheet[]; selectedNames: string[] };
 type InvoiceFile = { id: string; name: string } & (
   | { status: 'failed'; error: string }
-  | ({ status: 'selecting'; bytes: Uint8Array } & SheetChoice)
-  | { status: 'ready'; bytes: Uint8Array; data: ReturnType<typeof parseInvoiceWorkbook>; sheetChoice?: SheetChoice }
+  | ({ status: 'selecting'; bytes: Uint8Array<ArrayBuffer> } & SheetChoice)
+  | ArchivedInvoiceFile
 );
 type Comparison = InvoiceResult & { scope: string; fileVersion: string };
 
 async function readInvoiceFile(file: File, id: string, isCurrent: () => boolean): Promise<InvoiceFile | null> {
   const info = { id, name: file.name };
-  let bytes: Uint8Array | undefined;
+  let bytes: Uint8Array<ArrayBuffer> | undefined;
   try {
     if (!/\.xlsx?$/i.test(file.name)) throw new Error('Выберите счёт в формате .xlsx или .xls.');
     const buffer = await file.arrayBuffer();
@@ -53,6 +66,10 @@ async function readInvoiceFile(file: File, id: string, isCurrent: () => boolean)
 type Confirmation = { message: string; label: string; run: () => void };
 
 const noOrders: readonly string[] = [];
+const noHistory: InvoiceHistoryRecord[] = [];
+const sameInvoiceBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, index) => byte === b[index]);
+const noDemand: readonly { skuCode: string; branch: string; purchaseStatus: StockStatus }[] = [];
+const stockKey = (branch: string, skuCode: string) => JSON.stringify([normalizeKey(branch), skuCode]);
 
 export function InvoicesPage({
   initialOrderIds = noOrders,
@@ -64,9 +81,17 @@ export function InvoicesPage({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [basis, setBasis] = useState<InvoiceOrderBasis>('preferred');
-  const { sources, sourceId, selectSource, orders, skuCodes, loading, error, historyError, verifySource } =
+  const { sources, sourceId, selectSource, orders, skuCodes, currentDemand = noDemand, loading, error, historyError, verifySource } =
     useInvoiceOrders(initialSourceId, basis);
   const currentSource = sourceId === sources[0]?.id;
+  const [view, setView] = useState<'compare' | 'history'>('compare');
+  const [records, setRecords] = useState(noHistory);
+  const [recordsError, setRecordsError] = useState('');
+  const [closing, setClosing] = useState<ReturnType<typeof prepareHistoryPositions> | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState('');
+  const [loadedHistoryId, setLoadedHistoryId] = useState('');
+  const [resume, setResume] = useState<InvoiceHistoryRecord | null>(null);
   const [inputsOpen, setInputsOpen] = useState(true);
   const resultHeading = useRef<HTMLHeadingElement>(null);
   const focusResult = useRef(false);
@@ -109,17 +134,84 @@ export function InvoicesPage({
     () => completeSelection ? orderFingerprint(sourceId, selectedOrders, skuCodes) : null,
     [completeSelection, sourceId, selectedOrders, skuCodes],
   );
+  const historyId = historyOrderKey(sourceId, selectedIds);
+  const activeRecord = records.find(({ id }) => id === historyId);
+  const saved = lastClosedInvoiceHistory(activeRecord);
+  const confirmations = useMemo(() => invoiceHistoryConfirmations(activeRecord), [activeRecord]);
+  const closed = activeRecord?.revisions.at(-1)?.kind === 'closed';
+  const hasArchivedFiles = Boolean(lastInvoiceHistoryDocuments(activeRecord)?.documents.length);
+  const pendingArchivedFiles = hasArchivedFiles && loadedHistoryId !== historyId;
+  const stockStatus = useMemo(() => new Map(currentDemand.map((line) => [
+    stockKey(line.branch, line.skuCode), line.purchaseStatus,
+  ])), [currentDemand]);
+  const currentDeficits = useMemo(() => {
+    const result = new Map<string, StockStatus>();
+    const include = (sku: string, status: StockStatus) => {
+      const before = result.get(sku);
+      if (!before || stockStatusSeverity[status] > stockStatusSeverity[before]) result.set(sku, status);
+    };
+    const ordered = new Set<string>();
+    for (const order of selectedOrders) {
+      for (const { skuCode, orderQty } of order.lines) {
+        if (orderQty <= 0) continue;
+        ordered.add(skuCode);
+        const status = stockStatus.get(stockKey(order.branch, skuCode));
+        if (status) include(skuCode, status);
+      }
+    }
+    for (const line of currentDemand) {
+      if (!ordered.has(line.skuCode)) include(line.skuCode, line.purchaseStatus);
+    }
+    return result;
+  }, [currentDemand, selectedOrders, stockStatus]);
   const readyFiles = files.filter((file) => file.status === 'ready');
+  const savedParty = lastInvoiceHistoryDocuments(activeRecord)?.supplier;
+  const issuerInns = [...new Set(readyFiles.flatMap(({ data }) => data.issuerInns ?? []))];
+  const detectedInn = issuerInns.length === 1 ? issuerInns[0] : undefined;
+  const mismatchedIssuer = Boolean(savedParty && issuerInns.some((inn) => inn !== savedParty.inn));
+  const issuerError = issuerInns.length > 1
+    ? 'В комплекте счета с разными ИНН поставщиков. Удалите счета другого юрлица или выберите нужные листы.'
+    : mismatchedIssuer
+      ? `ИНН в счёте отличается от ИНН сохранённой сверки (${savedParty?.inn}). Загрузите счёт этого контрагента.`
+      : '';
+  const unverifiedFiles = readyFiles.filter(({ data }) => !data.issuerInns?.length || data.unverifiedIssuer);
   const failedFiles = files.filter((file) => file.status === 'failed').length;
   const pendingFiles = files.length - readyFiles.length - failedFiles;
   const skippedRows = readyFiles.reduce((total, file) => total + (file.data.skippedRows ?? 0), 0);
   const fileVersion = JSON.stringify(readyFiles.map((file) => [file.id, file.sheetChoice?.selectedNames]));
-  const canCompare = !reading && pendingFiles === 0 && readyFiles.length > 0;
+  const canCompare = !reading && pendingFiles === 0 && readyFiles.length > 0 && !issuerError;
   const incomplete = reading || failedFiles > 0 || pendingFiles > 0 || skippedRows > 0;
   const visibleComparison =
-    comparison && scope !== null && comparison.scope === scope && comparison.fileVersion === fileVersion && !invalidated
+    comparison && scope !== null && comparison.scope === scope && comparison.fileVersion === fileVersion && !invalidated && !issuerError
       ? comparison
       : null;
+  useEffect(() => {
+    let alive = true;
+    void loadInvoiceHistory().then((history) => { if (alive) setRecords(history); })
+      .catch(() => { if (alive) setRecordsError('Не удалось прочитать историю счетов.'); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!resume || sourceId !== resume.sourceId || loading) return;
+    setResume(null);
+    if (!completeSelection) {
+      setActionError('Исходный состав заказа недоступен. Сохранённые счета и итоги можно скачать из истории.');
+      return;
+    }
+    try {
+      const current = ++fileSequence.current;
+      const archivedFiles = (lastInvoiceHistoryDocuments(resume)?.documents ?? []).map((file, index) =>
+        openArchivedInvoiceFile(file, `${current}:${index}`));
+      setFiles((existing) => [...archivedFiles, ...existing.filter((file) =>
+        file.status === 'failed' || !archivedFiles.some((archived) => sameInvoiceBytes(archived.bytes, file.bytes)))]);
+      setLoadedHistoryId(resume.id);
+    } catch {
+      setLoadedHistoryId(resume.id);
+      setActionError('Не удалось открыть сохранённые счета. Скачайте их из истории и загрузите полный комплект вручную.');
+    }
+  }, [resume, sourceId, loading, completeSelection]);
+
   useLayoutEffect(() => {
     if (!visibleComparison || !focusResult.current) return;
     focusResult.current = false;
@@ -173,6 +265,7 @@ export function InvoicesPage({
     setComparison(null);
     setExportedDraft(null);
     setInvalidated(false);
+    setHistoryNotice('');
     setInputsOpen(true);
   }
 
@@ -181,6 +274,7 @@ export function InvoicesPage({
     setFiles([]);
     setReading(false);
     setDuplicateCount(0);
+    setLoadedHistoryId('');
   }
 
   function withConfirmation(message: string, label: string, run: () => void) {
@@ -239,8 +333,7 @@ export function InvoicesPage({
     for (const file of parsed) {
       if (!file) continue;
       if (file.status !== 'failed' && next.some((existing) =>
-        existing.status !== 'failed' && existing.bytes.length === file.bytes.length &&
-        existing.bytes.every((byte, index) => byte === file.bytes[index]))) {
+        existing.status !== 'failed' && sameInvoiceBytes(existing.bytes, file.bytes))) {
         duplicates++;
       } else next.push(file);
     }
@@ -337,6 +430,131 @@ export function InvoicesPage({
     );
   }
 
+  async function refreshHistory() {
+    try {
+      setRecords(await loadInvoiceHistory());
+      setRecordsError('');
+    } catch {
+      setRecordsError('Не удалось прочитать историю счетов.');
+    }
+  }
+
+  function openHistoryRecord(record: InvoiceHistoryRecord) {
+    if (!sources.some(({ id }) => id === record.sourceId)) {
+      setRecordsError('Исходный сеанс недоступен. Счета и итоги входят в JSON-копию истории.');
+      return;
+    }
+    withConfirmation('Открытие сохранённой сверки сбросит текущий черновик.', 'Открыть сохранённую сверку', () => {
+      resetComparison();
+      discardFile();
+      setView('compare');
+      setBasis(record.basis);
+      selectSource(record.sourceId);
+      setSelectedIds(record.orderIds);
+      setResume(record);
+    });
+  }
+
+  function openCloseHistory(rows: ReturnType<typeof compareInvoice>) {
+    const overlap = records.some((record) => record.id !== historyId && record.sourceId === sourceId
+      && record.orderIds.some((id) => selectedSet.has(id)));
+    if (overlap) {
+      setActionError('Часть заказов входит в другой комплект сверки. Откройте его из истории.');
+      return;
+    }
+    setActionError('');
+    setClosing(prepareHistoryPositions(selectedOrders, rows, (branch, skuCode) =>
+      stockStatus.get(stockKey(branch, skuCode)) ?? 'unknown'));
+  }
+
+  async function saveConfirmations(party: ClosedInvoiceHistory['supplier'], keys: string[]) {
+    if (!closing || closed || historyBusy || !keys.length) return;
+    checkHistoryIssuer(party);
+    setHistoryBusy(true);
+    try {
+      await verifySource(true);
+      const selected = new Set(keys);
+      const event: ConfirmedInvoiceHistory = {
+        kind: 'confirmed', at: new Date().toISOString(), supplier: party,
+        documents: readyFiles.map(archiveInvoiceFile),
+        positions: closing.flatMap(({ lines }) => lines.filter(({ key }) => selected.has(key))
+          .map(({ key, stockStatus }) => ({ key, stockStatus }))),
+      };
+      setRecords(await appendInvoiceHistory(makeHistoryRecord(event), activeRecord?.revisions.length ?? 0));
+      setLoadedHistoryId(historyId);
+      setClosing(null);
+      setHistoryNotice('Подтверждённые отказы сохранены. Завершите сверку после получения всех счетов.');
+    } catch (failure) {
+      void refreshHistory();
+      throw failure;
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  function makeHistoryRecord(event: ClosedInvoiceHistory | ConfirmedInvoiceHistory): InvoiceHistoryRecord {
+    return {
+      id: historyId, sourceId, basis, ...(supplier ? { orderSupplier: supplier } : {}),
+      orderIds: [...selectedIds].sort(), revisions: [...(activeRecord?.revisions ?? []), event],
+    };
+  }
+
+  function checkHistoryIssuer(party: ClosedInvoiceHistory['supplier']) {
+    if (issuerError) throw new Error(issuerError);
+    const expectedInn = savedParty?.inn ?? detectedInn;
+    if (expectedInn && party.inn !== expectedInn) throw new Error(`Укажите ИНН поставщика ${expectedInn}.`);
+  }
+
+  async function saveHistory(party: ClosedInvoiceHistory['supplier'], decisions: ReadonlyMap<string, HistoryDecision>) {
+    if (!closing || closed || historyBusy) return;
+    checkHistoryIssuer(party);
+    setHistoryBusy(true);
+    try {
+      await verifySource(true);
+      const at = new Date().toISOString();
+      const event: ClosedInvoiceHistory = {
+        kind: 'closed', at, supplier: party,
+        documents: readyFiles.map(archiveInvoiceFile),
+        orders: buildHistoryOrders(selectedOrders, closing, decisions, at, saved?.orders, confirmations),
+      };
+      setRecords(await appendInvoiceHistory(makeHistoryRecord(event), activeRecord?.revisions.length ?? 0));
+      setLoadedHistoryId(historyId);
+      setClosing(null);
+      setHistoryNotice('Итог сверки сохранён в истории.');
+    } catch (failure) {
+      void refreshHistory();
+      throw failure;
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  async function reopenHistory() {
+    if (!activeRecord || !closed || historyBusy) return;
+    setHistoryBusy(true);
+    setActionError('');
+    try {
+      const at = new Date().toISOString();
+      const record: InvoiceHistoryRecord = {
+        ...activeRecord, revisions: [...activeRecord.revisions, { kind: 'reopened', at }],
+      };
+      setRecords(await appendInvoiceHistory(record, activeRecord.revisions.length));
+      if (pendingArchivedFiles) setResume(record);
+      setHistoryNotice('Сверка переоткрыта. Проверьте весь комплект и сохраните новый итог.');
+    } catch (failure) {
+      setActionError(failure instanceof Error ? failure.message : 'Не удалось переоткрыть сверку.');
+      void refreshHistory();
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  const matchingParties = new Map(records.flatMap((record) => {
+    const previous = lastInvoiceHistoryDocuments(record);
+    return previous && supplier && record.orderSupplier && supplierKey(record.orderSupplier) === supplierKey(supplier)
+      ? [[previous.supplier.inn, previous.supplier] as const] : [];
+  }));
+  const initialParty = savedParty ?? (matchingParties.size === 1 ? [...matchingParties.values()][0] : undefined);
   const orderColumns: VirtualColumn<EligibleOrder>[] = [
     {
       key: 'selected', header: 'Выбор', width: '59px',
@@ -381,7 +599,19 @@ export function InvoicesPage({
       <header>
         <h1>Сверка счетов</h1>
         <p>Сверьте заказы одного поставщика со счётом и подготовьте корректировку для 1С.</p>
+        <div className="invoice-actions invoice-history-tabs" role="group" aria-label="Раздел счетов">
+          <Button className={view === 'compare' ? '' : 'secondary'} aria-pressed={view === 'compare'}
+            onClick={() => setView('compare')}>Сверка</Button>
+          <Button className={view === 'history' ? '' : 'secondary'} aria-pressed={view === 'history'}
+            onClick={() => { setView('history'); void refreshHistory(); }}>История отказов</Button>
+        </div>
       </header>
+      {view === 'history' && <>
+        {recordsError && <Alert tone="warning">{recordsError}</Alert>}
+        <InvoiceHistoryPanel records={records} onRefresh={setRecords} onOpen={openHistoryRecord} />
+      </>}
+      <div className="invoice-workflow" hidden={view === 'history'}>
+      {historyNotice && <Alert>{historyNotice}</Alert>}
 
       {visibleComparison && <div className="invoice-actions invoice-source-summary">
         <div>
@@ -510,7 +740,11 @@ export function InvoicesPage({
               <BrandIcon name="swap" /> {action === 'Сверка…' ? action : 'Сравнить'}
             </Button>
           </div>
+          {completeSelection && !files.length && !reading && !closed && !hasArchivedFiles && <Button className="secondary"
+            disabled={Boolean(action) || historyBusy}
+            onClick={() => openCloseHistory(compareInvoice(selectedOrders, [], skuCodes))}>Зафиксировать отказ без счёта</Button>}
           {reading && <Alert>Читаем счета…</Alert>}
+          {issuerError && <Alert tone="danger">{issuerError}</Alert>}
           {duplicateCount > 0 && <Alert>Пропущено повторных файлов: {fmtQty(duplicateCount)}.</Alert>}
           {!files.length && !reading && (
             <p className="invoice-upload-hint">{completeSelection ? 'Выберите один или несколько файлов .xlsx или .xls.' : 'Сначала отметьте заказы одного поставщика.'}</p>
@@ -526,6 +760,11 @@ export function InvoicesPage({
                     <small>{file.status === 'ready'
                       ? `${fmtQty(file.data.items.length)} поз. · ${invoiceFileAmount(file.data.items)}`
                       : file.status === 'selecting' ? 'Выберите листы' : 'Файл не прочитан'}</small>
+                    {file.status === 'ready' && <small>
+                      {file.data.issuerInns?.length
+                        ? `ИНН поставщика: ${file.data.issuerInns.join(', ')}`
+                        : 'ИНН поставщика нужно сверить вручную'}
+                    </small>}
                   </span>
                   <Button className="secondary" disabled={reading || Boolean(action)} onClick={() => removeInvoice(file)}
                     aria-label={`Удалить счёт ${file.name}`}>Удалить</Button>
@@ -563,6 +802,16 @@ export function InvoicesPage({
           {' '}Повторите сверку, чтобы открыть актуальный результат и экспорт.
         </Alert>
       )}
+      {closed && <Alert>
+        Итог выбранных заказов уже в истории.{' '}
+        <Button className="secondary" disabled={historyBusy || Boolean(action)}
+          onClick={() => void reopenHistory()}>Переоткрыть сверку</Button>
+      </Alert>}
+      {!closed && pendingArchivedFiles && activeRecord && <Alert>
+        В истории есть счета по выбранным заказам.{' '}
+        <Button className="secondary" disabled={reading || Boolean(action) || historyBusy}
+          onClick={() => setResume(activeRecord)}>Загрузить сохранённые счета</Button>
+      </Alert>}
       {actionError && <Alert tone="danger">{actionError}</Alert>}
       {visibleComparison && (
         <InvoiceResults
@@ -584,8 +833,20 @@ export function InvoicesPage({
           }}
           onExported={() => setExportedDraft(visibleComparison)}
           confirmReplace={withConfirmation}
+          currentDeficits={currentDeficits}
+          historyAction={!closed && <Button disabled={incomplete || pendingArchivedFiles || historyBusy || Boolean(action)}
+            onClick={() => openCloseHistory(visibleComparison.rows)}>Завершить сверку</Button>}
         />
       )}
+      </div>
+      {closing && <CloseInvoiceHistoryDialog groups={closing} previous={saved?.orders ?? []}
+        initialName={(!detectedInn || detectedInn === initialParty?.inn ? initialParty?.name : undefined)
+          ?? supplier ?? ''}
+        initialInn={savedParty?.inn ?? detectedInn ?? initialParty?.inn ?? ''}
+        innReadOnly={Boolean(savedParty || detectedInn)}
+        unverifiedFileNames={unverifiedFiles.map(({ name }) => name)}
+        confirmations={confirmations} noDocuments={!readyFiles.length} busy={historyBusy}
+        onClose={() => setClosing(null)} onSave={saveHistory} onConfirm={saveConfirmations} />}
       {confirmation && (
         <Dialog
           title="Сбросить ручные правки?"

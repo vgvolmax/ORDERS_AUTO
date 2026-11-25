@@ -282,3 +282,59 @@
 .invoice-document-summary > div { display: grid; gap: 2px; }
 .invoice-document-check .alert { margin-bottom: 0; }
 .invoice-source-summary > div { display: grid; gap: 2px; }
+
+.invoice-workflow:not([hidden]) { display: contents; }
+.invoice-history-tabs { margin: 12px 0; }
+.invoice-history .invoice-filters > label { max-width: min(100%, 240px); }
+.invoice-history .input[type="number"] { width: 96px; }
+.invoice-history .virtual-row .num > small { display: block; }
+.invoice-history-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--blue);
+  text-align: left;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.invoice-history-link:hover { text-decoration: underline; }
+.invoice-history-deficit .badge { white-space: normal; }
+
+.invoice-history .invoice-history-date {
+  width: 133px;
+}
+
+.invoice-history-date > small {
+  color: var(--danger);
+}
+
+.invoice-history-details {
+  justify-self: start;
+}
+
+.invoice-party-fields .invoice-party-name {
+  flex: 1 1 360px;
+  max-width: 680px;
+}
+
+.invoice-party-fields .invoice-party-inn {
+  flex: 0 1 180px;
+}
+
+.invoice-manual-issuer {
+  padding: 10px 12px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--blue-soft);
+}
+
+.invoice-manual-issuer p, .invoice-manual-issuer ul {
+  margin: 0 0 8px;
+}
+
+.invoice-manual-issuer ul {
+  padding-inline-start: 20px;
+}
