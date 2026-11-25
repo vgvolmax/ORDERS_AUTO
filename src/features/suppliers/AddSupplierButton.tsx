@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../../app/appStore';
+import { useAppBoxDraft } from '../../app/useAppBoxDraft';
 import { currentCatalogLink } from '../../appbox/supplierCatalogBridge';
 import { Dialog } from '../../components/Dialog';
 import { Alert, Button, Input } from '../../components/ui';
@@ -15,6 +16,7 @@ export function AddSupplierButton() {
   const editor = useRef<HTMLDivElement>(null);
   const readOnly = shared ? shared.catalogReadOnly || shared.sourceUnavailable || !shared.editable
     : currentCatalogLink()?.document?.canEdit === false;
+  useAppBoxDraft(open && Boolean(name.trim()), () => setOpen(false));
 
   useLayoutEffect(() => {
     if (open) editor.current?.querySelector('input')?.focus();

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAppBoxDraft } from '../../app/useAppBoxDraft';
 import { Dialog } from '../../components/Dialog';
 import { Alert, Button, Select } from '../../components/ui';
 import type { SupplierAssignment, SupplierAssignmentCommand } from '../../domain/supplierAssignments';
@@ -54,6 +55,7 @@ export function ProductSupplierDialog({
   const [primary, setPrimary] = useState('');
   const [additional, setAdditional] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
+  useAppBoxDraft(Boolean(primary || additional), onClose);
   const currentPrimary = assignment?.primary;
   const extras = assignment?.additional ?? [];
   const extraChoices = suppliers.filter((supplier) => supplier !== currentPrimary && !extras.includes(supplier));
@@ -191,6 +193,7 @@ export function BulkSupplierDialog({
 }) {
   const [supplier, setSupplier] = useState('');
   const [scope, setScope] = useState<'visible' | 'all'>('visible');
+  useAppBoxDraft(Boolean(supplier), onClose);
   const hiddenCount = skuCodes.length - visibleCodes.length;
   const targets = scope === 'all' || hiddenCount === 0 ? skuCodes : visibleCodes;
   const primaries = targets.map((skuCode) => assignmentsByCode.get(skuCode)?.primary ?? null);

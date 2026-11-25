@@ -5,6 +5,7 @@ import {
   type Collection, type SeedRecord, type WorkingDocumentBridge,
 } from '../../src/appbox/documentValue';
 import { OrdersDocument } from '../../src/appbox/ordersDocument';
+import { createAutosaveLifecycle } from '../../src/appbox/autosaveLifecycle';
 import { type SharedSupplierCatalog } from '../../src/domain/sharedSupplierCatalog';
 
 type Command = Parameters<WorkingDocumentBridge['command']>[0];
@@ -188,6 +189,29 @@ describe('Orders Auto working document payloads', () => {
     expect(doc.commands[1]).toEqual(doc.commands[0]);
     expect(doc.commands[3]).toEqual(doc.commands[2]);
     expect(await readPayload(doc.api, 'invoices')).toMatchObject({ value: ['Счёт № 2'] });
+  });
+
+  it('checks the same publish command after both automatic attempts and the read leave its outcome unknown', async () => {
+    const doc = memoryDocument();
+    const initial = await readPayload(doc.api, 'work');
+    const saves = createAutosaveLifecycle();
+    let parked!: () => void;
+    const waiting = new Promise<void>((resolve) => { parked = resolve; });
+    saves.subscribe(() => { if (saves.needsCheck()) parked(); });
+    let attempts = 0;
+    doc.state.fail = (command, phase) => {
+      if (command.recordId === payloadHeaderId && phase === 'before' && ++attempts <= 2)
+        throw new Error('Ответ не получен');
+    };
+    const operation = saves.run(() => savePayload(doc.api, 'work', initial, ['Заказ'], saves.awaitReceipt));
+    await waiting;
+    expect((await readPayload(doc.api, 'work')).value).toBeNull();
+    await expect(saves.check()).resolves.toMatchObject({ status: 'confirmed' });
+    await expect(operation).resolves.toEqual(expect.any(Number));
+    const commands = doc.commands.filter(({ recordId }) => recordId === payloadHeaderId);
+    expect(commands).toHaveLength(3);
+    expect(commands.every((item) => JSON.stringify(item) === JSON.stringify(commands[0]))).toBe(true);
+    expect(await readPayload(doc.api, 'work')).toMatchObject({ value: ['Заказ'] });
   });
 
   it('does not publish a half-written report when AppBox rejects one staged block', async () => {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAppBoxDraft } from '../../app/useAppBoxDraft';
 import { Dialog } from '../../components/Dialog';
 import { Alert, Button, Input } from '../../components/ui';
 import type { CatalogProduct } from '../../domain/supplierCatalog';
@@ -14,6 +15,8 @@ export function CatalogProductDialog({ product, onSave, onClose }: {
   const [unit, setUnit] = useState(product?.unit ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  useAppBoxDraft(code !== (product?.code ?? '') || name !== (product?.name ?? '') ||
+    article !== (product?.article ?? '') || unit !== (product?.unit ?? ''), onClose);
 
   async function save() {
     if (saving || !code.trim() || !name.trim()) return;

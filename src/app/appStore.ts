@@ -39,6 +39,7 @@ export interface Store {
     catalogRevision: number | null;
     sourceConnected: boolean;
     sourceUnavailable: boolean;
+    setDraft: (key: string, discard?: () => void) => void;
     changeCatalog: (change: CatalogChange, toast: string, base?: CatalogBase) => Promise<void>;
     openReport?: (patch: Partial<AppState>, file: WorkspaceFile) => Promise<void>;
   };
