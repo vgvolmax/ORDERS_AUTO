@@ -6,7 +6,7 @@ import { ImportPage } from '../features/import/ImportPage';
 import { InvoicesPage } from '../features/invoices/InvoicesPage';
 import { OrdersPage } from '../features/orders/OrdersPage';
 import { SuppliersPage } from '../features/suppliers/SuppliersPage';
-import { StoreContext, type AppState, type StatePatch } from './appStore';
+import { StoreContext, type AppState, type StatePatch, type WorkspaceRebaseCheck } from './appStore';
 import { createInitialState } from './initialState';
 import { createWorkspaceSession, stateFromWorkspace } from './workspaceSession';
 import { loadActiveWorkspace, loadWorkspaceFile, saveWorkspace, saveWorkspaceView } from '../persistence/workspaces';
@@ -18,16 +18,25 @@ import { Dialog } from '../components/Dialog';
 import { Button } from '../components/ui';
 import { ordersDocument, type OrdersDocument } from '../appbox/ordersDocument';
 import { save } from '../export/download';
-import type { WorkspaceFile } from '../domain/workspace';
+import { WorkspaceConflictError, type WorkspaceFile } from '../domain/workspace';
 import { WorkspaceMasthead, WorkspaceSidebar } from './WorkspaceChrome';
+
+type RemoteSession = Awaited<ReturnType<OrdersDocument['loadSession']>>;
+
+function stateFromRemote({ document, workspace, catalog }: RemoteSession) {
+  return attachSupplierCatalog(workspace
+    ? stateFromWorkspace(workspace)
+    : createInitialState({ workspaceId: document.id }), catalog);
+}
 
 export function App() {
   const [state, setState] = useState<AppState>(() => createInitialState());
   const [initializing, setInitializing] = useState(true);
   const [pending, setPending] = useState(0);
+  const pendingWrites = useRef(0);
   const [retry, setRetry] = useState(0);
   const shared = ordersDocument();
-  const [sharedSession, setSharedSession] = useState<Awaited<ReturnType<OrdersDocument['loadSession']>>>();
+  const [sharedSession, setSharedSession] = useState<RemoteSession>();
   const [remoteChanged, setRemoteChanged] = useState(false);
   const [refreshError, setRefreshError] = useState('');
   const [invoiceContext, setInvoiceContext] = useState<{
@@ -44,9 +53,10 @@ export function App() {
     null,
   );
   const owner = session.current;
-  const commit = async (patch: StatePatch) => {
+  const commit = async (patch: StatePatch, rebase?: WorkspaceRebaseCheck) => {
     if (owner !== session.current) return;
     if (!owner) throw new Error('Локальное хранилище ещё не готово');
+    pendingWrites.current++;
     setPending((n) => n + 1);
     try {
       await owner.commit((current) =>
@@ -55,9 +65,12 @@ export function App() {
           : typeof patch === 'function'
             ? patch(current)
             : patch,
+        rebase,
       );
     } catch (error) {
-      if (owner === session.current)
+      const remoteConflict = shared && error instanceof WorkspaceConflictError;
+      if (remoteConflict && owner === session.current) setRemoteChanged(true);
+      if (owner === session.current && !(remoteConflict && rebase))
         owner.transient({
           storageError:
             error instanceof Error
@@ -67,6 +80,7 @@ export function App() {
         });
       throw error;
     } finally {
+      pendingWrites.current--;
       setPending((n) => n - 1);
     }
   };
@@ -121,11 +135,11 @@ export function App() {
     void (async () => {
       try {
         const remote = shared ? await shared.loadSession() : undefined;
-        const active = remote ? remote.workspace : await loadActiveWorkspace();
-        const catalog = remote ? remote.catalog : await loadOrCreateSupplierCatalog(active);
-        const initial = attachSupplierCatalog(active
-          ? stateFromWorkspace(active)
-          : createInitialState(remote ? { workspaceId: remote.document.id } : undefined), catalog);
+        const active = remote ? null : await loadActiveWorkspace();
+        const initial = remote ? stateFromRemote(remote) : attachSupplierCatalog(
+          active ? stateFromWorkspace(active) : createInitialState(),
+          await loadOrCreateSupplierCatalog(active),
+        );
         if (!cancelled) {
           initial.importEpoch = importEpoch;
           setSharedSession(remote);
@@ -134,6 +148,12 @@ export function App() {
               initial,
               save: saveWorkspace,
               saveView: saveWorkspaceView,
+              ...(shared && { async loadLatest() {
+                await shared.checkCatalog();
+                const prepared = await shared.prepareSession();
+                await shared.checkCatalog();
+                return stateFromRemote(prepared.session);
+              } }),
               recoverCatalog: recoverSupplierCatalog,
               publish: (next) => {
                 if (session.current === nextSession) setState(next);
@@ -162,32 +182,62 @@ export function App() {
   }, [retry, shared]);
 
   useEffect(() => {
-    if (!shared || !sharedSession || initializing || pending) return;
+    if (!shared || !sharedSession || initializing) return;
+    const owner = session.current;
+    if (!owner) return;
     let current = true;
     let checking = false;
+    let sourceCheckAt = 0;
+    const busy = () => !current || owner !== session.current || pendingWrites.current !== 0;
     const check = async () => {
-      if (checking) return;
+      if (checking || busy()) return;
       checking = true;
       try {
-        const changed = await shared.hasUpdate();
-        if (current) {
-          setRemoteChanged(changed);
-          setRefreshError('');
+        const checkSource = Date.now() - sourceCheckAt >= 8000;
+        if (checkSource) sourceCheckAt = Date.now();
+        const changed = await shared.hasUpdate(checkSource);
+        if (busy()) return;
+        if (changed) {
+          let deferred = true;
+          if (invoiceDirty.current) {
+            setRemoteChanged(true);
+            return;
+          }
+          await owner.synchronize(async () => {
+            if (busy() || invoiceDirty.current) return null;
+            const prepared = await shared.prepareSession();
+            if (busy() || invoiceDirty.current) return null;
+            const next = stateFromRemote(prepared.session);
+            const saved = owner.getState();
+            if (next.workspaceId !== saved.workspaceId ||
+                (next.snapshotId !== saved.snapshotId && saved.workspaceRevision >= 0) ||
+                next.workspaceRevision < saved.workspaceRevision) return null;
+            // The empty document has no business snapshot until the first successful save.
+            if (next.workspaceRevision < 0) next.snapshotId = saved.snapshotId;
+            prepared.activate();
+            setSharedSession(prepared.session);
+            deferred = false;
+            return next;
+          });
+          if (current) setRemoteChanged(deferred);
+        } else {
+          setRemoteChanged(false);
         }
+        if (current) setRefreshError('');
       } catch {
         if (current) setRefreshError('Не удалось проверить актуальность сеанса AppBox.');
       } finally {
         checking = false;
       }
     };
-    const timer = window.setInterval(() => void check(), 8000);
+    const timer = window.setInterval(() => void check(), 2500);
     window.addEventListener('focus', check);
     return () => {
       current = false;
       window.clearInterval(timer);
       window.removeEventListener('focus', check);
     };
-  }, [shared, sharedSession, initializing, pending]);
+  }, [shared, Boolean(sharedSession), initializing]);
 
   useEffect(() => {
     if (!state.toast) {
@@ -333,8 +383,8 @@ export function App() {
           )}
           {state.storageError && (
             <div className="alert danger" role="alert">
-              Изменения не применены: {state.storageError}. Повторите действие.
-              При конфликте другой вкладки откройте сохранённый сеанс заново.{' '}
+              Изменения не применены: {state.storageError}{' '}
+              {!sharedStore && 'При конфликте другой вкладки откройте сохранённый сеанс заново.'}{' '}
               <button
                 className="link"
                 disabled={pending > 0}

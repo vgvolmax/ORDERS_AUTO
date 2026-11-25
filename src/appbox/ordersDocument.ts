@@ -7,7 +7,7 @@ import type { SupplierCatalog } from '../domain/supplierCatalog';
 import type {
   StoredWorkspace, WorkspaceFile, WorkspaceView,
 } from '../domain/workspace';
-import { applyWorkspaceView, workspaceView } from '../domain/workspace';
+import { applyWorkspaceView, workspaceView, WorkspaceConflictError } from '../domain/workspace';
 import { createInitialState } from '../app/initialState';
 import {
   payloadHeaderId, readPayload, readSourcePayload, savePayload, seedPayload,
@@ -74,36 +74,41 @@ export class OrdersDocument {
     return { ...snapshot, workspace };
   }
 
-  async loadSession() {
+  async prepareSession() {
     const snapshot = await this.load();
-    const catalog = await this.loadCatalog(snapshot);
-    this.catalog = catalog;
-    this.savedHeader = snapshot.records.find(({ id }) => id === payloadHeaderId)?.fieldRevisions.payload ?? null;
+    const linked = await this.readSource();
+    const source = linked && { id: linked.id, revision: linked.revision };
+    const sourceUnavailable = !linked && Boolean(this.source || snapshot.value?.catalogSource);
     const { workspace } = snapshot;
-    if (!catalog && (this.revokedSource || snapshot.document.workspace) && workspace) {
+    const sku = workspace?.data.minMax?.skus ?? [];
+    const owned = !linked && !sourceUnavailable && !snapshot.document.workspace
+      ? (await readPayload<SharedSupplierCatalog>(this.api, 'catalog')).value : null;
+    const catalog = linked || owned
+      ? applySharedCatalog(null, parseSharedCatalog(linked?.value ?? owned), sku)
+      : sourceUnavailable || snapshot.document.workspace ? null : snapshot.value?.catalog ?? null;
+    if (!catalog && (sourceUnavailable || snapshot.document.workspace) && workspace)
       delete workspace.data.supplierAssignments;
-    }
+    const header = snapshot.records.find(({ id }) => id === payloadHeaderId)?.fieldRevisions.payload ?? null;
     return {
-      document: snapshot.document,
-      workspace,
-      catalog,
-      catalogReadOnly: this.ownedCatalog || this.source !== null,
-      sourceConnected: this.source !== null,
-      sourceUnavailable: this.revokedSource,
+      session: {
+        document: snapshot.document, workspace, catalog, sourceUnavailable,
+        catalogReadOnly: owned !== null || source !== null,
+        sourceConnected: source !== null,
+      },
+      activate: () => {
+        this.catalog = catalog;
+        this.savedHeader = header;
+        this.revokedSource = sourceUnavailable;
+        this.source = source;
+        this.ownedCatalog = owned !== null;
+      },
     };
   }
 
-  private async loadCatalog(snapshot: Awaited<ReturnType<OrdersDocument['load']>>): Promise<SupplierCatalog | null> {
-    const sku = snapshot.workspace?.data.minMax?.skus ?? [];
-    const linked = await this.readSource();
-    this.revokedSource = !linked && Boolean(this.source || snapshot.value?.catalogSource);
-    this.source = linked && { id: linked.id, revision: linked.revision };
-    this.ownedCatalog = false;
-    if (linked) return applySharedCatalog(null, parseSharedCatalog(linked.value), sku);
-    if (this.revokedSource || snapshot.document.workspace) return null;
-    const { value } = await readPayload<SharedSupplierCatalog>(this.api, 'catalog');
-    this.ownedCatalog = value !== null;
-    return value ? applySharedCatalog(null, parseSharedCatalog(value), sku) : snapshot.value?.catalog ?? null;
+  async loadSession() {
+    const prepared = await this.prepareSession();
+    prepared.activate();
+    return prepared.session;
   }
 
   private async readSource() {
@@ -141,10 +146,10 @@ export class OrdersDocument {
       throw new Error('Общий справочник изменился. Обновите данные и повторите действие.');
   }
 
-  async hasUpdate(): Promise<boolean> {
+  async hasUpdate(checkSource = true): Promise<boolean> {
     const head = await this.api.read({ collection: 'work', limit: 1 });
     const revision = head.records.find(({ id }) => id === payloadHeaderId)?.fieldRevisions.payload ?? null;
-    return revision !== this.savedHeader || await this.catalogChanged();
+    return revision !== this.savedHeader || (checkSource && await this.catalogChanged());
   }
 
   setView(view: WorkspaceView) {
@@ -163,7 +168,7 @@ export class OrdersDocument {
     const snapshot = await this.load();
     if (workspace.workspaceId !== snapshot.document.id ||
         (snapshot.workspace?.revision ?? -1) !== expected || workspace.revision !== expected + 1)
-      throw new Error('Сеанс изменился в другой вкладке. Загрузите актуальную версию и повторите действие.');
+      throw new WorkspaceConflictError();
     await this.checkCatalog();
     if (catalog && this.source)
       throw new Error('Редактируйте подключённый справочник в его исходном документе AppBox.');
@@ -172,14 +177,21 @@ export class OrdersDocument {
     const outgoing = new Map(snapshot.value?.files.filter(({ fileId }) => retainedIds.has(fileId))
       .map((file) => [file.fileId, file]) ?? []);
     for (const file of files) outgoing.set(file.fileId, encodeFile(file));
-    this.savedHeader = await savePayload(this.api, 'work', snapshot, {
-      workspace: localViewFree(workspace),
-      files: [...outgoing.values()],
-      catalog: this.ownedCatalog ? null : catalog ?? snapshot.value?.catalog ?? null,
-      catalogSource: this.source?.id ?? null,
-    } satisfies WorkspacePayload);
+    try {
+      this.savedHeader = await savePayload(this.api, 'work', snapshot, {
+        workspace: localViewFree(workspace),
+        files: [...outgoing.values()],
+        catalog: this.ownedCatalog ? null : catalog ?? snapshot.value?.catalog ?? null,
+        catalogSource: this.source?.id ?? null,
+      } satisfies WorkspacePayload);
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error &&
+          (error.code === 'FIELD_REVISION_CHANGED' || error.code === 'RECORD_CHANGED' ||
+           error.code === 'RECORD_EXISTS')) throw new WorkspaceConflictError();
+      throw error;
+    }
     this.view = workspaceView(workspace.data);
-    if (catalog) this.catalog = catalog;
+    if (!this.source && !this.ownedCatalog) this.catalog = catalog ?? snapshot.value?.catalog ?? null;
   }
 
   async openReport(

@@ -24,10 +24,12 @@ export type StatePatch =
   | Partial<AppState>
   | ((current: AppState) => Partial<AppState>);
 
+export type WorkspaceRebaseCheck = (before: AppState, latest: AppState) => void;
+
 export interface Store {
   state: AppState;
   set: (patch: StatePatch) => void;
-  commit?: (patch: StatePatch) => Promise<void>;
+  commit?: (patch: StatePatch, rebase?: WorkspaceRebaseCheck) => Promise<void>;
   saving?: boolean;
   restore?: (workspace: StoredWorkspace) => Promise<void>;
   shared?: {
