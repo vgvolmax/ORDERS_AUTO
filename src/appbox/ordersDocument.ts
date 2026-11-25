@@ -10,9 +10,10 @@ import type {
 } from '../domain/workspace';
 import { applyWorkspaceView, workspaceView, WorkspaceConflictError } from '../domain/workspace';
 import { createInitialState } from '../app/initialState';
+import { createAutosaveLifecycle } from './autosaveLifecycle';
 import {
   payloadHeaderId, readPayload, readSourcePayload, savePayload, seedPayload,
-  type WorkingDocumentBridge, type WorkingRecord,
+  type PayloadSnapshot, type Collection, type WorkingDocumentBridge, type WorkingRecord,
 } from './documentValue';
 
 type EncodedFile = Omit<WorkspaceFile, 'bytes'> & { base64: string };
@@ -60,6 +61,7 @@ function payloadRevision(records: readonly WorkingRecord[]): number | null {
 }
 
 export class OrdersDocument {
+  readonly saves = createAutosaveLifecycle();
   private view: WorkspaceView | undefined;
   private savedHeader: number | null = null;
   private source: { id: string; revision: number } | null = null;
@@ -70,6 +72,12 @@ export class OrdersDocument {
   catalog: SupplierCatalog | null = null;
 
   constructor(private readonly api: WorkingDocumentBridge) {}
+
+  private async publishPayload<T>(collection: Collection, previous: PayloadSnapshot<unknown>, value: T) {
+    const revision = await savePayload(this.api, collection, previous, value, this.saves.awaitReceipt);
+    this.saves.acknowledge();
+    return revision;
+  }
 
   async load() {
     const snapshot = await readPayload<WorkspacePayload>(this.api, 'work');
@@ -151,7 +159,7 @@ export class OrdersDocument {
       const next = applyCatalogChange(change, { catalog: current, catalogRevision: revision }, base);
       try {
         const catalogRevision = next === current && revision !== null ? revision
-          : await savePayload(this.api, 'catalog', snapshot, parseSharedCatalog(sharedCatalogFromLocal(next)));
+          : await this.publishPayload('catalog', snapshot, parseSharedCatalog(sharedCatalogFromLocal(next)));
         this.savedCatalogHeader = catalogRevision;
         this.ownedCatalog = true;
         this.catalog = next;
@@ -217,7 +225,7 @@ export class OrdersDocument {
       .map((file) => [file.fileId, file]) ?? []);
     for (const file of files) outgoing.set(file.fileId, encodeFile(file));
     try {
-      this.savedHeader = await savePayload(this.api, 'work', snapshot, {
+      this.savedHeader = await this.publishPayload('work', snapshot, {
         workspace: localViewFree(workspace),
         files: [...outgoing.values()],
         catalog: this.ownedCatalog ? null : catalog ?? snapshot.value?.catalog ?? null,
@@ -256,11 +264,13 @@ export class OrdersDocument {
   async changeInvoiceHistory<T>(change: (records: InvoiceHistoryRecord[]) => {
     records: InvoiceHistoryRecord[]; result: T;
   }): Promise<T> {
-    const snapshot = await readPayload<InvoiceHistoryRecord[]>(this.api, 'invoices');
-    const previous = snapshot.value ?? [];
-    const { records, result } = change(previous);
-    if (records !== previous) await savePayload(this.api, 'invoices', snapshot, records);
-    return result;
+    return this.saves.run(async () => {
+      const snapshot = await readPayload<InvoiceHistoryRecord[]>(this.api, 'invoices');
+      const previous = snapshot.value ?? [];
+      const { records, result } = change(previous);
+      if (records !== previous) await this.publishPayload('invoices', snapshot, records);
+      return result;
+    });
   }
 }
 

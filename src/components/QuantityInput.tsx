@@ -6,6 +6,7 @@ import {
   type InputHTMLAttributes,
 } from 'react';
 import { WorkspaceConflictError } from '../domain/workspace';
+import { useAppBoxDraft } from '../app/useAppBoxDraft';
 
 /** Local typing draft; committed quantities still belong to the workspace queue. */
 export function QuantityInput({
@@ -34,6 +35,11 @@ export function QuantityInput({
     sequence = useRef(0),
     rejectedDraft = useRef<{ previousValue: number; savedQuantity?: number | undefined } | null>(null);
   committed.current = value;
+  useAppBoxDraft(Boolean(rejectedDraft.current) || draft === '' || !Number.isFinite(Number(draft)) || Number(draft) < 0, () => {
+    rejectedDraft.current = null;
+    setDraft(String(committed.current));
+    setError('');
+  });
   useEffect(() => {
     if (pending.current === 0 && !rejectedDraft.current) setDraft(String(value));
   }, [value]);

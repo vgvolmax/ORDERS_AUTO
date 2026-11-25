@@ -17,6 +17,7 @@ import { AppToast } from '../components/AppToast';
 import { Dialog } from '../components/Dialog';
 import { Button } from '../components/ui';
 import { ordersDocument, type OrdersDocument } from '../appbox/ordersDocument';
+import { connectHostAutosave } from '../appbox/autosaveLifecycle';
 import { save } from '../export/download';
 import { WorkspaceConflictError, type WorkspaceFile } from '../domain/workspace';
 import { WorkspaceMasthead, WorkspaceSidebar } from './WorkspaceChrome';
@@ -38,6 +39,14 @@ export function App() {
   const pendingWrites = useRef(0);
   const [retry, setRetry] = useState(0);
   const shared = ordersDocument();
+  const [checkingSave, setCheckingSave] = useState(false);
+  const [checkNeeded, setCheckNeeded] = useState(false);
+  useEffect(() => {
+    if (!shared) return;
+    const disconnect = connectHostAutosave(shared.saves);
+    const unsubscribe = shared.saves.subscribe(() => setCheckNeeded(shared.saves.needsCheck()));
+    return () => { unsubscribe(); disconnect?.(); };
+  }, [shared]);
   const [sharedSession, setSharedSession] = useState<RemoteSession>();
   const [remoteChanged, setRemoteChanged] = useState(false);
   const [refreshError, setRefreshError] = useState('');
@@ -50,25 +59,42 @@ export function App() {
   const invoiceDirty = useRef(false);
   const markInvoiceDirty = useCallback((dirty: boolean) => {
     invoiceDirty.current = dirty;
-  }, []);
+    shared?.saves.setDraft('invoice', dirty ? () => {
+      invoiceDirty.current = false;
+      setInvoiceContext((current) => current && { ...current, sequence: current.sequence + 1 });
+    } : undefined);
+  }, [shared]);
   const session = useRef<ReturnType<typeof createWorkspaceSession> | null>(
     null,
   );
   const owner = session.current;
-  const commit = async (patch: StatePatch, rebase?: WorkspaceRebaseCheck) => {
-    if (owner !== session.current) return;
-    if (!owner) throw new Error('Локальное хранилище ещё не готово');
+  useEffect(() => {
+    shared?.saves.setReady(!initializing && Boolean(owner));
+  }, [shared, initializing, owner]);
+
+  const runSaving = async <T,>(task: () => Promise<T>, reportToHost = true): Promise<T> => {
     pendingWrites.current++;
     setPending((n) => n + 1);
     try {
-      await owner.commit((current) =>
+      return await (shared && reportToHost ? shared.saves.run(task) : task());
+    } finally {
+      pendingWrites.current--;
+      setPending((n) => n - 1);
+    }
+  };
+  const commit = async (patch: StatePatch, rebase?: WorkspaceRebaseCheck) => {
+    if (owner !== session.current) return;
+    if (!owner) throw new Error('Локальное хранилище ещё не готово');
+    const pageOnly = typeof patch !== 'function' && Object.keys(patch).every((key) => key === 'page');
+    try {
+      await runSaving(() => owner.commit((current) =>
         owner !== session.current
           ? {}
           : typeof patch === 'function'
             ? patch(current)
             : patch,
         rebase,
-      );
+      ), !pageOnly);
     } catch (error) {
       const remoteConflict = shared && error instanceof WorkspaceConflictError;
       if (remoteConflict && owner === session.current) setRemoteChanged(true);
@@ -81,9 +107,6 @@ export function App() {
           toast: 'Изменения не сохранены. Предыдущая версия сеанса сохранена.',
         });
       throw error;
-    } finally {
-      pendingWrites.current--;
-      setPending((n) => n - 1);
     }
   };
   const restore = async (
@@ -321,15 +344,14 @@ export function App() {
     catalogRevision: sharedSession.catalogRevision,
     sourceConnected: sharedSession.sourceConnected,
     sourceUnavailable: sharedSession.sourceUnavailable,
+    setDraft: shared.saves.setDraft,
     async changeCatalog(
       change: Parameters<OrdersDocument['changeCatalog']>[0],
       toast: string,
       base = { catalog: state.catalog, catalogRevision: sharedSession.catalogRevision },
     ) {
       if (!owner || owner !== session.current) throw new Error('Справочник закрыт.');
-      pendingWrites.current++;
-      setPending((n) => n + 1);
-      try {
+      await runSaving(async () => {
         await owner.synchronize(async () => {
           if (owner !== session.current) throw new Error('Справочник закрыт.');
           const saved = await shared.changeCatalog(change, base);
@@ -341,10 +363,7 @@ export function App() {
           toast,
           ...(change.kind === 'create' || change.kind === 'restore' ? { page: 'suppliers' } : {}),
         });
-      } finally {
-        pendingWrites.current--;
-        setPending((n) => n - 1);
-      }
+      });
     },
     ...(sharedSession.document.workspace && { async openReport(patch: Partial<AppState>, file: WorkspaceFile) {
       const initial = attachSupplierCatalog(createInitialState({
@@ -367,11 +386,11 @@ export function App() {
         },
         publish() {},
       });
-      await intake.commit(patch);
+      await runSaving(() => intake.commit(patch));
     } }),
   } : undefined;
   const viewingCatalog = state.page === 'suppliers' && sharedStore?.catalogRevision != null;
-  const statusTone = pending
+  const statusTone = checkNeeded ? 'error' : pending
     ? 'busy'
     : state.storageError
       ? 'error'
@@ -380,7 +399,7 @@ export function App() {
         : 'saved';
   const status = {
     busy: viewingCatalog ? 'Сохранение справочника…' : 'Сохранение сеанса…',
-    error: 'Изменения не сохранены',
+    error: checkNeeded ? 'Сохранение требует проверки' : 'Изменения не сохранены',
     idle: 'Начните с загрузки отчётов',
     saved: sharedStore ? !sharedStore.editable ? 'AppBox · Только просмотр'
       : viewingCatalog ? 'Справочник сохранён в AppBox' : 'Сеанс сохранён в AppBox'
@@ -400,6 +419,17 @@ export function App() {
             status={status}
             statusTone={statusTone}
           />
+          {shared && checkNeeded && (
+            <div className="alert" role="status">
+              AppBox не подтвердил сохранение. Проверьте запись.{' '}
+              <button className="link" disabled={checkingSave} onClick={() => {
+                setCheckingSave(true);
+                void shared.saves.check().finally(() => setCheckingSave(false));
+              }}>
+                {checkingSave ? 'Проверяем…' : 'Проверить сохранение'}
+              </button>
+            </div>
+          )}
           {sharedStore && (remoteChanged || refreshError || sharedStore.sourceUnavailable) && (
             <div className="alert" role="status">
               {sharedStore.sourceUnavailable ? 'Общий справочник недоступен. Проверьте источник в AppBox.' :

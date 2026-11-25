@@ -341,6 +341,7 @@ async function reclaimStaged(
 
 export async function savePayload<T>(
   api: WorkingDocumentBridge, collection: Collection, previous: PayloadSnapshot<unknown>, value: T,
+  awaitReceipt?: (replay: () => Promise<number | undefined>) => Promise<number>,
 ): Promise<number> {
   if (previous.document.role === 'view') throw new Error('Рабочий документ доступен только для просмотра.');
   const priorHeader = previous.records.find(({ id }) => id === payloadHeaderId);
@@ -370,16 +371,15 @@ export async function savePayload<T>(
     throw error;
   }
 
-  const command = { commandId: crypto.randomUUID(), collection, recordId: payloadHeaderId };
+  const headerRecord = { commandId: crypto.randomUUID(), collection, recordId: payloadHeaderId };
+  const command: Command = priorHeader ? {
+    ...headerRecord, kind: 'update', generation: priorHeader.generation, fields: [
+      { field: 'payload', value: next.payload, baseRevision: priorHeader.fieldRevisions.payload ?? 0 },
+    ],
+  } : { ...headerRecord, kind: 'insert', values: { payload: next.payload } };
   let revision: number;
   try {
-    const result = await write(api, priorHeader ? {
-      ...command, kind: 'update', generation: priorHeader.generation, fields: [
-        { field: 'payload', value: next.payload, baseRevision: priorHeader.fieldRevisions.payload ?? 0 },
-      ],
-    } : {
-      ...command, kind: 'insert', values: { payload: next.payload },
-    });
+    const result = await write(api, command);
     revision = result.revision;
   } catch (error) {
     if (!(error instanceof UnknownWrite)) {
@@ -389,8 +389,26 @@ export async function savePayload<T>(
     // A timeout may hide a successful header swap. Verify its exact contents before cleanup.
     const snapshot = await readRecords(api, collection).catch(() => null);
     const saved = snapshot?.records.find(({ id }) => id === payloadHeaderId);
-    if (saved?.values.payload !== next.payload) throw error;
-    revision = saved.fieldRevisions.payload ?? saved.revision;
+    if (saved?.values.payload === next.payload) revision = saved.fieldRevisions.payload ?? saved.revision;
+    else {
+      if (!awaitReceipt) throw error;
+      // A newer generation can hide a successfully committed earlier command in a read.
+      // Ask AppBox for the receipt using the original immutable command.
+      try {
+        revision = await awaitReceipt(async () => {
+          try {
+            return (await api.command(command)).revision;
+          } catch (reason) {
+            if (['FIELD_REVISION_CHANGED', 'RECORD_CHANGED', 'RECORD_EXISTS'].includes(String(code(reason))))
+              throw reason;
+            return undefined;
+          }
+        });
+      } catch (rejection) {
+        await reclaimStaged(api, collection, attempted);
+        throw rejection;
+      }
+    }
   }
   const nextIds = chunkIds(next.header);
   await reclaim(api, collection, active.filter(({ id }) => !nextIds.has(id)));
