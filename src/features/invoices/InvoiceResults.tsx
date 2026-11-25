@@ -1,5 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { BrandIcon } from '../../components/BrandIcon';
+import { StatusBadge } from '../../components/StatusBadge';
+import type { StockStatus } from '../../domain/types';
 import { Dialog } from '../../components/Dialog';
 import { Alert, Button, Input, MetricCard, SearchInput, Select } from '../../components/ui';
 import { VirtualTable, type VirtualColumn } from '../../components/VirtualTable';
@@ -53,6 +55,8 @@ export function InvoiceResults({
   onChange,
   onExported,
   confirmReplace,
+  currentDeficits,
+  historyAction,
 }: {
   comparison: InvoiceResult;
   headingRef?: Ref<HTMLHeadingElement>;
@@ -69,6 +73,8 @@ export function InvoiceResults({
   runVerified: InvoiceAction;
   onChange: (change: Partial<InvoiceResult>) => void;
   onExported: () => void;
+  currentDeficits?: ReadonlyMap<string, StockStatus>;
+  historyAction?: ReactNode;
   confirmReplace: (message: string, label: string, run: () => void) => void;
 }) {
   const [filter, setFilter] = useState('all');
@@ -90,6 +96,17 @@ export function InvoiceResults({
       field.scrollIntoView?.({ block: 'center', inline: 'nearest' });
     }
   }, [errorFocus]);
+  const resultColumns = useMemo((): VirtualColumn<InvoiceComparisonRow>[] => [
+    ...comparisonColumns.slice(0, -1),
+    {
+      key: 'deficit', header: 'Дефицит сейчас', width: 'minmax(103px, .76fr)', className: 'invoice-history-deficit',
+      render: (row) => {
+        const status = row.skuCode ? currentDeficits?.get(row.skuCode) : undefined;
+        return status ? <StatusBadge status={status} /> : <small>Нет данных</small>;
+      },
+    },
+    comparisonColumns[comparisonColumns.length - 1]!,
+  ], [currentDeficits]);
   const { mode, adjustments, drafts } = comparison;
   const rows = useMemo(() => incomplete ? comparison.rows.map((row): InvoiceComparisonRow =>
     row.differences.includes('missing') ? {
@@ -314,10 +331,13 @@ export function InvoiceResults({
             <h2 id="invoice-result-heading" ref={headingRef} tabIndex={-1}>Результат сверки</h2>
             <p>{supplier} · {fileName}</p>
           </div>
-          <Button className="secondary" disabled={Boolean(action)} onClick={downloadReport}>
-            <BrandIcon name="download" />
-            Скачать результат CSV
-          </Button>
+          <div className="invoice-actions">
+            <Button className="secondary" disabled={Boolean(action)} onClick={downloadReport}>
+              <BrandIcon name="download" />
+              Скачать результат CSV
+            </Button>
+            {historyAction}
+          </div>
         </div>
 
         {incomplete && <Alert tone="warning">Результат неполный. Суммы и расхождения рассчитаны по прочитанным строкам.</Alert>}
@@ -390,7 +410,7 @@ export function InvoiceResults({
         <small>В числовых колонках сверху заказ, ниже счёт и разница.</small>
         <VirtualTable
           rows={visibleRows}
-          columns={comparisonColumns}
+          columns={resultColumns}
           getRowKey={(row) => row.id}
           emptyMessage="По заданным фильтрам нет позиций."
         />

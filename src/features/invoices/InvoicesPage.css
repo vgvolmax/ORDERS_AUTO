@@ -282,3 +282,22 @@
 .invoice-document-summary > div { display: grid; gap: 2px; }
 .invoice-document-check .alert { margin-bottom: 0; }
 .invoice-source-summary > div { display: grid; gap: 2px; }
+
+.invoice-workflow:not([hidden]) { display: contents; }
+.invoice-history-tabs { margin: 12px 0; }
+.invoice-history .invoice-filters > label { max-width: min(100%, 240px); }
+.invoice-history .input[type="number"] { width: 96px; }
+.invoice-history .virtual-row .num > small { display: block; }
+.invoice-history-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--blue);
+  text-align: left;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.invoice-history-link:hover { text-decoration: underline; }
+.invoice-history-deficit .badge { white-space: normal; }

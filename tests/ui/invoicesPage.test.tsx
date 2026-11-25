@@ -29,6 +29,7 @@ vi.mock('../../src/features/invoices/useInvoiceOrders', () => ({
     selectSource: vi.fn(),
     orders: source.orders,
     skuCodes: source.skuCodes,
+    currentDemand: [{ skuCode: '001', branch: 'Склад 1', purchaseStatus: 'BELOW_MIN' }],
     loading: false,
     error: '',
     verifySource,
@@ -85,6 +86,8 @@ describe('InvoicesPage', () => {
     selectFile();
     await compare();
     const result = screen.getByRole('region', { name: 'Результат сверки' });
+    expect(within(result).getByRole('columnheader', { name: 'Дефицит сейчас' })).toBeVisible();
+    expect(within(result).getByText('Ниже MIN')).toBeVisible();
     const totals = within(result).getByRole('group', { name: 'Суммы сверки' });
     expect(totals).toHaveTextContent(/1\s000\s000,00/);
     expect(totals).toHaveTextContent(/1\s000\s100,00/);
@@ -229,6 +232,24 @@ describe('InvoicesPage', () => {
     expect(screen.getByRole('button', { name: 'Скопировать для 1С' })).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox', { name: /Включить в экспорт.*002/ }));
     expect(screen.getByRole('button', { name: 'CSV для 1С' })).toBeEnabled();
+  });
+
+
+  it('persists an explicit refusal by legal entity and shows it after returning to history', async () => {
+    const { unmount } = render(<InvoicesPage initialOrderIds={['a']} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Зафиксировать отказ без счёта' }));
+    const dialog = screen.getByRole('dialog', { name: 'Завершить сверку' });
+    fireEvent.change(within(dialog).getByLabelText('Контрагент в счёте'), { target: { value: 'ООО Альфа' } });
+    fireEvent.change(within(dialog).getByLabelText('ИНН поставщика'), { target: { value: '7801000101' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить итог' }));
+    expect(await screen.findByText('Итог сверки сохранён в истории.')).toBeVisible();
+    unmount();
+    render(<InvoicesPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'История отказов' }));
+    const supplier = await screen.findByRole('button', { name: 'ООО Альфа' });
+    expect(supplier.closest('[role="row"]')).toHaveTextContent('Ниже MIN · 1');
+    fireEvent.click(supplier);
+    expect(screen.getByRole('button', { name: 'ART' })).toBeVisible();
   });
 
 });

@@ -103,12 +103,16 @@ function indexGroup(index: Map<string, Set<OrderGroup>>, key: string, group: Ord
   index.set(key, groups);
 }
 
+export function invoiceOrderRowId(skuCode: string, unit: string | null): string {
+  return 'order:' + JSON.stringify([skuCode, unitKey(unit)]);
+}
+
 function groupOrders(orders: readonly Order[]): OrderGroup[] {
   const groups = new Map<string, OrderGroup>();
   for (const order of orders) {
     for (const line of order.lines) {
       if (!(line.orderQty > 0)) continue;
-      const id = 'order:' + JSON.stringify([line.skuCode, unitKey(line.unit)]);
+      const id = invoiceOrderRowId(line.skuCode, line.unit);
       let group = groups.get(id);
       if (!group) {
         group = { id, skuCode: line.skuCode, unit: line.unit, lines: [], matches: [], ambiguousRows: [] };

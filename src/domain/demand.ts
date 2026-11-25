@@ -11,6 +11,16 @@ import { moneyProduct, moneySum } from './money';
 import { addDecimal, decimal, decimalNumber } from './decimal';
 import { hasNegativeStockNorm } from './stockNorms';
 
+export const stockStatusSeverity: Record<StockStatus, number> = {
+  NO_NORM: 0,
+  OK: 1,
+  YELLOW: 2,
+  ORANGE: 3,
+  LIGHT_RED: 4,
+  BELOW_MIN: 5,
+  INVALID_NORM: 6,
+};
+
 export interface StockCalculation {
   status: StockStatus;
   deficitQty: number;
