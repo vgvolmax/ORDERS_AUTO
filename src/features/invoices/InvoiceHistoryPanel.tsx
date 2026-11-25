@@ -10,7 +10,7 @@ import {
   decodeInvoiceHistory, encodeInvoiceHistory, previewInvoiceHistory,
 } from '../../domain/invoiceHistoryBackup';
 import {
-  summarizeInvoiceHistory, type InvoiceHistoryDetail, type InvoiceHistoryFilters, type InvoiceHistorySummary, type InvoiceHistoryView,
+  parseInvoiceHistoryDate, summarizeInvoiceHistory, type InvoiceHistoryDetail, type InvoiceHistoryFilters, type InvoiceHistorySummary, type InvoiceHistoryView,
 } from '../../domain/invoiceHistoryReport';
 import { save } from '../../export/download';
 import { fmtQty } from '../../format/numbers';
@@ -32,6 +32,8 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
 }) {
   const [view, setView] = useState<InvoiceHistoryView>('supplier');
   const [filters, setFilters] = useState<InvoiceHistoryFilters>({});
+  const [dateInput, setDateInput] = useState({ from: '', to: '' });
+  const [dateTouched, setDateTouched] = useState({ from: false, to: false });
   const [ranking, setRanking] = useState<Ranking>('belowMin');
   const [minimum, setMinimum] = useState('');
   const [detail, setDetail] = useState<InvoiceHistorySummary | null>(null);
@@ -49,6 +51,14 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
     .filter((row) => row.orders >= Math.max(0, Number(minimum) || 0))
     .sort((a, b) => b[ranking] - a[ranking] || b.affectedOrders - a.affectedOrders ||
       b.orders - a.orders || a.name.localeCompare(b.name, 'ru', { numeric: true })), [records, view, filters, minimum, ranking]);
+  const from = parseInvoiceHistoryDate(dateInput.from);
+  const to = parseInvoiceHistoryDate(dateInput.to);
+  const reversed = Boolean(from && to && from > to);
+  const dateErrors = {
+    from: dateTouched.from && from === null ? 'Введите дату в формате ДД.ММ.ГГГГ.' : '',
+    to: dateTouched.to && to === null ? 'Введите дату в формате ДД.ММ.ГГГГ.'
+      : reversed ? 'Конец периода раньше начала.' : '',
+  };
   const preview = restore ? previewInvoiceHistory(records, restore) : null;
   const unfinished = records.filter((record) => record.revisions.at(-1)?.kind !== 'closed');
   const openBreakdown = (row: InvoiceHistorySummary) => {
@@ -63,28 +73,33 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
   };
 
   const columns: VirtualColumn<InvoiceHistorySummary>[] = [
-    { key: 'identity', header: view === 'supplier' ? 'Юрлицо поставщика' : 'Артикул', width: 'minmax(158px, 1.2fr)',
+    { key: 'identity', header: view === 'supplier' ? 'Юрлицо поставщика' : 'Артикул', width: 'minmax(150px, 1.3fr)', sticky: true,
       render: (row) => <div className="invoice-identity">
         <button className="invoice-history-link" type="button" onClick={() => openBreakdown(row)}>{row.name}</button>
         <small>{view === 'supplier' ? `ИНН ${row.sublabel}` : row.sublabel}</small>
+        <button className="invoice-history-link invoice-history-details" type="button"
+          aria-label={`Открыть заказы: ${row.name}`} onClick={() => setDetail(row)}>Открыть</button>
       </div> },
-    { key: 'orders', header: 'Заказов', width: '70px', className: 'num', render: (row) => fmtQty(row.orders) },
-    { key: 'full', header: 'Полные отказы', width: '84px', className: 'num', render: (row) => fmtQty(row.full) },
-    { key: 'partial', header: 'Частичные', width: '85px', className: 'num', render: (row) => fmtQty(row.partial) },
-    { key: 'share', header: 'Заказы с отказами', width: '104px', className: 'num', render: (row) => <>
+    { key: 'share', header: 'Заказы с отказами', width: 'minmax(102px, .78fr)', className: 'num', render: (row) => <>
       <strong>{(row.share * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%</strong>
       <small>{fmtQty(row.affectedOrders)} из {fmtQty(row.orders)}</small>
     </> },
-    ...(view === 'supplier' ? [{ key: 'skus', header: 'Артикулов с отказами', width: '100px', className: 'num',
-      render: (row: InvoiceHistorySummary) => fmtQty(row.affectedSkus) }] : []),
-    { key: 'missing', header: 'Не выставлено', width: '100px', className: 'num', render: (row) =>
-      Object.entries(row.shortage).map(([unit, qty]) => `${fmtQty(qty)} ${unit}`).join(' · ') || '—' },
+    { key: 'refusals', header: 'Отказы по позициям', width: 'minmax(114px, .85fr)', render: (row) =>
+      <div className="invoice-identity">
+        <small>Полных: <strong>{fmtQty(row.full)}</strong></small>
+        <small>Частичных: <strong>{fmtQty(row.partial)}</strong></small>
+      </div> },
+    { key: 'missing', header: 'Не выставлено', width: 'minmax(108px, .85fr)', render: (row) =>
+      <div className="invoice-identity">
+        <strong>{Object.entries(row.shortage).map(([unit, qty]) => `${fmtQty(qty)} ${unit}`).join(' · ') || '—'}</strong>
+        {view === 'supplier' && <small>Артикулов с отказами: {fmtQty(row.affectedSkus)}</small>}
+      </div> },
     { key: 'status', header: 'Дефицит при отказе', width: 'minmax(150px, 1fr)', render: (row) =>
-      <div className="invoice-identity">{invoiceHistoryStatuses.map((status) => row.stockCounts[status]
-        ? <small key={status}>{labels[status]} · {fmtQty(row.stockCounts[status]!)}</small> : null)}</div> },
-    { key: 'date', header: 'Последний отказ', width: '104px', render: (row) => row.latestRefusal ? date(row.latestRefusal) : '—' },
-    { key: 'details', header: 'Заказы', width: '85px', render: (row) =>
-      <button className="invoice-history-link" type="button" onClick={() => setDetail(row)}>Открыть</button> },
+      <div className="invoice-identity">
+        {invoiceHistoryStatuses.map((status) => row.stockCounts[status]
+          ? <small key={status}>{labels[status]} · {fmtQty(row.stockCounts[status]!)}</small> : null)}
+        {row.latestRefusal ? <small>Последний отказ · {date(row.latestRefusal)}</small> : '—'}
+      </div> },
   ];
 
   async function download() {
@@ -158,8 +173,23 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
         <option value="">Все артикулы</option>
         {identities.skus.map(({ key, name }) => <option key={key} value={key}>{name} · {key}</option>)}
       </Select></label>
-      <label>С даты сверки<Input value={filters.from ?? ''} type="date" onChange={(event) => setFilters({ ...filters, from: event.target.value })} /></label>
-      <label>По дату сверки<Input value={filters.to ?? ''} type="date" onChange={(event) => setFilters({ ...filters, to: event.target.value })} /></label>
+      {(['from', 'to'] as const).map((field) => <label key={field}
+        className="invoice-history-date">{field === 'from' ? 'С даты сверки' : 'По дату сверки'}
+        <Input value={dateInput[field]} placeholder="ДД.ММ.ГГГГ" maxLength={10}
+          aria-invalid={Boolean(dateErrors[field])} aria-describedby={dateErrors[field] ? `invoice-history-date-${field}` : undefined}
+          onChange={(event) => {
+            const input = event.target.value;
+            const next = { ...dateInput, [field]: input };
+            const nextFrom = parseInvoiceHistoryDate(next.from);
+            const nextTo = parseInvoiceHistoryDate(next.to);
+            setDateInput(next);
+            if (nextFrom !== null && nextTo !== null && (!nextFrom || !nextTo || nextFrom <= nextTo)) {
+              setFilters((current) => ({ ...current, from: nextFrom, to: nextTo }));
+            }
+          }}
+          onBlur={() => setDateTouched((current) => ({ ...current, [field]: true }))} />
+        {dateErrors[field] && <small id={`invoice-history-date-${field}`}>{dateErrors[field]}</small>}
+      </label>)}
       <label>Статус дефицита<Select value={filters.status ?? ''} onChange={(event) =>
         setFilters({ ...filters, status: event.target.value as InvoiceHistoryStatus | '' })}>
         <option value="">Все статусы</option>

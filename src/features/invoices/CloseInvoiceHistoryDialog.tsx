@@ -15,11 +15,13 @@ interface Entry {
   line: HistoryPositionGroup['lines'][number];
 }
 
-export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initialInn, confirmations, noDocuments, busy, onClose, onSave, onConfirm }: {
+export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initialInn, innReadOnly, unverifiedFileNames, confirmations, noDocuments, busy, onClose, onSave, onConfirm }: {
   groups: HistoryPositionGroup[];
   previous: readonly InvoiceHistoryOrder[];
   initialName: string;
   initialInn: string;
+  innReadOnly: boolean;
+  unverifiedFileNames: string[];
   confirmations: ReadonlyMap<string, { at: string }>;
   noDocuments: boolean;
   busy: boolean;
@@ -29,6 +31,7 @@ export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initi
 }) {
   const [name, setName] = useState(initialName);
   const [inn, setInn] = useState(initialInn);
+  const [verified, setVerified] = useState(false);
   const [error, setError] = useState('');
   const [decisions, setDecisions] = useState(new Map<string, HistoryDecision>());
   const oldLines = new Map(previous.flatMap((order) => order.positions).map((line) => [line.key, line]));
@@ -83,6 +86,10 @@ export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initi
       setError('Укажите название контрагента и ИНН из 10 или 12 цифр.');
       return;
     }
+    if (unverifiedFileNames.length && !verified) {
+      setError('Сверьте ИНН в перечисленных счетах и подтвердите проверку.');
+      return;
+    }
     try {
       const party = { name: name.trim(), inn: inn.trim() };
       if (onlyConfirmations) await onConfirm(party, newConfirmations.map(({ line }) => line.key));
@@ -102,11 +109,23 @@ export function CloseInvoiceHistoryDialog({ groups, previous, initialName, initi
     <p>{noDocuments
       ? 'Зафиксируйте отказ поставщика по заказам, на которые он не выставит ни одного счёта.'
       : 'Убедитесь, что собраны все счета и их выставил один контрагент. При частичном покрытии распределите выставленное количество по заказам.'}</p>
-    <div className="invoice-filters">
-      <label>Контрагент в счёте<Input value={name} disabled={busy} onChange={(event) => setName(event.target.value)} /></label>
-      <label>ИНН поставщика<Input value={inn} inputMode="numeric" maxLength={12} disabled={busy}
-        onChange={(event) => setInn(event.target.value)} /></label>
+    <div className="invoice-filters invoice-party-fields">
+      <label className="invoice-party-name">Контрагент в счёте
+        <Input value={name} title={name || undefined} disabled={busy} onChange={(event) => setName(event.target.value)} />
+      </label>
+      <label className="invoice-party-inn">ИНН поставщика<Input value={inn} inputMode="numeric" maxLength={12}
+        disabled={busy} readOnly={innReadOnly}
+        onChange={(event) => { setInn(event.target.value); setVerified(false); }} /></label>
     </div>
+    {unverifiedFileNames.length > 0 && <div className="invoice-manual-issuer">
+      <p>Сверьте ИНН поставщика в этих счетах:</p>
+      <ul>{unverifiedFileNames.map((name, index) => <li key={index}>{name}</li>)}</ul>
+      <label className="checkbox-control">
+        <input type="checkbox" checked={verified} disabled={busy}
+          onChange={(event) => { setVerified(event.target.checked); setError(''); }} />
+        ИНН поставщика совпадает во всех счетах
+      </label>
+    </div>}
     {rows.length > 0 && <VirtualTable rows={rows} columns={columns} getRowKey={({ line }) => line.key} maxHeight="min(42vh, 420px)" />}
     {!noDocuments && newConfirmations.length > 0 && <p>При ожидании других счетов можно зафиксировать подтверждённые отказы отдельно. В сводку попадёт итог завершённой сверки.</p>}
     {error && <Alert tone="danger">{error}</Alert>}

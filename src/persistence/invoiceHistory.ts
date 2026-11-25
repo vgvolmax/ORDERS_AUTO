@@ -1,4 +1,4 @@
-import type { InvoiceHistoryRecord } from '../domain/invoiceHistory';
+import { lastInvoiceHistoryDocuments, type InvoiceHistoryRecord } from '../domain/invoiceHistory';
 import { previewInvoiceHistory, type InvoiceHistoryImport } from '../domain/invoiceHistoryBackup';
 import { db } from './db';
 
@@ -25,6 +25,12 @@ export async function appendInvoiceHistory(
       await tx.done;
       throw new Error(overlap ? 'Часть заказов входит в другой комплект сверки. Откройте его из истории.'
         : 'История уже изменилась. Обновите её и повторите действие.');
+    }
+    const previousParty = lastInvoiceHistoryDocuments(current)?.supplier;
+    const nextParty = lastInvoiceHistoryDocuments(record)?.supplier;
+    if (previousParty && previousParty.inn !== nextParty?.inn) {
+      await tx.done;
+      throw new Error('ИНН сохранённой сверки изменить нельзя.');
     }
     await tx.store.put(record, record.id);
     await tx.done;

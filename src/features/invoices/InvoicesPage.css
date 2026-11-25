@@ -301,3 +301,40 @@
 }
 .invoice-history-link:hover { text-decoration: underline; }
 .invoice-history-deficit .badge { white-space: normal; }
+
+.invoice-history .invoice-history-date {
+  width: 133px;
+}
+
+.invoice-history-date > small {
+  color: var(--danger);
+}
+
+.invoice-history-details {
+  justify-self: start;
+}
+
+.invoice-party-fields .invoice-party-name {
+  flex: 1 1 360px;
+  max-width: 680px;
+}
+
+.invoice-party-fields .invoice-party-inn {
+  flex: 0 1 180px;
+}
+
+.invoice-manual-issuer {
+  padding: 10px 12px;
+  margin: 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--blue-soft);
+}
+
+.invoice-manual-issuer p, .invoice-manual-issuer ul {
+  margin: 0 0 8px;
+}
+
+.invoice-manual-issuer ul {
+  padding-inline-start: 20px;
+}

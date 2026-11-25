@@ -165,14 +165,24 @@ export function InvoicesPage({
     return result;
   }, [currentDemand, selectedOrders, stockStatus]);
   const readyFiles = files.filter((file) => file.status === 'ready');
+  const savedParty = lastInvoiceHistoryDocuments(activeRecord)?.supplier;
+  const issuerInns = [...new Set(readyFiles.flatMap(({ data }) => data.issuerInns ?? []))];
+  const detectedInn = issuerInns.length === 1 ? issuerInns[0] : undefined;
+  const mismatchedIssuer = Boolean(savedParty && issuerInns.some((inn) => inn !== savedParty.inn));
+  const issuerError = issuerInns.length > 1
+    ? 'В комплекте счета с разными ИНН поставщиков. Удалите счета другого юрлица или выберите нужные листы.'
+    : mismatchedIssuer
+      ? `ИНН в счёте отличается от ИНН сохранённой сверки (${savedParty?.inn}). Загрузите счёт этого контрагента.`
+      : '';
+  const unverifiedFiles = readyFiles.filter(({ data }) => !data.issuerInns?.length || data.unverifiedIssuer);
   const failedFiles = files.filter((file) => file.status === 'failed').length;
   const pendingFiles = files.length - readyFiles.length - failedFiles;
   const skippedRows = readyFiles.reduce((total, file) => total + (file.data.skippedRows ?? 0), 0);
   const fileVersion = JSON.stringify(readyFiles.map((file) => [file.id, file.sheetChoice?.selectedNames]));
-  const canCompare = !reading && pendingFiles === 0 && readyFiles.length > 0;
+  const canCompare = !reading && pendingFiles === 0 && readyFiles.length > 0 && !issuerError;
   const incomplete = reading || failedFiles > 0 || pendingFiles > 0 || skippedRows > 0;
   const visibleComparison =
-    comparison && scope !== null && comparison.scope === scope && comparison.fileVersion === fileVersion && !invalidated
+    comparison && scope !== null && comparison.scope === scope && comparison.fileVersion === fileVersion && !invalidated && !issuerError
       ? comparison
       : null;
   useEffect(() => {
@@ -459,6 +469,7 @@ export function InvoicesPage({
 
   async function saveConfirmations(party: ClosedInvoiceHistory['supplier'], keys: string[]) {
     if (!closing || closed || historyBusy || !keys.length) return;
+    checkHistoryIssuer(party);
     setHistoryBusy(true);
     try {
       await verifySource(true);
@@ -488,8 +499,15 @@ export function InvoicesPage({
     };
   }
 
+  function checkHistoryIssuer(party: ClosedInvoiceHistory['supplier']) {
+    if (issuerError) throw new Error(issuerError);
+    const expectedInn = savedParty?.inn ?? detectedInn;
+    if (expectedInn && party.inn !== expectedInn) throw new Error(`Укажите ИНН поставщика ${expectedInn}.`);
+  }
+
   async function saveHistory(party: ClosedInvoiceHistory['supplier'], decisions: ReadonlyMap<string, HistoryDecision>) {
     if (!closing || closed || historyBusy) return;
+    checkHistoryIssuer(party);
     setHistoryBusy(true);
     try {
       await verifySource(true);
@@ -536,7 +554,7 @@ export function InvoicesPage({
     return previous && supplier && record.orderSupplier && supplierKey(record.orderSupplier) === supplierKey(supplier)
       ? [[previous.supplier.inn, previous.supplier] as const] : [];
   }));
-  const initialParty = lastInvoiceHistoryDocuments(activeRecord)?.supplier ?? (matchingParties.size === 1 ? [...matchingParties.values()][0] : undefined);
+  const initialParty = savedParty ?? (matchingParties.size === 1 ? [...matchingParties.values()][0] : undefined);
   const orderColumns: VirtualColumn<EligibleOrder>[] = [
     {
       key: 'selected', header: 'Выбор', width: '59px',
@@ -726,6 +744,7 @@ export function InvoicesPage({
             disabled={Boolean(action) || historyBusy}
             onClick={() => openCloseHistory(compareInvoice(selectedOrders, [], skuCodes))}>Зафиксировать отказ без счёта</Button>}
           {reading && <Alert>Читаем счета…</Alert>}
+          {issuerError && <Alert tone="danger">{issuerError}</Alert>}
           {duplicateCount > 0 && <Alert>Пропущено повторных файлов: {fmtQty(duplicateCount)}.</Alert>}
           {!files.length && !reading && (
             <p className="invoice-upload-hint">{completeSelection ? 'Выберите один или несколько файлов .xlsx или .xls.' : 'Сначала отметьте заказы одного поставщика.'}</p>
@@ -741,6 +760,11 @@ export function InvoicesPage({
                     <small>{file.status === 'ready'
                       ? `${fmtQty(file.data.items.length)} поз. · ${invoiceFileAmount(file.data.items)}`
                       : file.status === 'selecting' ? 'Выберите листы' : 'Файл не прочитан'}</small>
+                    {file.status === 'ready' && <small>
+                      {file.data.issuerInns?.length
+                        ? `ИНН поставщика: ${file.data.issuerInns.join(', ')}`
+                        : 'ИНН поставщика нужно сверить вручную'}
+                    </small>}
                   </span>
                   <Button className="secondary" disabled={reading || Boolean(action)} onClick={() => removeInvoice(file)}
                     aria-label={`Удалить счёт ${file.name}`}>Удалить</Button>
@@ -816,8 +840,11 @@ export function InvoicesPage({
       )}
       </div>
       {closing && <CloseInvoiceHistoryDialog groups={closing} previous={saved?.orders ?? []}
-        initialName={initialParty?.name ?? supplier ?? ''}
-        initialInn={initialParty?.inn ?? ''}
+        initialName={(!detectedInn || detectedInn === initialParty?.inn ? initialParty?.name : undefined)
+          ?? supplier ?? ''}
+        initialInn={savedParty?.inn ?? detectedInn ?? initialParty?.inn ?? ''}
+        innReadOnly={Boolean(savedParty || detectedInn)}
+        unverifiedFileNames={unverifiedFiles.map(({ name }) => name)}
         confirmations={confirmations} noDocuments={!readyFiles.length} busy={historyBusy}
         onClose={() => setClosing(null)} onSave={saveHistory} onConfirm={saveConfirmations} />}
       {confirmation && (

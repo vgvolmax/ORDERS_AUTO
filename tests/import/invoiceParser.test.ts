@@ -248,3 +248,35 @@ it('leaves contradictory totals unresolved instead of choosing the last one', ()
   expect(parsed.payable).toBeNull();
   expect(parsed.items).toHaveLength(1);
 });
+
+describe('invoice issuer', () => {
+  const header = ['Артикул', 'Количество', 'Ед.', 'Цена'];
+  const item = ['A-1', 2, 'шт', 100];
+
+  it('recognizes seller requisites and excludes the buyer when both appear on the same row', () => {
+    const result = parseInvoiceWorkbook(workbook([sheet([
+      ['Поставщик: ООО Альфа, ИНН/КПП 7801000101/780101001', 'Покупатель: ООО Волмакс, ИНН 7700000000'],
+      header, item,
+    ])]));
+    expect(result.issuerInns).toEqual(['7801000101']);
+  });
+
+  it('uses the seller block for a separate numeric INN field and ignores an unassigned INN', () => {
+    const result = parseInvoiceWorkbook(workbook([sheet([
+      ['ИНН', 9900000000], ['Продавец', 'ООО Альфа'], ['ИНН', 7801000101],
+      ['Покупатель', 'ООО Волмакс'], ['ИНН', 7700000000], header, item,
+    ])]));
+    expect(result.issuerInns).toEqual(['7801000101']);
+  });
+
+  it('detects different issuers on selected sheets and ignores unselected sheets', () => {
+    const bytes = workbook([
+      sheet([['ИНН продавца', '7801000101'], header, item]),
+      sheet([['Поставщик: ИП Бета', 'ИНН 123456789012'], header, item]),
+    ]);
+    let options: InvoiceSheetsRequiredError | undefined;
+    try { parseInvoiceWorkbook(bytes); } catch (error) { options = error as InvoiceSheetsRequiredError; }
+    expect(selectInvoiceSheets(options!.sheets, ['Лист 1']).issuerInns).toEqual(['7801000101']);
+    expect(selectInvoiceSheets(options!.sheets, ['Лист 1', 'Лист 2']).issuerInns).toEqual(['7801000101', '123456789012']);
+  });
+});

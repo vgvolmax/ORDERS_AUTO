@@ -3475,14 +3475,20 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   await page.getByRole('button', { name: 'Удалить счёт битый.xlsx' }).click();
   const invoiceHeader = ['Код 1С', 'Артикул', 'Наименование', 'Кол-во', 'Ед.', 'Цена без скидки', 'Цена со скидкой', 'Сумма со скидкой'];
   await page.getByLabel('Файл счёта поставщика').setInputFiles([
-    workbook('счёт-1.xlsx', [invoiceHeader,
+    workbook('счёт-1.xlsx', [[`Поставщик: ${supplier}, ИНН 123456789012`], invoiceHeader,
       ['0001', 'VM-1', 'Товар 1', 6, 'шт', 120, 115, 690],
       ['', 'EXTRA', 'Лишний товар', 2, 'шт', 70, 60, 120],
     ]),
     workbook('счёт-2.xlsx', [invoiceHeader,
       ['0001', 'VM-1', 'Товар 1', 9, 'шт', 120, 115, 1034.99],
     ]),
+    workbook('счёт-другого-юрлица.xlsx', [['Продавец: ООО Другое юрлицо, ИНН 7801000101'], invoiceHeader,
+      ['0001', 'VM-1', 'Товар 1', 2, 'шт', 120, 115, 230],
+    ]),
   ]);
+  await expect(page.getByRole('alert', { name: '' }).filter({ hasText: 'В комплекте счета с разными ИНН' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Сравнить', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Удалить счёт счёт-другого-юрлица.xlsx' }).click();
   await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Результат сверки', exact: true })).toBeVisible();
   await expect(page.getByText('Дороже', { exact: true }).first()).toBeVisible();
@@ -3513,7 +3519,13 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   await expect(result.getByText('Ниже MIN', { exact: true })).toBeVisible();
   await result.getByRole('button', { name: 'Завершить сверку' }).click();
   const finish = page.getByRole('dialog', { name: 'Завершить сверку' });
-  await finish.getByLabel('ИНН поставщика').fill('123456789012');
+  const inn = finish.getByLabel('ИНН поставщика', { exact: true });
+  await expect(inn).toHaveValue('123456789012');
+  await expect(inn).toHaveAttribute('readonly', '');
+  const manualVerification = finish.getByRole('checkbox', { name: 'ИНН поставщика совпадает во всех счетах' });
+  await finish.getByRole('button', { name: 'Сохранить итог' }).click();
+  await expect(finish.getByRole('alert')).toContainText('Сверьте ИНН');
+  await manualVerification.check();
   await finish.getByLabel('Выставлено VM-1 · Ленина').fill('7');
   await finish.getByLabel('Выставлено VM-1 · Ступино').fill('8');
   await finish.getByLabel('Основание VM-1 · Ступино').selectOption('confirmed');
@@ -3524,6 +3536,26 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   const party = history.getByRole('row').filter({ hasText: '123456789012' });
   await expect(party).toContainText('1 из 2');
   await expect(party).toContainText('Ниже MIN · 1');
+  const historyOpen = history.getByRole('button', { name: `Открыть заказы: ${supplier}`, exact: true });
+  for (const [width, height] of [[1024, 768], [1280, 600], [1440, 900]] as const) {
+    await page.setViewportSize({ width, height });
+    await expect.poll(() => history.locator('.virtual-scroll').evaluate((node) =>
+      node.scrollWidth - node.clientWidth,
+    )).toBeLessThanOrEqual(1);
+    await expect(historyOpen).toBeVisible();
+    await historyOpen.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`24-invoice-history-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const from = history.getByLabel('С даты сверки');
+  await expect(from).toHaveAttribute('placeholder', 'ДД.ММ.ГГГГ');
+  await from.fill('31.02.2026');
+  await from.blur();
+  await expect(from).toHaveAttribute('aria-invalid', 'true');
+  await from.fill('01.01.2099');
+  await expect(party).toHaveCount(0);
+  await from.clear();
+  await expect(party).toBeVisible();
   const backupReady = page.waitForEvent('download');
   await history.getByRole('button', { name: 'Скачать всю историю JSON' }).click();
   const backup = await backupReady;
@@ -3563,7 +3595,7 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ступино` })).toBeVisible();
   await expect(page.getByText('Состав из выгрузки', { exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'История отказов', exact: true }).click();
-  await history.getByRole('button', { name: 'Открыть', exact: true }).click();
+  await historyOpen.click();
   const historyDetails = page.getByRole('dialog', { name: `Заказы · ${supplier}` });
   await historyDetails.getByRole('button', { name: 'Ступино', exact: true }).click();
   await expect(page.getByText('счёт-1.xlsx', { exact: true })).toBeVisible();
@@ -3571,7 +3603,17 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   await page.getByRole('button', { name: 'Переоткрыть сверку' }).click();
   await expect(page.getByText(/Сверка переоткрыта/)).toBeVisible();
   await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
-  await expect(result.getByRole('button', { name: 'Завершить сверку' })).toBeEnabled();
+  await result.getByRole('button', { name: 'Завершить сверку' }).click();
+  await expect(inn).toHaveValue('123456789012');
+  await expect(inn).toHaveAttribute('readonly', '');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Показать источники' }).click();
+  await page.getByLabel('Файл счёта поставщика').setInputFiles(
+    workbook('другой-ИНН.xlsx', [['Продавец: ООО Другое юрлицо, ИНН 7801000101'], invoiceHeader,
+      ['0001', 'VM-1', 'Товар 1', 2, 'шт', 120, 115, 230]]),
+  );
+  await expect(page.getByRole('alert').filter({ hasText: /разными ИНН|отличается от ИНН/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Сравнить', exact: true })).toBeDisabled();
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
 });

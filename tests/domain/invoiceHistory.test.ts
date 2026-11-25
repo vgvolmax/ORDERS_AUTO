@@ -3,7 +3,7 @@ import {
   buildHistoryOrders, historyOrderKey, invoiceHistoryConfirmations, prepareHistoryPositions, type InvoiceHistoryRecord,
 } from '../../src/domain/invoiceHistory';
 import { decodeInvoiceHistory, encodeInvoiceHistory, previewInvoiceHistory } from '../../src/domain/invoiceHistoryBackup';
-import { summarizeInvoiceHistory } from '../../src/domain/invoiceHistoryReport';
+import { parseInvoiceHistoryDate, summarizeInvoiceHistory } from '../../src/domain/invoiceHistoryReport';
 import { compareInvoice, type InvoiceItem } from '../../src/domain/invoices';
 import type { Order, OrderLine } from '../../src/domain/types';
 
@@ -105,5 +105,17 @@ describe('invoice history', () => {
     record.revisions.push({ kind: 'reopened', at });
     expect(previewInvoiceHistory([record], backup)).toEqual({ added: [], duplicates: 0, conflicts: ['ООО Поставщик'] });
     expect(summarizeInvoiceHistory([record], 'supplier', {})).toEqual([]);
+  });
+});
+
+
+describe('history date filter', () => {
+  it('reads Russian date order and rejects nonexistent calendar days', () => {
+    expect(parseInvoiceHistoryDate('07.12.2026')).toBe('2026-12-07');
+    expect(parseInvoiceHistoryDate('29122026')).toBe('2026-12-29');
+    expect(parseInvoiceHistoryDate('29.02.2024')).toBe('2024-02-29');
+    expect(parseInvoiceHistoryDate('29.02.2026')).toBeNull();
+    expect(parseInvoiceHistoryDate('2026-12-07')).toBeNull();
+    expect(parseInvoiceHistoryDate('')).toBe('');
   });
 });
