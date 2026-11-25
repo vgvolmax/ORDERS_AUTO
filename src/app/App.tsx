@@ -23,10 +23,12 @@ import { WorkspaceMasthead, WorkspaceSidebar } from './WorkspaceChrome';
 
 type RemoteSession = Awaited<ReturnType<OrdersDocument['loadSession']>>;
 
-function stateFromRemote({ document, workspace, catalog }: RemoteSession) {
-  return attachSupplierCatalog(workspace
+function stateFromRemote({ document, workspace, catalog, catalogRevision }: RemoteSession) {
+  const initial = workspace
     ? stateFromWorkspace(workspace)
-    : createInitialState({ workspaceId: document.id }), catalog);
+    : createInitialState({ workspaceId: document.id });
+  if (catalogRevision !== null && !initial.minMax) initial.page = 'suppliers';
+  return attachSupplierCatalog(initial, catalog);
 }
 
 export function App() {
@@ -282,6 +284,8 @@ export function App() {
   const navigation = {
     page: state.page,
     branches: state.minMax && (state.catalog || state.supplierAssignments) ? state.minMax.branches : undefined,
+    supplierAccess: Boolean(sharedSession && !sharedSession.document.workspace &&
+      (!sharedSession.catalogReadOnly || sharedSession.catalogRevision !== null)),
     onNavigate: (page: AppState['page']) => {
       if (page === 'invoices' && invoiceContext?.workspaceId !== state.workspaceId)
         setInvoiceContext({ workspaceId: state.workspaceId, sequence: 0 });
@@ -314,11 +318,33 @@ export function App() {
     team: sharedSession.document.workspace?.name ?? null,
     editable: sharedSession.document.role !== 'view',
     catalogReadOnly: sharedSession.catalogReadOnly,
+    catalogRevision: sharedSession.catalogRevision,
     sourceConnected: sharedSession.sourceConnected,
     sourceUnavailable: sharedSession.sourceUnavailable,
-    async updateCatalog(catalog: Parameters<OrdersDocument['saveCatalog']>[0]) {
-      await shared.saveCatalog(catalog);
-      refreshSession();
+    async changeCatalog(
+      change: Parameters<OrdersDocument['changeCatalog']>[0],
+      toast: string,
+      base = { catalog: state.catalog, catalogRevision: sharedSession.catalogRevision },
+    ) {
+      if (!owner || owner !== session.current) throw new Error('Справочник закрыт.');
+      pendingWrites.current++;
+      setPending((n) => n + 1);
+      try {
+        await owner.synchronize(async () => {
+          if (owner !== session.current) throw new Error('Справочник закрыт.');
+          const saved = await shared.changeCatalog(change, base);
+          if (owner !== session.current) return null;
+          setSharedSession({ ...sharedSession, ...saved });
+          return attachSupplierCatalog(owner.getState(), saved.catalog);
+        });
+        if (owner === session.current) owner.transient({
+          toast,
+          ...(change.kind === 'create' || change.kind === 'restore' ? { page: 'suppliers' } : {}),
+        });
+      } finally {
+        pendingWrites.current--;
+        setPending((n) => n - 1);
+      }
     },
     ...(sharedSession.document.workspace && { async openReport(patch: Partial<AppState>, file: WorkspaceFile) {
       const initial = attachSupplierCatalog(createInitialState({
@@ -344,18 +370,20 @@ export function App() {
       await intake.commit(patch);
     } }),
   } : undefined;
+  const viewingCatalog = state.page === 'suppliers' && sharedStore?.catalogRevision != null;
   const statusTone = pending
     ? 'busy'
     : state.storageError
       ? 'error'
-      : state.workspaceRevision < 0
+      : state.workspaceRevision < 0 && !viewingCatalog
         ? 'idle'
         : 'saved';
   const status = {
-    busy: 'Сохранение сеанса…',
+    busy: viewingCatalog ? 'Сохранение справочника…' : 'Сохранение сеанса…',
     error: 'Изменения не сохранены',
     idle: 'Начните с загрузки отчётов',
-    saved: sharedStore ? sharedStore.editable ? 'Сеанс сохранён в AppBox' : 'AppBox · Только просмотр'
+    saved: sharedStore ? !sharedStore.editable ? 'AppBox · Только просмотр'
+      : viewingCatalog ? 'Справочник сохранён в AppBox' : 'Сеанс сохранён в AppBox'
       : 'Сеанс сохранён на этом компьютере',
   }[statusTone];
 

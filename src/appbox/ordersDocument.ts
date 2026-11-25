@@ -1,7 +1,8 @@
 import {
-  applySharedCatalog, parseSharedCatalog,
+  applySharedCatalog, parseSharedCatalog, sharedCatalogFromLocal,
   type SharedSupplierCatalog,
 } from '../domain/sharedSupplierCatalog';
+import { applyCatalogChange, type CatalogBase, type CatalogChange } from '../domain/catalogChange';
 import type { InvoiceHistoryRecord } from '../domain/invoiceHistory';
 import type { SupplierCatalog } from '../domain/supplierCatalog';
 import type {
@@ -11,7 +12,7 @@ import { applyWorkspaceView, workspaceView, WorkspaceConflictError } from '../do
 import { createInitialState } from '../app/initialState';
 import {
   payloadHeaderId, readPayload, readSourcePayload, savePayload, seedPayload,
-  type WorkingDocumentBridge,
+  type WorkingDocumentBridge, type WorkingRecord,
 } from './documentValue';
 
 type EncodedFile = Omit<WorkspaceFile, 'bytes'> & { base64: string };
@@ -49,11 +50,22 @@ function isUnavailable(error: unknown): boolean {
     'code' in error && error.code === 'DOCUMENT_SOURCE_UNAVAILABLE';
 }
 
+function isWriteConflict(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error &&
+    (error.code === 'FIELD_REVISION_CHANGED' || error.code === 'RECORD_CHANGED' || error.code === 'RECORD_EXISTS');
+}
+
+function payloadRevision(records: readonly WorkingRecord[]): number | null {
+  return records.find(({ id }) => id === payloadHeaderId)?.fieldRevisions.payload ?? null;
+}
+
 export class OrdersDocument {
   private view: WorkspaceView | undefined;
   private savedHeader: number | null = null;
   private source: { id: string; revision: number } | null = null;
   private ownedCatalog = false;
+  private personalCatalog = false;
+  private savedCatalogHeader: number | null = null;
   private revokedSource = false;
   catalog: SupplierCatalog | null = null;
 
@@ -81,18 +93,20 @@ export class OrdersDocument {
     const sourceUnavailable = !linked && Boolean(this.source || snapshot.value?.catalogSource);
     const { workspace } = snapshot;
     const sku = workspace?.data.minMax?.skus ?? [];
-    const owned = !linked && !sourceUnavailable && !snapshot.document.workspace
-      ? (await readPayload<SharedSupplierCatalog>(this.api, 'catalog')).value : null;
-    const catalog = linked || owned
-      ? applySharedCatalog(null, parseSharedCatalog(linked?.value ?? owned), sku)
-      : sourceUnavailable || snapshot.document.workspace ? null : snapshot.value?.catalog ?? null;
+    const personalCatalog = !linked && !sourceUnavailable && !snapshot.document.workspace;
+    const owned = personalCatalog ? await readPayload<SharedSupplierCatalog>(this.api, 'catalog') : null;
+    const catalogRevision = owned ? payloadRevision(owned.records) : null;
+    const catalog = linked ? applySharedCatalog(null, parseSharedCatalog(linked.value), sku)
+      : owned?.value ? applySharedCatalog(null, parseSharedCatalog(owned.value))
+        : personalCatalog ? snapshot.value?.catalog ?? null : null;
     if (!catalog && (sourceUnavailable || snapshot.document.workspace) && workspace)
       delete workspace.data.supplierAssignments;
-    const header = snapshot.records.find(({ id }) => id === payloadHeaderId)?.fieldRevisions.payload ?? null;
+    const header = payloadRevision(snapshot.records);
     return {
       session: {
         document: snapshot.document, workspace, catalog, sourceUnavailable,
-        catalogReadOnly: owned !== null || source !== null,
+        catalogReadOnly: !personalCatalog || snapshot.document.role === 'view',
+        catalogRevision,
         sourceConnected: source !== null,
       },
       activate: () => {
@@ -100,7 +114,9 @@ export class OrdersDocument {
         this.savedHeader = header;
         this.revokedSource = sourceUnavailable;
         this.source = source;
-        this.ownedCatalog = owned !== null;
+        this.personalCatalog = personalCatalog;
+        this.ownedCatalog = catalogRevision !== null;
+        this.savedCatalogHeader = catalogRevision;
       },
     };
   }
@@ -122,11 +138,30 @@ export class OrdersDocument {
     }
   }
 
-  async saveCatalog(value: SharedSupplierCatalog) {
-    const previous = await readPayload<SharedSupplierCatalog>(this.api, 'catalog');
-    if (previous.document.workspace)
+  async changeCatalog(change: CatalogChange, base: CatalogBase) {
+    const work = await this.load();
+    if (work.document.workspace || this.revokedSource || work.value?.catalogSource || await this.readSource())
       throw new Error('Редактируйте справочник в исходном документе AppBox.');
-    await savePayload(this.api, 'catalog', previous, parseSharedCatalog(value));
+
+    for (let attempt = 0; ; attempt++) {
+      const snapshot = await readPayload<SharedSupplierCatalog>(this.api, 'catalog');
+      if (snapshot.document.role === 'view') throw new Error('Справочник доступен только для просмотра.');
+      const revision = payloadRevision(snapshot.records);
+      const current = snapshot.value ? applySharedCatalog(null, parseSharedCatalog(snapshot.value)) : work.value?.catalog ?? null;
+      const next = applyCatalogChange(change, { catalog: current, catalogRevision: revision }, base);
+      try {
+        const catalogRevision = next === current && revision !== null ? revision
+          : await savePayload(this.api, 'catalog', snapshot, parseSharedCatalog(sharedCatalogFromLocal(next)));
+        this.savedCatalogHeader = catalogRevision;
+        this.ownedCatalog = true;
+        this.catalog = next;
+        return { catalog: next, catalogRevision };
+      } catch (error) {
+        if (!isWriteConflict(error)) throw error;
+        if (attempt >= 2)
+          throw new WorkspaceConflictError('Справочник изменился одновременно с вашей правкой. Проверьте актуальные данные.');
+      }
+    }
   }
 
   private async catalogChanged(): Promise<boolean> {
@@ -148,8 +183,12 @@ export class OrdersDocument {
 
   async hasUpdate(checkSource = true): Promise<boolean> {
     const head = await this.api.read({ collection: 'work', limit: 1 });
-    const revision = head.records.find(({ id }) => id === payloadHeaderId)?.fieldRevisions.payload ?? null;
-    return revision !== this.savedHeader || (checkSource && await this.catalogChanged());
+    if (payloadRevision(head.records) !== this.savedHeader) return true;
+    if (!checkSource) return false;
+    if (await this.catalogChanged()) return true;
+    if (!this.personalCatalog) return false;
+    const catalog = await this.api.read({ collection: 'catalog', limit: 1 });
+    return payloadRevision(catalog.records) !== this.savedCatalogHeader;
   }
 
   setView(view: WorkspaceView) {
@@ -185,9 +224,7 @@ export class OrdersDocument {
         catalogSource: this.source?.id ?? null,
       } satisfies WorkspacePayload);
     } catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error &&
-          (error.code === 'FIELD_REVISION_CHANGED' || error.code === 'RECORD_CHANGED' ||
-           error.code === 'RECORD_EXISTS')) throw new WorkspaceConflictError();
+      if (isWriteConflict(error)) throw new WorkspaceConflictError();
       throw error;
     }
     this.view = workspaceView(workspace.data);

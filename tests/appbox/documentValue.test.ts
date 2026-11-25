@@ -4,6 +4,8 @@ import {
   payloadHeaderId, readPayload, readSourcePayload, savePayload, seedPayload,
   type Collection, type SeedRecord, type WorkingDocumentBridge,
 } from '../../src/appbox/documentValue';
+import { OrdersDocument } from '../../src/appbox/ordersDocument';
+import { type SharedSupplierCatalog } from '../../src/domain/sharedSupplierCatalog';
 
 type Command = Parameters<WorkingDocumentBridge['command']>[0];
 type RecordValue = Awaited<ReturnType<WorkingDocumentBridge['read']>>['records'][number];
@@ -21,6 +23,8 @@ function memoryDocument() {
     fail: undefined as ((input: Command, phase: 'before' | 'after') => void | Promise<void>) | undefined,
     turnPage: undefined as (() => void) | undefined,
     role: 'owner' as 'owner' | 'edit' | 'view',
+    linked: true,
+    team: false,
   };
   const collectionRows = (collection: Collection) => {
     if (!rows.has(collection)) rows.set(collection, new Map());
@@ -37,7 +41,10 @@ function memoryDocument() {
       if (query.revision !== undefined && query.revision !== revision)
         throw problem(409, 'DOCUMENT_CHANGED');
       const result = page(query.collection, query.after);
-      const document = { id: 'doc', title: 'Закупка', role: state.role, revision };
+      const document = {
+        id: 'doc', title: 'Закупка', role: state.role, revision,
+        ...(state.team && { workspace: { id: 'team', name: 'Отдел закупки' } }),
+      };
       if (result.next) state.turnPage?.();
       return { document, records: result.items, next: result.next };
     },
@@ -78,6 +85,7 @@ function memoryDocument() {
       return outcome;
     },
     async source(_name, input = {}) {
+      if (!state.linked) throw problem(404, 'DOCUMENT_SOURCE_UNAVAILABLE');
       if (input.after && (input.revision !== revision || input.sourceId !== 'supplier-source'))
         throw problem(409, 'DOCUMENT_CHANGED');
       const result = page('catalog', input.after);
@@ -207,6 +215,109 @@ describe('Orders Auto working document payloads', () => {
     doc.state.role = 'view';
     const previous = await readPayload(doc.api, 'work');
     await expect(savePayload(doc.api, 'work', previous, report)).rejects.toThrow(/просмотр/i);
+    expect(doc.commands).toEqual([]);
+  });
+});
+
+const catalog: SharedSupplierCatalog = {
+  kind: 'volmax-supplier-catalog',
+  schemaVersion: 1,
+  suppliers: ['Поставщик А', 'Поставщик Б'],
+  products: [
+    { code: '001', article: null, name: 'Первый товар' },
+    { code: '002', article: null, name: 'Второй товар' },
+  ],
+  assignments: [],
+};
+
+async function catalogDocument(value = catalog) {
+  const doc = memoryDocument();
+  doc.state.linked = false;
+  doc.seed(await seedPayload('catalog', value));
+  return doc;
+}
+
+describe('AppBox supplier catalog editing', () => {
+  it('creates an editable catalog in AppBox without a JSON file', async () => {
+    const doc = memoryDocument();
+    doc.state.linked = false;
+    const orders = new OrdersDocument(doc.api);
+    const before = await orders.loadSession();
+    expect(before.catalog).toBeNull();
+    const created = await orders.changeCatalog({ kind: 'create' }, before);
+    expect(created.catalog.products).toEqual([]);
+    expect(await readPayload(doc.api, 'catalog')).toMatchObject({
+      value: { kind: 'volmax-supplier-catalog', products: [], assignments: [] },
+    });
+  });
+
+  it('publishes supplier additions and merges independent assignment edits from two editors', async () => {
+    const doc = await catalogDocument();
+    const a = new OrdersDocument(doc.api);
+    const b = new OrdersDocument(doc.api);
+    const beforeA = await a.loadSession();
+    const beforeB = await b.loadSession();
+    await Promise.all([
+      a.changeCatalog({ kind: 'assign', command: { kind: 'set-primary', skuCodes: ['001'], supplier: 'Поставщик А' } }, beforeA),
+      b.changeCatalog({ kind: 'assign', command: { kind: 'set-primary', skuCodes: ['002'], supplier: 'Поставщик Б' } }, beforeB),
+    ]);
+    await a.changeCatalog({ kind: 'add-supplier', name: 'Новый поставщик' }, await a.loadSession());
+    doc.state.linked = true;
+    expect((await readSourcePayload<SharedSupplierCatalog>(doc.api, 'supplier_catalog')).value).toMatchObject({
+      suppliers: ['Поставщик А', 'Поставщик Б', 'Новый поставщик'],
+      assignments: expect.arrayContaining([
+        { skuCode: '001', primary: 'Поставщик А', additional: [] },
+        { skuCode: '002', primary: 'Поставщик Б', additional: [] },
+      ]),
+    });
+  });
+
+  it('keeps the first competing change on the same SKU and rejects a stale full backup restore', async () => {
+    const doc = await catalogDocument();
+    const a = new OrdersDocument(doc.api);
+    const b = new OrdersDocument(doc.api);
+    const beforeA = await a.loadSession();
+    const beforeB = await b.loadSession();
+    await a.changeCatalog({ kind: 'assign', command: { kind: 'set-primary', skuCodes: ['001'], supplier: 'Поставщик А' } }, beforeA);
+    expect(await b.hasUpdate()).toBe(true);
+    await expect(b.changeCatalog({
+      kind: 'assign', command: { kind: 'set-primary', skuCodes: ['001'], supplier: 'Поставщик Б' },
+    }, beforeB)).rejects.toThrow(/связи.*изменились/i);
+    await expect(b.changeCatalog({ kind: 'restore', backup: catalog }, beforeB)).rejects.toThrow(/справочник.*изменился/i);
+    expect((await readPayload<SharedSupplierCatalog>(doc.api, 'catalog')).value?.assignments).toEqual([
+      { skuCode: '001', primary: 'Поставщик А', additional: [] },
+    ]);
+  });
+
+  it('edits the catalog card by exact 1C code, preserves unrelated links and restores a backup', async () => {
+    const doc = await catalogDocument({
+      ...catalog,
+      assignments: [{ skuCode: '001', primary: 'Поставщик А', additional: [] }],
+    });
+    const orders = new OrdersDocument(doc.api);
+    const before = await orders.loadSession();
+    const product = { code: '001', name: 'Новое наименование', article: 'ART-1', unit: 'упак' };
+    await expect(orders.changeCatalog({ kind: 'save-product', product, isNew: true }, before))
+      .rejects.toThrow(/уже есть/i);
+    const saved = await orders.changeCatalog({ kind: 'save-product', product, isNew: false }, before);
+    expect((await readPayload<SharedSupplierCatalog>(doc.api, 'catalog')).value).toMatchObject({
+      products: [product, catalog.products[1]],
+      assignments: before.catalog!.assignments,
+    });
+    await orders.changeCatalog({ kind: 'restore', backup: catalog }, saved);
+    expect((await readPayload<SharedSupplierCatalog>(doc.api, 'catalog')).value).toEqual(catalog);
+  });
+
+  it('prevents writes from a linked workspace and a viewer of the source', async () => {
+    const doc = await catalogDocument();
+    const orders = new OrdersDocument(doc.api);
+    const command = { kind: 'add-supplier', name: 'Новый поставщик' } as const;
+    doc.state.role = 'view';
+    await expect(orders.changeCatalog(command, await orders.loadSession())).rejects.toThrow(/просмотр/i);
+    doc.state.role = 'edit';
+    doc.state.team = true;
+    doc.state.linked = true;
+    await expect(orders.changeCatalog(command, await orders.loadSession())).rejects.toThrow(/исходном документе/i);
     expect(doc.commands).toEqual([]);
   });
 });

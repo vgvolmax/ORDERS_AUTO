@@ -4,6 +4,7 @@ import { useDerivedState } from '../../app/useDerivedState';
 import { usePreference } from '../../app/usePreference';
 import { PurchasingDataAlert } from '../../components/PurchasingDataAlert';
 import { Button, EmptyState } from '../../components/ui';
+import type { CatalogBase } from '../../domain/catalogChange';
 import {
   applySupplierAssignmentChange,
   type SupplierAssignment,
@@ -12,7 +13,8 @@ import {
 import { SUPPLIER_POOL } from '../../domain/supplierPool';
 import { currentCatalogLink } from '../../appbox/supplierCatalogBridge';
 import { SharedCatalogPanel } from './SharedCatalogPanel';
-import { changeCatalogAssignment } from '../../domain/supplierCatalog';
+import { changeCatalogAssignment, type CatalogProduct } from '../../domain/supplierCatalog';
+import { CatalogProductDialog } from './CatalogProductDialog';
 import { BulkSupplierDialog, ProductSupplierDialog } from './SupplierAssignmentDialogs';
 import {
   SupplierProducts,
@@ -30,17 +32,18 @@ interface SupplierSelection {
 }
 
 export function SuppliersPage() {
-  const { state } = useStore();
+  const { state, shared } = useStore();
+  const catalogMode = shared?.catalogRevision != null;
   return (
     <main className="suppliers-page compact-workspace">
       <header>
         <p className="eyebrow">Закупка</p>
         <h1>Поставщики</h1>
-        <p>Постоянный справочник товаров и поставщиков. Назначения сохраняются независимо от рабочих сеансов.</p>
+        {!catalogMode && <p>Постоянный справочник товаров и поставщиков. Назначения сохраняются независимо от рабочих сеансов.</p>}
       </header>
       <SharedCatalogPanel compact />
       {!state.catalog && state.supplierAssignments === undefined ? (
-        <EmptyState>Загрузите отчёты, чтобы открыть каталог и связи поставщиков.</EmptyState>
+        !shared && <EmptyState>Загрузите отчёты, чтобы открыть каталог и связи поставщиков.</EmptyState>
       ) : (
         <SupplierWorkspace key={state.workspaceId} assignments={state.catalog?.assignments ?? state.supplierAssignments ?? []} />
       )}
@@ -54,6 +57,8 @@ function SupplierWorkspace({
   assignments: SupplierAssignment[];
 }) {
   const { state, set, commit, shared } = useStore();
+  const catalogMode = shared?.catalogRevision != null;
+  const readOnly = shared?.catalogReadOnly ?? (currentCatalogLink()?.document?.canEdit === false);
   const derived = useDerivedState(state);
   const [view, setView] = useState<'products' | 'inactive' | 'suppliers'>('products');
   const [filters, setFilters] = usePreference<ProductFilters>(
@@ -69,6 +74,7 @@ function SupplierWorkspace({
     null,
   );
   const [dialog, setDialog] = useState<AssignmentDialog | null>(null);
+  const [productEditor, setProductEditor] = useState<{ product?: CatalogProduct; base: CatalogBase } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const savingRef = useRef(false);
@@ -90,9 +96,9 @@ function SupplierWorkspace({
   );
   const selectedCodes = useMemo(
     () => selection?.snapshotId === state.snapshotId
-      ? selection.skuCodes.filter((skuCode) => productsByCode.has(skuCode) && currentCodes.has(skuCode))
+    ? selection.skuCodes.filter((skuCode) => productsByCode.has(skuCode) && (catalogMode || currentCodes.has(skuCode)))
       : [],
-    [productsByCode, currentCodes, selection, state.snapshotId],
+    [productsByCode, currentCodes, catalogMode, selection, state.snapshotId],
   );
   const demandCodes = useMemo(
     () => new Set(derived.purchaseDemand.filter((line) => line.purchaseQty > 0).map((line) => line.skuCode)),
@@ -116,7 +122,7 @@ function SupplierWorkspace({
 
   async function save(command: SupplierAssignmentCommand, success: string) {
     if (savingRef.current) return false;
-    if ((shared ? shared.catalogReadOnly || shared.sourceUnavailable || !shared.editable : currentCatalogLink()?.document?.canEdit === false)) {
+    if (readOnly) {
       setError('Общий документ доступен только для чтения. Изменение связей запрещено.');
       return false;
     }
@@ -124,6 +130,10 @@ function SupplierWorkspace({
     setSaving(true);
     setError('');
     try {
+      if (shared && catalogMode) {
+        await shared.changeCatalog({ kind: 'assign', command }, success);
+        return true;
+      }
       const codes = 'skuCodes' in command ? command.skuCodes : [command.skuCode];
       const patch = (current: typeof state) => {
         if (
@@ -157,13 +167,21 @@ function SupplierWorkspace({
       if (commit) await commit(patch);
       else set(patch(state));
       return true;
-    } catch {
-      setError('Не удалось сохранить связи поставщиков. Повторите действие.');
+    } catch (error) {
+      setError(shared && error instanceof Error ? error.message : 'Не удалось сохранить связи поставщиков. Повторите действие.');
       return false;
     } finally {
       savingRef.current = false;
       setSaving(false);
     }
+  }
+
+  function editProduct(product?: CatalogProduct) {
+    if (!shared || !catalogMode || readOnly) return;
+    setProductEditor({
+      ...(product && { product }),
+      base: { catalog: state.catalog, catalogRevision: shared.catalogRevision },
+    });
   }
 
   function showProducts(supplier: string, role: SupplierRole) {
@@ -175,23 +193,27 @@ function SupplierWorkspace({
 
   return (
     <>
-      <PurchasingDataAlert issues={derived.projection.dataIssues} />
+      {!catalogMode && <PurchasingDataAlert issues={derived.projection.dataIssues} />}
       <div className="workspace-tabs supplier-views" role="group" aria-label="Представления поставщиков">
         <button ref={productTab} aria-pressed={view === 'products'} onClick={() => setView('products')}>
-          Товары · {state.minMax ? currentCodes.size : '—'}
+          Товары · {catalogMode ? products?.length ?? 0 : state.minMax ? currentCodes.size : '—'}
         </button>
-        <button aria-pressed={view === 'inactive'} onClick={() => setView('inactive')}>
+        {!catalogMode && <button aria-pressed={view === 'inactive'} onClick={() => setView('inactive')}>
           Неактивные · {state.minMax ? inactiveCount : '—'}
-        </button>
+        </button>}
         <button aria-pressed={view === 'suppliers'} onClick={() => setView('suppliers')}>
           По поставщикам
         </button>
       </div>
       <div className="supplier-view-panels">
+        {catalogMode && !readOnly && view !== 'suppliers' && (
+          <Button className="secondary" onClick={() => editProduct()}>Добавить товар</Button>
+        )}
         <SupplierProducts
           active={view !== 'suppliers'}
-          mode={view === 'inactive' ? 'inactive' : 'current'}
+          mode={catalogMode ? 'catalog' : view === 'inactive' ? 'inactive' : 'current'}
           hasMinMax={state.minMax !== null}
+          {...(shared && { catalogReadOnly: shared.catalogReadOnly })}
           products={products ?? []}
           currentCodes={currentCodes}
           suppliers={suppliers}
@@ -202,12 +224,14 @@ function SupplierWorkspace({
           selectedCodes={selectedCodes}
           onSelect={select}
           onOpenProduct={(skuCode) => openDialog({ skuCode })}
+          {...(catalogMode && !readOnly && { onEditProduct: editProduct })}
           onOpenBulk={(visibleCodes) => openDialog({ skuCodes: selectedCodes, visibleCodes })}
         />
         {view === 'suppliers' && (
           <>
-            <p className="muted">Количество связей — по всему справочнику, суммы закупки — по MIN/MAX выбранного сеанса. Неактивные товары доступны в отдельной вкладке.</p>
+            {!catalogMode && <p className="muted">Количество связей — по всему справочнику, суммы закупки — по MIN/MAX выбранного сеанса. Неактивные товары доступны в отдельной вкладке.</p>}
             <SupplierRoster
+              catalogMode={catalogMode}
               catalogAssignments={assignmentsByCode}
               productsByCode={productsByCode}
               orders={derived.projection.orders}
@@ -217,6 +241,16 @@ function SupplierWorkspace({
           </>
         )}
       </div>
+      {productEditor && shared && (
+        <CatalogProductDialog
+          product={productEditor.product}
+          onSave={(product) => shared.changeCatalog(
+            { kind: 'save-product', product, isNew: !productEditor.product },
+            'Карточка товара сохранена.', productEditor.base,
+          )}
+          onClose={() => setProductEditor(null)}
+        />
+      )}
       {product && (
         <ProductSupplierDialog
           product={product}

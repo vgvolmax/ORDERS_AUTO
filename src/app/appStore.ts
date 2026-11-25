@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { SharedSupplierCatalog } from '../domain/sharedSupplierCatalog';
+import type { CatalogBase, CatalogChange } from '../domain/catalogChange';
 import type { SupplierCatalog } from '../domain/supplierCatalog';
 import type {
   WorkspaceData,
@@ -36,9 +36,10 @@ export interface Store {
     team: string | null;
     editable: boolean;
     catalogReadOnly: boolean;
+    catalogRevision: number | null;
     sourceConnected: boolean;
     sourceUnavailable: boolean;
-    updateCatalog: (catalog: SharedSupplierCatalog) => Promise<void>;
+    changeCatalog: (change: CatalogChange, toast: string, base?: CatalogBase) => Promise<void>;
     openReport?: (patch: Partial<AppState>, file: WorkspaceFile) => Promise<void>;
   };
 }

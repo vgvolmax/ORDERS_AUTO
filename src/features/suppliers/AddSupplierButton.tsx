@@ -26,7 +26,9 @@ export function AddSupplierButton() {
     setSaving(true);
     setError('');
     try {
-      await commit((current) => {
+      if (shared && shared.catalogRevision !== null) {
+        await shared.changeCatalog({ kind: 'add-supplier', name }, 'Поставщик добавлен в справочник.');
+      } else await commit((current) => {
         if (currentCatalogLink()?.document?.canEdit === false)
           throw new Error('Общий справочник доступен только для чтения.');
         if (!current.catalog || current.workspaceId !== state.workspaceId)
