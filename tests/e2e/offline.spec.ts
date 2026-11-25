@@ -3562,6 +3562,16 @@ test('E2E-24 reconciles a supplier invoice against reviewed orders and an archiv
   await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ленина` })).toBeVisible();
   await expect(page.getByRole('checkbox', { name: `Выбрать заказ ${supplier} — Ступино` })).toBeVisible();
   await expect(page.getByText('Состав из выгрузки', { exact: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'История отказов', exact: true }).click();
+  await history.getByRole('button', { name: 'Открыть', exact: true }).click();
+  const historyDetails = page.getByRole('dialog', { name: `Заказы · ${supplier}` });
+  await historyDetails.getByRole('button', { name: 'Ступино', exact: true }).click();
+  await expect(page.getByText('счёт-1.xlsx', { exact: true })).toBeVisible();
+  await expect(page.getByText('счёт-2.xlsx', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Переоткрыть сверку' }).click();
+  await expect(page.getByText(/Сверка переоткрыта/)).toBeVisible();
+  await page.getByRole('button', { name: 'Сравнить', exact: true }).click();
+  await expect(result.getByRole('button', { name: 'Завершить сверку' })).toBeEnabled();
   expect(evidence.pageErrors).toEqual([]);
   expect(evidence.remoteRequests).toEqual([]);
 });
