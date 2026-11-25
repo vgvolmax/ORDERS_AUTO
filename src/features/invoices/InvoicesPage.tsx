@@ -67,6 +67,7 @@ type Confirmation = { message: string; label: string; run: () => void };
 
 const noOrders: readonly string[] = [];
 const noHistory: InvoiceHistoryRecord[] = [];
+const sameInvoiceBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, index) => byte === b[index]);
 const noDemand: readonly { skuCode: string; branch: string; purchaseStatus: StockStatus }[] = [];
 const stockKey = (branch: string, skuCode: string) => JSON.stringify([normalizeKey(branch), skuCode]);
 
@@ -89,6 +90,7 @@ export function InvoicesPage({
   const [closing, setClosing] = useState<ReturnType<typeof prepareHistoryPositions> | null>(null);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyNotice, setHistoryNotice] = useState('');
+  const [loadedHistoryId, setLoadedHistoryId] = useState('');
   const [resume, setResume] = useState<InvoiceHistoryRecord | null>(null);
   const [inputsOpen, setInputsOpen] = useState(true);
   const resultHeading = useRef<HTMLHeadingElement>(null);
@@ -137,6 +139,8 @@ export function InvoicesPage({
   const saved = lastClosedInvoiceHistory(activeRecord);
   const confirmations = useMemo(() => invoiceHistoryConfirmations(activeRecord), [activeRecord]);
   const closed = activeRecord?.revisions.at(-1)?.kind === 'closed';
+  const hasArchivedFiles = Boolean(lastInvoiceHistoryDocuments(activeRecord)?.documents.length);
+  const pendingArchivedFiles = hasArchivedFiles && loadedHistoryId !== historyId;
   const stockStatus = useMemo(() => new Map(currentDemand.map((line) => [
     stockKey(line.branch, line.skuCode), line.purchaseStatus,
   ])), [currentDemand]);
@@ -187,10 +191,14 @@ export function InvoicesPage({
     }
     try {
       const current = ++fileSequence.current;
-      setFiles((lastInvoiceHistoryDocuments(resume)?.documents ?? []).map((file, index) =>
-        openArchivedInvoiceFile(file, `${current}:${index}`)));
+      const archivedFiles = (lastInvoiceHistoryDocuments(resume)?.documents ?? []).map((file, index) =>
+        openArchivedInvoiceFile(file, `${current}:${index}`));
+      setFiles((existing) => [...archivedFiles, ...existing.filter((file) =>
+        file.status === 'failed' || !archivedFiles.some((archived) => sameInvoiceBytes(archived.bytes, file.bytes)))]);
+      setLoadedHistoryId(resume.id);
     } catch {
-      setActionError('Не удалось открыть сохранённые счета. Загрузите полный комплект заново.');
+      setLoadedHistoryId(resume.id);
+      setActionError('Не удалось открыть сохранённые счета. Скачайте их из истории и загрузите полный комплект вручную.');
     }
   }, [resume, sourceId, loading, completeSelection]);
 
@@ -256,6 +264,7 @@ export function InvoicesPage({
     setFiles([]);
     setReading(false);
     setDuplicateCount(0);
+    setLoadedHistoryId('');
   }
 
   function withConfirmation(message: string, label: string, run: () => void) {
@@ -314,8 +323,7 @@ export function InvoicesPage({
     for (const file of parsed) {
       if (!file) continue;
       if (file.status !== 'failed' && next.some((existing) =>
-        existing.status !== 'failed' && existing.bytes.length === file.bytes.length &&
-        existing.bytes.every((byte, index) => byte === file.bytes[index]))) {
+        existing.status !== 'failed' && sameInvoiceBytes(existing.bytes, file.bytes))) {
         duplicates++;
       } else next.push(file);
     }
@@ -453,7 +461,7 @@ export function InvoicesPage({
     if (!closing || closed || historyBusy || !keys.length) return;
     setHistoryBusy(true);
     try {
-      await verifySource();
+      await verifySource(true);
       const selected = new Set(keys);
       const event: ConfirmedInvoiceHistory = {
         kind: 'confirmed', at: new Date().toISOString(), supplier: party,
@@ -462,6 +470,7 @@ export function InvoicesPage({
           .map(({ key, stockStatus }) => ({ key, stockStatus }))),
       };
       setRecords(await appendInvoiceHistory(makeHistoryRecord(event), activeRecord?.revisions.length ?? 0));
+      setLoadedHistoryId(historyId);
       setClosing(null);
       setHistoryNotice('Подтверждённые отказы сохранены. Завершите сверку после получения всех счетов.');
     } catch (failure) {
@@ -483,7 +492,7 @@ export function InvoicesPage({
     if (!closing || closed || historyBusy) return;
     setHistoryBusy(true);
     try {
-      await verifySource();
+      await verifySource(true);
       const at = new Date().toISOString();
       const event: ClosedInvoiceHistory = {
         kind: 'closed', at, supplier: party,
@@ -491,6 +500,7 @@ export function InvoicesPage({
         orders: buildHistoryOrders(selectedOrders, closing, decisions, at, saved?.orders, confirmations),
       };
       setRecords(await appendInvoiceHistory(makeHistoryRecord(event), activeRecord?.revisions.length ?? 0));
+      setLoadedHistoryId(historyId);
       setClosing(null);
       setHistoryNotice('Итог сверки сохранён в истории.');
     } catch (failure) {
@@ -511,6 +521,7 @@ export function InvoicesPage({
         ...activeRecord, revisions: [...activeRecord.revisions, { kind: 'reopened', at }],
       };
       setRecords(await appendInvoiceHistory(record, activeRecord.revisions.length));
+      if (pendingArchivedFiles) setResume(record);
       setHistoryNotice('Сверка переоткрыта. Проверьте весь комплект и сохраните новый итог.');
     } catch (failure) {
       setActionError(failure instanceof Error ? failure.message : 'Не удалось переоткрыть сверку.');
@@ -711,7 +722,7 @@ export function InvoicesPage({
               <BrandIcon name="swap" /> {action === 'Сверка…' ? action : 'Сравнить'}
             </Button>
           </div>
-          {completeSelection && !files.length && !reading && !closed && <Button className="secondary"
+          {completeSelection && !files.length && !reading && !closed && !hasArchivedFiles && <Button className="secondary"
             disabled={Boolean(action) || historyBusy}
             onClick={() => openCloseHistory(compareInvoice(selectedOrders, [], skuCodes))}>Зафиксировать отказ без счёта</Button>}
           {reading && <Alert>Читаем счета…</Alert>}
@@ -772,6 +783,11 @@ export function InvoicesPage({
         <Button className="secondary" disabled={historyBusy || Boolean(action)}
           onClick={() => void reopenHistory()}>Переоткрыть сверку</Button>
       </Alert>}
+      {!closed && pendingArchivedFiles && activeRecord && <Alert>
+        В истории есть счета по выбранным заказам.{' '}
+        <Button className="secondary" disabled={reading || Boolean(action) || historyBusy}
+          onClick={() => setResume(activeRecord)}>Загрузить сохранённые счета</Button>
+      </Alert>}
       {actionError && <Alert tone="danger">{actionError}</Alert>}
       {visibleComparison && (
         <InvoiceResults
@@ -794,7 +810,7 @@ export function InvoicesPage({
           onExported={() => setExportedDraft(visibleComparison)}
           confirmReplace={withConfirmation}
           currentDeficits={currentDeficits}
-          historyAction={!closed && <Button disabled={incomplete || historyBusy || Boolean(action)}
+          historyAction={!closed && <Button disabled={incomplete || pendingArchivedFiles || historyBusy || Boolean(action)}
             onClick={() => openCloseHistory(visibleComparison.rows)}>Завершить сверку</Button>}
         />
       )}

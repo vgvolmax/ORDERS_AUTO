@@ -50,7 +50,7 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
     .sort((a, b) => b[ranking] - a[ranking] || b.affectedOrders - a.affectedOrders ||
       b.orders - a.orders || a.name.localeCompare(b.name, 'ru', { numeric: true })), [records, view, filters, minimum, ranking]);
   const preview = restore ? previewInvoiceHistory(records, restore) : null;
-  const reopened = records.filter((record) => record.revisions.at(-1)?.kind !== 'closed');
+  const unfinished = records.filter((record) => record.revisions.at(-1)?.kind !== 'closed');
   const openBreakdown = (row: InvoiceHistorySummary) => {
     if (filters.inn && filters.sku) setDetail(row);
     else if (view === 'supplier') {
@@ -172,9 +172,9 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
     </div>
     <VirtualTable rows={summaries} columns={columns} getRowKey={(row) => row.key} maxHeight="min(55vh, 600px)"
       emptyMessage={records.length ? 'По выбранным условиям завершённых сверок нет.' : 'Завершите первую сверку, чтобы появилась история.'} />
-    {reopened.length > 0 && <details>
-      <summary>Незавершённые сверки ({reopened.length})</summary>
-      <ul>{reopened.map((record) => <li key={record.id}>
+    {unfinished.length > 0 && <details>
+      <summary>Незавершённые сверки ({unfinished.length})</summary>
+      <ul>{unfinished.map((record) => <li key={record.id}>
         <button type="button" className="invoice-history-link" onClick={() => onOpen(record)}>
           {lastInvoiceHistoryDocuments(record)?.supplier.name} · {record.orderIds.length} заказов · {date(record.revisions.at(-1)!.at)}
         </button>
@@ -220,7 +220,11 @@ function HistoryDetails({ summary, onClose, onOpen }: {
       </div> },
     { key: 'files', header: 'Счета комплекта', width: 'minmax(150px, 1fr)', render: ({ revision, record }) =>
       <div className="invoice-identity">
-        {revision.documents.length ? revision.documents.map((file, index) => <small key={index}>{file.name}</small>) : <small>Без счёта</small>}
+        {revision.documents.length ? revision.documents.map((file, index) =>
+          <button type="button" key={index} className="invoice-history-link" onClick={() =>
+            save(new Blob([Uint8Array.from(atob(file.base64), (char) => char.charCodeAt(0))]), file.name)}>
+            {file.name}
+          </button>) : <small>Без счёта</small>}
         {record.revisions.filter(({ kind }) => kind === 'closed').length > 1 &&
           <small>Версий сверки: {record.revisions.filter(({ kind }) => kind === 'closed').length}</small>}
       </div> },

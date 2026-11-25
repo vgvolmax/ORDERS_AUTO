@@ -80,11 +80,11 @@ export function useInvoiceOrders(initialSourceId?: string, basis: InvoiceOrderBa
     loading: Boolean(archiveId && !selectedArchive),
     error: selectedArchive?.error ?? '',
     historyError,
-    verifySource: async () => {
+    verifySource: async (checkCurrentStock = false) => {
       if (state.catalog && (await loadSupplierCatalog())?.revision !== state.catalog.revision) {
         throw new Error('Справочник изменился. Обновите страницу и повторите сверку.');
       }
-      if (archiveId) return;
+      if (archiveId && !checkCurrentStock) return;
       const active = await readActiveWorkspaceRevision();
       if (active?.workspaceId !== currentId || active.revision !== currentRevision) {
         throw new Error('Сеанс изменился. Обновите страницу и выберите заказы заново.');
