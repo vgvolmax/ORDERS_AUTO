@@ -1,3 +1,4 @@
+import { ordersDocument } from '../appbox/ordersDocument';
 import { db, type WorkspaceRecord, type WorkspaceSources } from './db';
 import type { SupplierCatalog } from '../domain/supplierCatalog';
 import { applyWorkspaceView, workspaceView, type WorkspaceView } from '../domain/workspace';
@@ -36,6 +37,11 @@ function hydrate(
 }
 
 export async function loadWorkspace(id: string): Promise<StoredWorkspace | null> {
+  const shared = ordersDocument();
+  if (shared) {
+    const { workspace } = await shared.load();
+    return workspace?.workspaceId === id ? workspace : null;
+  }
   const tx = (await db()).transaction(['workspaces', 'workspaceSources', 'workspaceViews']);
   const [record, sources, view] = await Promise.all([
     tx.objectStore('workspaces').get(id),
@@ -47,6 +53,8 @@ export async function loadWorkspace(id: string): Promise<StoredWorkspace | null>
 }
 
 export async function loadActiveWorkspace(): Promise<StoredWorkspace | null> {
+  const shared = ordersDocument();
+  if (shared) return (await shared.load()).workspace;
   const tx = (await db()).transaction(['workspaceMeta', 'workspaces', 'workspaceSources', 'workspaceViews']);
   const active = await tx.objectStore('workspaceMeta').get('main');
   if (!active) {
@@ -101,6 +109,11 @@ function workspaceConflict(): Error {
 }
 
 export async function saveWorkspaceView(id: string, previous: WorkspaceView, next: WorkspaceView): Promise<void> {
+  const shared = ordersDocument();
+  if (shared) {
+    shared.setView(next);
+    return;
+  }
   const tx = (await db()).transaction(['workspaceMeta', 'workspaces', 'workspaceViews'], 'readwrite');
   void tx.done.catch(() => undefined);
   const active = await tx.objectStore('workspaceMeta').get('main');
@@ -113,14 +126,31 @@ export async function saveWorkspaceView(id: string, previous: WorkspaceView, nex
   await tx.done;
 }
 export async function readActiveWorkspaceRevision(): Promise<ActiveWorkspace | null> {
+  const shared = ordersDocument();
+  if (shared) {
+    await shared.checkCatalog();
+    const { workspace } = await shared.load();
+    return workspace ? { workspaceId: workspace.workspaceId, revision: workspace.revision } : null;
+  }
   return (await (await db()).get('workspaceMeta', 'main')) ?? null;
 }
 export async function loadWorkspaceFile(
   id: string,
 ): Promise<WorkspaceFile | null> {
+  const shared = ordersDocument();
+  if (shared) return shared.loadFile(id);
   return (await (await db()).get('workspaceFiles', id)) ?? null;
 }
 export async function listWorkspaces(): Promise<WorkspaceMetadata[]> {
+  const shared = ordersDocument();
+  if (shared) {
+    const { workspace } = await shared.load();
+    return workspace ? [{
+      workspaceId: workspace.workspaceId, revision: workspace.revision, snapshotId: workspace.snapshotId,
+      createdAt: workspace.createdAt, updatedAt: workspace.updatedAt,
+      minMaxFileName: workspace.data.minMaxFileName, supplierFileName: workspace.data.supplierFileName,
+    }] : [];
+  }
   return (await (await db()).getAll('workspaces'))
     .map((w) => {
       checked(w);
@@ -150,6 +180,8 @@ export async function saveWorkspace(
   options?: WorkspaceSaveOptions,
 ): Promise<void> {
   checked(value);
+  const shared = ordersDocument();
+  if (shared) return shared.save(value, expectedRevision, files, options?.catalog?.value);
   if (value.revision !== expectedRevision + 1)
     throw new Error('WORKSPACE_CONFLICT');
   const tx = (await db()).transaction(

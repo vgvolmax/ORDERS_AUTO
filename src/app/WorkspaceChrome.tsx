@@ -26,6 +26,7 @@ const sections = [
 type Navigation = {
   page: Page;
   branches: readonly string[] | undefined;
+  supplierAccess?: boolean;
   onNavigate: (page: Page) => void;
   onImport: () => void;
 };
@@ -33,6 +34,7 @@ type Navigation = {
 export function WorkspaceSidebar({
   page,
   branches,
+  supplierAccess,
   onNavigate,
   onImport,
 }: Navigation) {
@@ -71,6 +73,11 @@ export function WorkspaceSidebar({
             </div>
           </>
         )}
+        {!branches && supplierAccess && (
+          <button type="button" aria-current={page === 'suppliers' ? 'page' : undefined} onClick={() => onNavigate('suppliers')}>
+            <BrandIcon name="people" /> Поставщики
+          </button>
+        )}
         <div className="workspace-side-tools">
           <button
             type="button"
@@ -105,6 +112,7 @@ export function WorkspaceSidebar({
 export function WorkspaceMasthead({
   page,
   branches,
+  supplierAccess,
   onNavigate,
   onImport,
   fileName,
@@ -154,7 +162,7 @@ export function WorkspaceMasthead({
                   ? 'page'
                   : undefined
               }
-              disabled={!branches}
+              disabled={!branches && !(supplierAccess && section.page === 'suppliers')}
               onClick={() => onNavigate(section.page)}
             >
               <BrandIcon name={section.icon} /> {section.toolbar}

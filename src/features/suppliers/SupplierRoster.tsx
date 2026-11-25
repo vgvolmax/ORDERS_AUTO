@@ -18,12 +18,14 @@ export function SupplierRoster({
   orders,
   suppliers,
   onShowProducts,
+  catalogMode = false,
 }: {
   catalogAssignments: ReadonlyMap<string, SupplierAssignment>;
   productsByCode: ReadonlyMap<string, CatalogProduct>;
   orders: Order[];
   suppliers: readonly string[];
   onShowProducts: (supplier: string, role: SupplierRole) => void;
+  catalogMode?: boolean;
 }) {
   const { state, set, commit } = useStore();
   const [query, setQuery] = usePreference('suppliers:query', '');
@@ -59,7 +61,7 @@ export function SupplierRoster({
   }, [catalogAssignments, productsByCode, orders, suppliers]);
 
   const search = supplierKey(query);
-  const minimumAmount = amountFrom === '' ? null : Number(amountFrom);
+  const minimumAmount = catalogMode || amountFrom === '' ? null : Number(amountFrom);
   const visible = summaries.filter(({ supplier, total }) =>
     supplierKey(supplier).includes(search) &&
     (minimumAmount === null || (total !== null && total >= minimumAmount)),
@@ -67,7 +69,7 @@ export function SupplierRoster({
 
   return (
     <section aria-label="По поставщикам">
-      <ThresholdControls
+      {!catalogMode && <ThresholdControls
         settings={state.settings}
         onChange={async (settings) => {
           if (commit) await commit({ settings });
@@ -75,16 +77,16 @@ export function SupplierRoster({
         }}
         showBelowThreshold={showBelowThreshold}
         onShowBelowThresholdChange={setShowBelowThreshold}
-      />
+      />}
       <div className="filters compact-filters" role="group" aria-label="Фильтры поставщиков">
         <label>
           Поиск поставщика
           <SearchInput aria-label="Поиск поставщика" value={query} onValueChange={setQuery} placeholder="Название поставщика" />
         </label>
-        <label>
+        {!catalogMode && <label>
           Потребность от, ₽
           <Input type="number" min="0" value={amountFrom} onChange={(event) => setAmountFrom(event.target.value)} />
-        </label>
+        </label>}
         <AddSupplierButton />
         <small>Найдено: {visible.length} из {suppliers.length}</small>
       </div>
@@ -96,8 +98,10 @@ export function SupplierRoster({
                 <th scope="col">Поставщик</th>
                 <th scope="col" className="num">Основных товаров</th>
                 <th scope="col" className="num">Дополнительных товаров</th>
-                <th scope="col" className="num">Сумма закупки</th>
-                <th scope="col">Заказы по подразделениям</th>
+                {!catalogMode && <>
+                  <th scope="col" className="num">Сумма закупки</th>
+                  <th scope="col">Заказы по подразделениям</th>
+                </>}
               </tr>
             </thead>
             <tbody>
@@ -124,7 +128,7 @@ export function SupplierRoster({
                         onClick={() => onShowProducts(summary.supplier, 'additional')}
                       >{summary.additional}</button>
                     </td>
-                    <td className="num">
+                    {!catalogMode && <><td className="num">
                       {summary.total === null ? (
                         <span className="danger-text">
                           Сумма неизвестна
@@ -147,7 +151,7 @@ export function SupplierRoster({
                         </details>
                       ) : summary.orders.length === 0 ? 'Нет заказов' : null}
                       {hiddenOrders > 0 && <small className="threshold-warning">Скрыто ниже порога: {hiddenOrders}</small>}
-                    </td>
+                    </td></>}
                   </tr>
                 );
               })}
@@ -155,7 +159,7 @@ export function SupplierRoster({
           </table>
         </div>
       ) : <EmptyState>Нет поставщиков по выбранным фильтрам.</EmptyState>}
-      <p className="muted">Сумма закупки включает заказы ниже порога. Порог влияет на готовность заказа и видимость в списке подразделений.</p>
+      {!catalogMode && <p className="muted">Сумма закупки включает заказы ниже порога. Порог влияет на готовность заказа и видимость в списке подразделений.</p>}
     </section>
   );
 }

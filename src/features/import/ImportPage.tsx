@@ -14,7 +14,7 @@ import { collectPurchasingIssues } from '../../domain/purchasingIssues';
 import { SharedCatalogPanel } from '../suppliers/SharedCatalogPanel';
 
 export function ImportPage() {
-  const { state, set, commit, saving } = useStore();
+  const { state, set, commit, saving, shared } = useStore();
   const reads = useRef({ min: 0, sup: 0 });
   const pendingReads = useRef(new Set<'min' | 'sup'>());
   const [duplicate, setDuplicate] = useState<File | null>(null);
@@ -71,6 +71,7 @@ export function ImportPage() {
   }, [ready, state]);
 
   async function load(file: File, kind: 'min' | 'sup', startNewSession = false) {
+    if (shared && !shared.editable) return;
     const token = ++reads.current[kind],
       epoch = state.importEpoch;
     pendingReads.current.add(kind);
@@ -81,7 +82,7 @@ export function ImportPage() {
       if (reads.current[kind] !== token) return;
       const activeFile = state.rawImports.minMax;
       if (
-        kind === 'min' && !startNewSession &&
+        !shared?.openReport && kind === 'min' && !startNewSession &&
         activeFile?.parserVersion === MIN_MAX_PARSER_VERSION &&
         activeFile.size === bytes.byteLength
       ) {
@@ -124,6 +125,19 @@ export function ImportPage() {
         lastModified: file.lastModified,
         ...(kind === 'min' ? { parserVersion: MIN_MAX_PARSER_VERSION } : {}),
       };
+      if (kind === 'min' && shared?.openReport) {
+        if (reads.current[kind] !== token) return;
+        await shared.openReport({
+          minMax: result.data as NonNullable<typeof state.minMax>,
+          minMaxFileName: file.name,
+          minMaxIssues: result.issues,
+          rawImports: { minMax: ref, suppliers: null },
+          pendingFiles: [{ ...ref, bytes }],
+        }, { ...ref, bytes });
+        return;
+      }
+      if (kind === 'min' && shared && state.minMax && !shared.openReport)
+        throw new Error('Для следующего отчёта создайте другой рабочий документ AppBox.');
       const update = (current: typeof state) =>
         reads.current[kind] !== token ||
         current.importEpoch !== epoch ||
@@ -152,11 +166,13 @@ export function ImportPage() {
             };
       if (commit) await commit(update);
       else set(update);
-    } catch {
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error &&
+          error.code === 'DOCUMENT_INTAKE_CANCELLED') return;
       if (reads.current[kind] === token)
         setFailures((previous) => ({
           ...previous,
-          [kind]:
+          [kind]: shared && error instanceof Error ? error.message :
             'Не удалось прочитать или сохранить файл. Предыдущий отчёт сохранён. Повторите выбор файла.',
         }));
     } finally {
@@ -175,15 +191,17 @@ export function ImportPage() {
     <main>
       <header className="header-actions">
         <div>
-          <p className="eyebrow">Рабочий сеанс</p>
+          <p className="eyebrow">{shared ? 'Рабочий сеанс AppBox' : 'Рабочий сеанс'}</p>
           <h1>Импорт отчётов 1С</h1>
           <p>
             {resumeSetup
               ? 'Оба отчёта сохранены. Нажмите «Перейти к потребности», чтобы подготовить связи поставщиков.'
               : configured
                 ? state.minMax ? 'Для следующей недели загрузите только отчёт MIN/MAX.' : 'Справочник готов. Загрузите MIN/MAX, чтобы начать работу.'
-                : 'Загрузите MIN/MAX и подключите справочник JSON либо стартовый отчёт поставщиков.'}{' '}
-            Файлы обрабатываются только в браузере.
+                : shared?.team ? 'Загрузите MIN/MAX. Для расчёта заказов нужен справочник отдела.' :
+                  'Загрузите MIN/MAX и подключите справочник JSON либо стартовый отчёт поставщиков.'}{' '}
+            {shared ? 'Отчёт обрабатывается в браузере и сохраняется в AppBox.' :
+              'Файлы обрабатываются только в браузере.'}
           </p>
         </div>
         <Button
@@ -208,13 +226,16 @@ export function ImportPage() {
         {state.minMaxFileName && ` Новый файл не принят. Активен: ${state.minMaxFileName}.`}
       </Alert>}
       {failures.sup && <Alert tone="danger">Поставщики: {failures.sup}</Alert>}
-      {configured && (
+      {shared?.openReport ? (
+        <p>Новый MIN/MAX откроется в отдельном документе пространства «{shared.team}».
+          Повторная загрузка того же файла откроет существующий сеанс.</p>
+      ) : configured && !shared ? (
         <p>
           После успешной загрузки текущий сеанс останется в истории. Новый
           сеанс возьмёт актуальные назначения из справочника и сохранит маршруты и условия.
           Принятые перемещения, ручные количества и отметки заказов сбросятся.
         </p>
-      )}
+      ) : null}
       <div className="upload-grid">
         <section aria-label="Загрузка остатков и нормативов">
           {!configured && <h2>1. Остатки и нормативы</h2>}
@@ -224,6 +245,7 @@ export function ImportPage() {
             fileName={state.minMaxFileName}
             ready={Boolean(state.minMax)}
             busy={state.minMaxLoading}
+            locked={Boolean(shared && (!shared.editable || (!shared.openReport && state.minMax)))}
             summary={
               state.minMax
                 ? `${state.minMax.skus.length} SKU · ${state.minMax.branches.length} подразделений`
@@ -235,15 +257,15 @@ export function ImportPage() {
         </section>
         <section aria-label="Подключение поставщиков">
           {!configured && <><h2>2. Источник поставщиков</h2>
-            <p>Откройте справочник JSON или выберите стартовый Excel.</p></>}
-          {(!configured || !state.minMax) && <SharedCatalogPanel compact />}
-          <FileCard
+            {!shared?.team && <p>Откройте справочник JSON или выберите стартовый Excel.</p>}</>}
+          {(shared || !configured || !state.minMax) && <SharedCatalogPanel compact />}
+          {!shared?.team && <FileCard
             title="Отчёт поставщиков"
             accept=".xls,.xlsx"
             fileName={state.supplierFileName}
             ready={Boolean(state.suppliers)}
             busy={state.supplierLoading}
-            locked={configured}
+            locked={configured || Boolean(shared && !shared.editable)}
             catalogReady={configured && !state.suppliers}
             summary={
               state.suppliers
@@ -252,7 +274,7 @@ export function ImportPage() {
             }
             issues={state.supplierIssues}
             onFile={(file) => load(file, 'sup')}
-          />
+          />}
         </section>
       </div>
 

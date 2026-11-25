@@ -19,9 +19,16 @@ import {
   type SharedCatalogLink,
 } from '../../appbox/supplierCatalogBridge';
 
+import { AppBoxCatalogPanel } from './AppBoxCatalogPanel';
+
 const message = (error: unknown): string => error instanceof Error ? error.message : 'Операция со справочником не выполнена.';
 
 export function SharedCatalogPanel({ compact = false }: { compact?: boolean }) {
+  const { shared } = useStore();
+  return shared ? <AppBoxCatalogPanel /> : <LocalCatalogPanel compact={compact} />;
+}
+
+function LocalCatalogPanel({ compact }: { compact: boolean }) {
   const { state, commit, saving } = useStore();
   const [link, setLink] = useState<SharedCatalogLink | null>(currentCatalogLink);
   const [busy, setBusy] = useState(false);

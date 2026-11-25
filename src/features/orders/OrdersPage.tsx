@@ -1,5 +1,6 @@
 import { moneySum } from '../../domain/money';
 import type { OrderLine } from '../../domain/types';
+import { WorkspaceConflictError } from '../../domain/workspace';
 import { useMemo, useState } from 'react';
 import { orderToCsv } from '../../export/csv';
 import { canReconcileOrder } from '../../app/invoiceOrders';
@@ -34,6 +35,7 @@ import { buildSupplierWorkbook } from '../../export/supplierWorkbook';
 import { money } from '../../format/numbers';
 import { readActiveWorkspaceRevision } from '../../persistence/workspaces';
 import { OrderDrawer } from './OrderDrawer';
+import { checkOrderLines, checkOrderReview } from './orderCollaboration';
 import { SupplierOrdersDrawer } from './SupplierOrdersDrawer';
 
 type ExportMode = 'ALL' | 'REVIEWED';
@@ -332,11 +334,13 @@ export function OrdersPage({
         ].filter(Boolean);
         return flags.length ? { ...change, toast: `${skuCode}: ${flags.join(' · ')}.` } : change;
       };
-      if (commit) await commit(patch);
+      if (commit) await commit(patch, checkOrderLines([order.id], skuCode));
       else set(patch);
     } catch (error) {
-      console.error('Failed to edit order quantity', error);
-      set({ toast: 'Не удалось изменить количество в заказе.' });
+      if (!(error instanceof WorkspaceConflictError)) {
+        console.error('Failed to edit order quantity', error);
+        set({ toast: 'Не удалось изменить количество в заказе.' });
+      }
       throw error;
     }
   }
@@ -374,14 +378,15 @@ export function OrdersPage({
         return { ...patch, toast: `${skuCode}: ${excluded ? 'исключён' : 'восстановлен'}. Заказов изменено: ${changed}. Проверок снято: ${cleared}.` };
       };
       setOrderError('');
-      if (commit) await commit(patch);
+      if (commit) await commit(patch, checkOrderLines(orderIds, skuCode));
       else set(patch);
       setExclusion(null);
     } catch (error) {
-      console.error('Failed to change order SKU exclusion', error);
-      setOrderError(excluded
-        ? 'Не удалось исключить позицию. Состав заказов сохранён.'
-        : 'Не удалось восстановить позицию. Состав заказов сохранён.');
+      if (!(error instanceof WorkspaceConflictError))
+        console.error('Failed to change order SKU exclusion', error);
+      setOrderError(error instanceof WorkspaceConflictError ? error.message
+        : excluded ? 'Не удалось исключить позицию. Состав заказов сохранён.'
+          : 'Не удалось восстановить позицию. Состав заказов сохранён.');
     }
   }
 
@@ -400,11 +405,12 @@ export function OrdersPage({
       };
     };
     try {
-      if (commit) await commit(patch);
+      if (commit) await commit(patch, checkOrderReview(orderIds, reviewed));
       else set(patch);
       return true;
-    } catch {
-      setOrderError('Не удалось сохранить проверку. Предыдущие отметки сохранены.');
+    } catch (error) {
+      setOrderError(error instanceof WorkspaceConflictError ? error.message
+        : 'Не удалось сохранить проверку. Предыдущие отметки сохранены.');
       return false;
     }
   }

@@ -71,6 +71,15 @@ export interface WorkspaceData {
   uiPreferences: Record<string, unknown>;
   rawImports: { minMax: ImportFileRef | null; suppliers: ImportFileRef | null };
 }
+export class WorkspaceConflictError extends Error {
+  constructor(
+    message = 'Сеанс изменён коллегой. Проверьте актуальные данные перед повтором.',
+    readonly savedQuantity?: number,
+  ) {
+    super(message);
+  }
+}
+
 export interface ActiveWorkspace {
   workspaceId: string;
   revision: number;
