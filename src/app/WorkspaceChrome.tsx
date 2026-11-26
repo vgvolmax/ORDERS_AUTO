@@ -27,6 +27,7 @@ type Navigation = {
   page: Page;
   branches: readonly string[] | undefined;
   supplierAccess?: boolean;
+  invoiceHistoryAccess?: boolean;
   onNavigate: (page: Page) => void;
   onImport: () => void;
 };
@@ -35,6 +36,7 @@ export function WorkspaceSidebar({
   page,
   branches,
   supplierAccess,
+  invoiceHistoryAccess,
   onNavigate,
   onImport,
 }: Navigation) {
@@ -78,6 +80,11 @@ export function WorkspaceSidebar({
             <BrandIcon name="people" /> Поставщики
           </button>
         )}
+        {!branches && invoiceHistoryAccess && (
+          <button type="button" aria-current={page === 'invoices' ? 'page' : undefined} onClick={() => onNavigate('invoices')}>
+            <BrandIcon name="file" /> История отказов
+          </button>
+        )}
         <div className="workspace-side-tools">
           <button
             type="button"
@@ -113,6 +120,7 @@ export function WorkspaceMasthead({
   page,
   branches,
   supplierAccess,
+  invoiceHistoryAccess,
   onNavigate,
   onImport,
   fileName,

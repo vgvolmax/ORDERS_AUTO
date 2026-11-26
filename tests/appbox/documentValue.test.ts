@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 import {
   payloadHeaderId, readPayload, readSourcePayload, savePayload, seedPayload,
   type Collection, type SeedRecord, type WorkingDocumentBridge,
@@ -344,4 +344,41 @@ describe('AppBox supplier catalog editing', () => {
     await expect(orders.changeCatalog(command, await orders.loadSession())).rejects.toThrow(/исходном документе/i);
     expect(doc.commands).toEqual([]);
   });
+});
+
+test('collects the team history through paginated session reads and prefers the original over a reimported copy', async () => {
+  const report = (sourceId: string, at: string) => ({
+    id: sourceId + ':order', sourceId, basis: 'current' as const, orderIds: ['order'],
+    revisions: [{ kind: 'reopened' as const, at }],
+  });
+  const first = memoryDocument();
+  const second = memoryDocument();
+  const third = memoryDocument();
+  first.state.team = true;
+  const original = report('second', '2026-11-25T09:00:00.000Z');
+  const unrelated = report('third', '2026-11-26T09:00:00.000Z');
+  const stale = report('second', '2026-11-19T09:00:00.000Z');
+  first.seed(await seedPayload('invoices', [stale]));
+  second.seed(await seedPayload('invoices', [original]));
+  third.seed(await seedPayload('invoices', [unrelated]));
+  const reads: string[] = [];
+  const bridge = {
+    ...first.api,
+    async listSessions(page: { after?: string } = {}) {
+      const id = page.after ? 'third' : 'second';
+      return { items: [{ id, title: id, updatedAt: 1 }], next: page.after ? null : 'second' };
+    },
+    async openSession(input: { documentId: string }) { return input; },
+    async readSession({ documentId, ...query }: Parameters<WorkingDocumentBridge['read']>[0] & { documentId: string }) {
+      reads.push(documentId + ':' + query.collection);
+      return (documentId === 'second' ? second.api : third.api).read(query);
+    },
+  };
+  const result = await new OrdersDocument(bridge).loadInvoiceHistoryOverview();
+  expect(result.records).toEqual([original, unrelated]);
+  expect(result.workspace).toMatchObject({ name: 'Отдел закупки', currentDocumentId: 'doc' });
+  expect(result.workspace?.sessions).toEqual(new Map([['second', 'second'], ['third', 'third']]));
+  expect(reads).toEqual(expect.arrayContaining(['second:invoices', 'third:invoices']));
+  expect(reads.every((entry) => entry.endsWith(':invoices'))).toBe(true);
+  expect(await new OrdersDocument(first.api).loadInvoiceHistory()).toEqual([stale]);
 });

@@ -25,8 +25,15 @@ const rankings = {
 type Ranking = keyof typeof rankings;
 const date = (value: string) => new Date(value).toLocaleDateString('ru-RU');
 
-export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
+export function InvoiceHistoryPanel({
+  records, backupRecords, workspaceName, loading, sessionTitle, onReload, onRefresh, onOpen,
+}: {
   records: InvoiceHistoryRecord[];
+  backupRecords: InvoiceHistoryRecord[];
+  workspaceName?: string | undefined;
+  loading: boolean;
+  sessionTitle: (record: InvoiceHistoryRecord) => string | undefined;
+  onReload: () => void;
   onRefresh: (records: InvoiceHistoryRecord[]) => void;
   onOpen: (record: InvoiceHistoryRecord) => void;
 }) {
@@ -59,7 +66,7 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
     to: dateTouched.to && to === null ? 'Введите дату в формате ДД.ММ.ГГГГ.'
       : reversed ? 'Конец периода раньше начала.' : '',
   };
-  const preview = restore ? previewInvoiceHistory(records, restore) : null;
+  const preview = restore ? previewInvoiceHistory(backupRecords, restore) : null;
   const unfinished = records.filter((record) => record.revisions.at(-1)?.kind !== 'closed');
   const openBreakdown = (row: InvoiceHistorySummary) => {
     if (filters.inn && filters.sku) setDetail(row);
@@ -146,10 +153,18 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
 
   return <section className="panel invoice-result invoice-history" aria-labelledby="invoice-history-heading">
     <div className="section-heading">
-      <h2 id="invoice-history-heading">История отказов по счетам</h2>
+      <div>
+        <h2 id="invoice-history-heading">История отказов по счетам</h2>
+        {workspaceName && <p>Все доступные сессии пространства «{workspaceName}»</p>}
+      </div>
       <div className="invoice-actions">
-        <Button className="secondary" onClick={() => void download()}>Скачать всю историю JSON</Button>
-        <Button className="secondary" disabled={busy} onClick={() => fileInput.current?.click()}>Восстановить из JSON</Button>
+        <Button className="secondary" disabled={loading} onClick={onReload}>Обновить историю</Button>
+        <Button className="secondary" onClick={() => void download()}>
+          {workspaceName ? 'Скачать JSON текущей сессии' : 'Скачать всю историю JSON'}
+        </Button>
+        <Button className="secondary" disabled={busy} onClick={() => fileInput.current?.click()}>
+          {workspaceName ? 'Восстановить в текущую сессию' : 'Восстановить из JSON'}
+        </Button>
         <input ref={fileInput} hidden type="file" accept=".json,application/json" aria-label="Резервная копия истории"
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
@@ -158,6 +173,7 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
           }} />
       </div>
     </div>
+    {loading && <p role="status">Загружаем историю отказов…</p>}
     {notice && <Alert>{notice}</Alert>}
     {error && !restore && <Alert tone="danger">{error}</Alert>}
     <div className="invoice-actions" role="group" aria-label="Представление истории">
@@ -210,7 +226,7 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
         </button>
       </li>)}</ul>
     </details>}
-    {detail && <HistoryDetails summary={detail} onClose={() => setDetail(null)} onOpen={(record) => {
+    {detail && <HistoryDetails summary={detail} sessionTitle={sessionTitle} onClose={() => setDetail(null)} onOpen={(record) => {
       setDetail(null);
       onOpen(record);
     }} />}
@@ -228,13 +244,21 @@ export function InvoiceHistoryPanel({ records, onRefresh, onOpen }: {
   </section>;
 }
 
-function HistoryDetails({ summary, onClose, onOpen }: {
-  summary: InvoiceHistorySummary; onClose: () => void; onOpen: (record: InvoiceHistoryRecord) => void;
+function HistoryDetails({ summary, sessionTitle, onClose, onOpen }: {
+  summary: InvoiceHistorySummary;
+  sessionTitle: (record: InvoiceHistoryRecord) => string | undefined;
+  onClose: () => void;
+  onOpen: (record: InvoiceHistoryRecord) => void;
 }) {
   const columns: VirtualColumn<InvoiceHistoryDetail>[] = [
     { key: 'order', header: 'Заказ', width: 'minmax(140px, 1fr)', render: ({ order, record, revision }) =>
       <div className="invoice-identity">
-        <button type="button" className="invoice-history-link" onClick={() => onOpen(record)}>{order.branch}</button>
+        {sessionTitle(record) ? <>
+          <strong>{order.branch}</strong>
+          <button type="button" className="invoice-history-link" onClick={() => onOpen(record)}>
+            Открыть сессию «{sessionTitle(record)}»
+          </button>
+        </> : <button type="button" className="invoice-history-link" onClick={() => onOpen(record)}>{order.branch}</button>}
         <small>{revision.supplier.name} · ИНН {revision.supplier.inn}</small>
         <small>{order.exportedAt ? date(order.exportedAt) : `Сверка ${date(revision.at)}`}</small>
       </div> },

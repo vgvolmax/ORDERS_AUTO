@@ -307,6 +307,7 @@ export function App() {
   const navigation = {
     page: state.page,
     branches: state.minMax && (state.catalog || state.supplierAssignments) ? state.minMax.branches : undefined,
+    invoiceHistoryAccess: Boolean(sharedSession?.document.workspace),
     supplierAccess: Boolean(sharedSession && !sharedSession.document.workspace &&
       (!sharedSession.catalogReadOnly || sharedSession.catalogRevision !== null)),
     onNavigate: (page: AppState['page']) => {
@@ -487,6 +488,7 @@ export function App() {
                 initialOrderIds={activeInvoice?.orderIds ?? []}
                 initialSourceId={activeInvoice?.sourceId}
                 onDirtyChange={markInvoiceDirty}
+                initialHistory={!state.minMax && Boolean(sharedSession?.document.workspace)}
               />
             </div>
           )}
