@@ -1,4 +1,4 @@
-import { ordersDocument } from '../appbox/ordersDocument';
+import { ordersDocument, type InvoiceHistoryOverview } from '../appbox/ordersDocument';
 import { lastInvoiceHistoryDocuments, type InvoiceHistoryRecord } from '../domain/invoiceHistory';
 import { previewInvoiceHistory, type InvoiceHistoryImport } from '../domain/invoiceHistoryBackup';
 import { db } from './db';
@@ -12,6 +12,17 @@ export async function loadInvoiceHistory(): Promise<InvoiceHistoryRecord[]> {
   } finally {
     database.close();
   }
+}
+
+export async function loadInvoiceHistoryOverview(signal?: AbortSignal): Promise<InvoiceHistoryOverview> {
+  const shared = ordersDocument();
+  return shared ? shared.loadInvoiceHistoryOverview(signal) : { records: await loadInvoiceHistory() };
+}
+
+export async function openInvoiceHistorySession(documentId: string) {
+  const shared = ordersDocument();
+  if (!shared) throw new Error('Открытие сессии доступно внутри AppBox.');
+  return shared.openInvoiceHistorySession(documentId);
 }
 
 function validateAppend(records: InvoiceHistoryRecord[], record: InvoiceHistoryRecord, expectedRevisions: number) {

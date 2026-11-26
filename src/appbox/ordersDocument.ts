@@ -24,6 +24,15 @@ interface WorkspacePayload {
   catalogSource: string | null;
 }
 
+export interface InvoiceHistoryOverview {
+  records: InvoiceHistoryRecord[];
+  workspace?: {
+    name: string;
+    currentDocumentId: string;
+    sessions: Map<string, string> | null;
+  };
+}
+
 const catalogueAlias = 'supplier_catalog';
 const defaultView = workspaceView(createInitialState());
 
@@ -259,6 +268,63 @@ export class OrdersDocument {
 
   async loadInvoiceHistory() {
     return (await readPayload<InvoiceHistoryRecord[]>(this.api, 'invoices')).value ?? [];
+  }
+
+  async loadInvoiceHistoryOverview(signal?: AbortSignal): Promise<InvoiceHistoryOverview> {
+    const current = await readPayload<InvoiceHistoryRecord[]>({
+      read: (query) => {
+        signal?.throwIfAborted();
+        return this.api.read(query);
+      },
+    }, 'invoices');
+    const records = current.value ?? [];
+    const workspace = current.document.workspace;
+    if (!workspace) return { records };
+    const context = { name: workspace.name, currentDocumentId: current.document.id };
+    const { listSessions, readSession, openSession } = this.api;
+    if (!listSessions || !readSession || !openSession)
+      return { records, workspace: { ...context, sessions: null } };
+
+    const sessions = new Map<string, string>();
+    const copies = new Map<string, { record: InvoiceHistoryRecord; documentId: string }>();
+    const collect = (documentId: string, invoices: InvoiceHistoryRecord[]) => {
+      for (const record of invoices) {
+        const existing = copies.get(record.id);
+        if (!existing || documentId === record.sourceId ||
+            (existing.documentId !== record.sourceId && record.revisions.length > existing.record.revisions.length))
+          copies.set(record.id, { record, documentId });
+      }
+    };
+    collect(current.document.id, records);
+    const seenCursors = new Set<string>();
+    let after: string | undefined;
+    do {
+      signal?.throwIfAborted();
+      const page = await listSessions.call(this.api, { ...(after ? { after } : {}), limit: 50 });
+      for (const { id, title } of page.items) {
+        if (sessions.has(id)) continue;
+        sessions.set(id, title);
+        if (id === current.document.id) continue;
+        const snapshot = await readPayload<InvoiceHistoryRecord[]>({
+          read: (query) => {
+            signal?.throwIfAborted();
+            return readSession.call(this.api, { ...query, documentId: id });
+          },
+        }, 'invoices');
+        collect(id, snapshot.value ?? []);
+      }
+      after = page.next ?? undefined;
+      if (after) {
+        if (seenCursors.has(after)) throw new Error('Не удалось дочитать список сессий AppBox.');
+        seenCursors.add(after);
+      }
+    } while (after);
+    return { records: [...copies.values()].map(({ record }) => record), workspace: { ...context, sessions } };
+  }
+
+  async openInvoiceHistorySession(documentId: string) {
+    if (!this.api.openSession) throw new Error('Открытие сессии доступно после обновления AppBox.');
+    return this.api.openSession({ documentId });
   }
 
   async changeInvoiceHistory<T>(change: (records: InvoiceHistoryRecord[]) => {

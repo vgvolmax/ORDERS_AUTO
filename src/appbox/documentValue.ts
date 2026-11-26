@@ -42,13 +42,22 @@ type Command = RecordCommand & (
   | { kind: 'delete'; generation: string; baseRevision: number }
 );
 
+type DocumentPageQuery = {
+  collection: Collection;
+  limit?: number;
+  after?: string;
+  revision?: number;
+};
+type DocumentPage = { document: DocSummary; records: WorkingRecord[]; next: string | null };
+
 export interface WorkingDocumentBridge {
-  read(query: {
-    collection: Collection;
-    limit?: number;
-    after?: string;
-    revision?: number;
-  }): Promise<{ document: DocSummary; records: WorkingRecord[]; next: string | null }>;
+  read(query: DocumentPageQuery): Promise<DocumentPage>;
+  listSessions?(query?: { after?: string; limit?: number }): Promise<{
+    items: { id: string; title: string; updatedAt: number }[];
+    next: string | null;
+  }>;
+  readSession?(query: DocumentPageQuery & { documentId: string }): Promise<DocumentPage>;
+  openSession?(input: { documentId: string }): Promise<{ documentId: string }>;
   command(input: Command): Promise<{ revision: number; replayed?: boolean }>;
   source(name: string, page?: { after?: string; sourceId?: string; revision?: number }): Promise<{
     id: string;
@@ -260,7 +269,7 @@ function demandProgress(seen: Set<string>, cursor: string): void {
   seen.add(cursor);
 }
 
-function readRecords(api: WorkingDocumentBridge, collection: Collection) {
+function readRecords(api: Pick<WorkingDocumentBridge, 'read'>, collection: Collection) {
   return pinned(async () => {
     const first = await api.read({ collection, limit: 50 });
     const records = [...first.records];
@@ -277,7 +286,7 @@ function readRecords(api: WorkingDocumentBridge, collection: Collection) {
 }
 
 export async function readPayload<T>(
-  api: WorkingDocumentBridge, collection: Collection,
+  api: Pick<WorkingDocumentBridge, 'read'>, collection: Collection,
 ): Promise<PayloadSnapshot<T>> {
   const snapshot = await readRecords(api, collection);
   return { ...snapshot, value: await decode<T>(snapshot.records) };

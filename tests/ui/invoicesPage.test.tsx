@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InvoicesPage } from '../../src/features/invoices/InvoicesPage';
+import * as invoiceHistory from '../../src/persistence/invoiceHistory';
+import { historyOrderKey, type InvoiceHistoryRecord } from '../../src/domain/invoiceHistory';
 import type { WorkflowOrder } from '../../src/app/selectors';
 
 const { source, verifySource, save, parseInvoiceWorkbook } = vi.hoisted(() => ({
@@ -252,4 +254,36 @@ describe('InvoicesPage', () => {
     expect(screen.getByRole('button', { name: 'ART' })).toBeVisible();
   });
 
+});
+
+it('shows saved refusals from another team session and opens that session from the breakdown', async () => {
+  const at = '2026-11-25T09:00:00.000Z';
+  const record: InvoiceHistoryRecord = {
+    id: historyOrderKey('archive', ['b']), sourceId: 'archive', orderIds: ['b'], basis: 'preferred',
+    revisions: [{
+      kind: 'closed', at, supplier: { name: 'ООО Командный поставщик', inn: '7801000101' }, documents: [],
+      orders: [{ id: 'b', branch: 'Склад из архива', exportedAt: null, positions: [{
+        key: 'refusal', skuCode: '001', article: 'ART', name: 'Масло', unit: 'шт',
+        requested: 5, invoiced: 0, outcome: 'full', reason: 'closed', stockStatus: 'BELOW_MIN', refusalAt: at,
+      }] }],
+    }],
+  };
+  const overview = vi.spyOn(invoiceHistory, 'loadInvoiceHistoryOverview').mockResolvedValue({
+    records: [record],
+    workspace: { name: 'Закупки', currentDocumentId: 'current', sessions: new Map([['archive', 'Прошлый MIN/MAX']]) },
+  });
+  const open = vi.spyOn(invoiceHistory, 'openInvoiceHistorySession').mockResolvedValue({ documentId: 'archive' });
+  try {
+    render(<InvoicesPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'История отказов' }));
+    await waitFor(() => expect(overview).toHaveBeenCalledTimes(1));
+    const details = await screen.findByRole('button', { name: 'Открыть заказы: ООО Командный поставщик' });
+    fireEvent.click(details);
+    const session = screen.getByRole('button', { name: 'Открыть сессию «Прошлый MIN/MAX»' });
+    fireEvent.click(session);
+    expect(open).toHaveBeenCalledWith('archive');
+  } finally {
+    overview.mockRestore();
+    open.mockRestore();
+  }
 });

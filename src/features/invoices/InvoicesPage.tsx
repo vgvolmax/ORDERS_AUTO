@@ -18,7 +18,9 @@ import {
 import { normalizeKey } from '../../domain/normalize';
 import { supplierKey } from '../../domain/supplierPool';
 import type { StockStatus } from '../../domain/types';
-import { appendInvoiceHistory, loadInvoiceHistory } from '../../persistence/invoiceHistory';
+import {
+  appendInvoiceHistory, loadInvoiceHistory, loadInvoiceHistoryOverview, openInvoiceHistorySession,
+} from '../../persistence/invoiceHistory';
 import { moneyProduct, moneySum } from '../../domain/money';
 import { fmtQty, money } from '../../format/numbers';
 import {
@@ -75,16 +77,22 @@ export function InvoicesPage({
   initialOrderIds = noOrders,
   initialSourceId,
   onDirtyChange,
+  initialHistory = false,
 }: {
   initialOrderIds?: readonly string[];
   initialSourceId?: string | undefined;
   onDirtyChange?: (dirty: boolean) => void;
+  initialHistory?: boolean;
 }) {
   const [basis, setBasis] = useState<InvoiceOrderBasis>('preferred');
   const { sources, sourceId, selectSource, orders, skuCodes, currentDemand = noDemand, loading, error, historyError, verifySource } =
     useInvoiceOrders(initialSourceId, basis);
   const currentSource = sourceId === sources[0]?.id;
-  const [view, setView] = useState<'compare' | 'history'>('compare');
+  const [view, setView] = useState<'compare' | 'history'>(initialHistory ? 'history' : 'compare');
+  const [overview, setOverview] = useState<Awaited<ReturnType<typeof loadInvoiceHistoryOverview>> | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState('');
+  const [overviewReload, setOverviewReload] = useState(0);
   const [records, setRecords] = useState(noHistory);
   const [recordsError, setRecordsError] = useState('');
   const [closing, setClosing] = useState<ReturnType<typeof prepareHistoryPositions> | null>(null);
@@ -191,6 +199,28 @@ export function InvoicesPage({
       .catch(() => { if (alive) setRecordsError('Не удалось прочитать историю счетов.'); });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    if (view !== 'history') return;
+    const load = new AbortController();
+    setOverviewLoading(true);
+    setOverviewError('');
+    setRecordsError('');
+    void loadInvoiceHistoryOverview(load.signal).then((result) => {
+      if (!load.signal.aborted) {
+        setOverview(result);
+        if (!result.workspace) setRecords(result.records);
+      }
+    }).catch(() => {
+      if (!load.signal.aborted) {
+        setOverview(null);
+        setOverviewError('Историю сессий не удалось собрать. Обновите сводку.');
+      }
+    }).finally(() => {
+      if (!load.signal.aborted) setOverviewLoading(false);
+    });
+    return () => load.abort();
+  }, [view, overviewReload]);
 
   useEffect(() => {
     if (!resume || sourceId !== resume.sourceId || loading) return;
@@ -439,7 +469,19 @@ export function InvoicesPage({
     }
   }
 
+  function historySessionTitle(record: InvoiceHistoryRecord) {
+    if (record.sourceId !== overview?.workspace?.currentDocumentId)
+      return overview?.workspace?.sessions?.get(record.sourceId);
+  }
+
   function openHistoryRecord(record: InvoiceHistoryRecord) {
+    if (historySessionTitle(record) !== undefined) {
+      setRecordsError('');
+      void openInvoiceHistorySession(record.sourceId).catch(() => {
+        setRecordsError('Не удалось открыть сессию. Обновите историю и проверьте доступ.');
+      });
+      return;
+    }
     if (!sources.some(({ id }) => id === record.sourceId)) {
       setRecordsError('Исходный сеанс недоступен. Счета и итоги входят в JSON-копию истории.');
       return;
@@ -603,12 +645,25 @@ export function InvoicesPage({
           <Button className={view === 'compare' ? '' : 'secondary'} aria-pressed={view === 'compare'}
             onClick={() => setView('compare')}>Сверка</Button>
           <Button className={view === 'history' ? '' : 'secondary'} aria-pressed={view === 'history'}
-            onClick={() => { setView('history'); void refreshHistory(); }}>История отказов</Button>
+            onClick={() => setView('history')}>История отказов</Button>
         </div>
       </header>
       {view === 'history' && <>
         {recordsError && <Alert tone="warning">{recordsError}</Alert>}
-        <InvoiceHistoryPanel records={records} onRefresh={setRecords} onOpen={openHistoryRecord} />
+        {overviewError && <Alert tone="warning">{overviewError}</Alert>}
+        {overview?.workspace?.sessions === null && <Alert tone="warning">
+          Показана история текущей сессии. Чтобы увидеть сводку по пространству, обновите AppBox.
+        </Alert>}
+        <InvoiceHistoryPanel
+          records={overview?.workspace ? overview.records : records}
+          backupRecords={records}
+          workspaceName={overview?.workspace?.sessions ? overview.workspace.name : undefined}
+          loading={overviewLoading}
+          onReload={() => setOverviewReload((value) => value + 1)}
+          onRefresh={(next) => { setRecords(next); setOverviewReload((value) => value + 1); }}
+          sessionTitle={historySessionTitle}
+          onOpen={openHistoryRecord}
+        />
       </>}
       <div className="invoice-workflow" hidden={view === 'history'}>
       {historyNotice && <Alert>{historyNotice}</Alert>}
