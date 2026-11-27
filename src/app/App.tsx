@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DemandPage } from '../features/demand/DemandPage';
+import { AppBoxWorkspaceHistoryPage } from '../features/workspaces/AppBoxWorkspaceHistoryPage';
 import { WorkspaceHistoryPage } from '../features/workspaces/WorkspaceHistoryPage';
 import { RebalancingPage } from '../features/rebalancing/RebalancingPage';
 import { ImportPage } from '../features/import/ImportPage';
@@ -338,6 +339,18 @@ export function App() {
       setInvoiceExit({ run: reload, replacesSource: true });
     } else reload();
   };
+  const report = state.rawImports.minMax;
+  async function downloadMinMax() {
+    if (!report) return;
+    try {
+      const file = await loadWorkspaceFile(report.fileId);
+      if (!file) throw new Error('Отчёт не найден');
+      save(new Blob([file.bytes], { type: file.type }), file.name);
+    } catch {
+      owner?.transient({ toast: 'Не удалось скачать исходный отчёт.' });
+    }
+  }
+
   const sharedStore = shared && sharedSession ? {
     team: sharedSession.document.workspace?.name ?? null,
     editable: sharedSession.document.role !== 'view',
@@ -454,19 +467,14 @@ export function App() {
             </div>
           )}
           {state.page === 'history' ? (
-            sharedStore ? (
-              <main>
-                <h1>Рабочие сеансы AppBox</h1>
-                <p>Откройте нужный документ в «Моих документах» AppBox. Отчёты можно держать открытыми в разных вкладках.</p>
-                {state.rawImports.minMax && <Button onClick={() => {
-                  const report = state.rawImports.minMax;
-                  if (!report) return;
-                  void loadWorkspaceFile(report.fileId).then((file) => {
-                    if (!file) throw new Error('Отчёт не найден');
-                    save(new Blob([file.bytes], { type: file.type }), file.name);
-                  }).catch(() => owner?.transient({ toast: 'Не удалось скачать исходный отчёт.' }));
-                }}>Скачать исходный MIN/MAX</Button>}
-              </main>
+            shared && sharedSession ? (
+              <AppBoxWorkspaceHistoryPage
+                key={sharedSession.document.id}
+                connection={shared}
+                document={sharedSession.document}
+                saving={pending > 0}
+                onDownloadReport={report ? downloadMinMax : undefined}
+              />
             ) : <WorkspaceHistoryPage onReconcile={openInvoiceSource} />
           ) : state.page === 'import' ? (
             <ImportPage />

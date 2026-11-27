@@ -50,10 +50,16 @@ type DocumentPageQuery = {
 };
 type DocumentPage = { document: DocSummary; records: WorkingRecord[]; next: string | null };
 
+export interface WorkingSession {
+  id: string;
+  title: string;
+  updatedAt: number;
+}
+
 export interface WorkingDocumentBridge {
   read(query: DocumentPageQuery): Promise<DocumentPage>;
   listSessions?(query?: { after?: string; limit?: number }): Promise<{
-    items: { id: string; title: string; updatedAt: number }[];
+    items: WorkingSession[];
     next: string | null;
   }>;
   readSession?(query: DocumentPageQuery & { documentId: string }): Promise<DocumentPage>;
