@@ -1,5 +1,6 @@
-import { fireEvent, screen, within, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
+import { StoreContext, type Store } from '../../src/app/appStore';
 import { SuppliersPage } from '../../src/features/suppliers/SuppliersPage';
 import { createSupplierCatalog } from '../../src/domain/supplierCatalog';
 import { baseState, renderWithStore } from './renderWithStore';
@@ -18,6 +19,66 @@ function catalogState() {
 }
 const inactive = () => fireEvent.click(screen.getByRole('button', { name: 'Неактивные · 1' }));
 const current = () => fireEvent.click(screen.getByRole('button', { name: 'Товары · 1' }));
+
+const ownedCatalog: NonNullable<Store['shared']> = {
+  team: null, editable: true, catalogReadOnly: false, catalogRevision: 1,
+  sourceConnected: false, sourceUnavailable: false,
+  setDraft: () => undefined, changeCatalog: async () => undefined,
+};
+
+it('uses the selected MIN/MAX even in an AppBox document that owns its catalog', () => {
+  const state = catalogState();
+  state.uiPreferences['suppliers:selectedCodes'] = { snapshotId: state.snapshotId, skuCodes: ['SKU1', '000123'] };
+  const set = vi.fn();
+  const catalogPage = (state: Store['state']) => (
+    <StoreContext.Provider value={{ state, set, shared: ownedCatalog }}><SuppliersPage /></StoreContext.Provider>
+  );
+  const { rerender } = render(catalogPage(state));
+  expect(screen.getByRole('button', { name: 'Товары · 1' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByRole('button', { name: /Карточка/ })).not.toBeInTheDocument();
+  expect(screen.queryByText('Отсутствующий товар')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Назначить основного выбранным' }));
+  const dialog = screen.getByRole('dialog');
+  expect(dialog).toHaveTextContent('Выбрано товаров: 1');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+  inactive();
+  const region = screen.getByRole('region', { name: 'Неактивные товары' });
+  expect(region).toHaveTextContent('Отсутствующий товар');
+  expect(region).toHaveTextContent(additional);
+  expect(within(region).queryByRole('checkbox')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Карточка|Связи|Добавить товар/ })).not.toBeInTheDocument();
+
+  const returned = { ...state.minMax!.skus[0]!, code: '000123', name: 'Отсутствующий товар' };
+  rerender(catalogPage({ ...state, minMax: { ...state.minMax!, skus: [...state.minMax!.skus, returned] } }));
+  expect(screen.getByRole('button', { name: 'Неактивные · 0' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Товары · 2' }));
+  expect(screen.getByRole('button', { name: 'Связи 000123' })).toBeVisible();
+});
+
+it('keeps the AppBox catalog usable before MIN/MAX and leaves activity unknown', async () => {
+  const state = { ...catalogState(), minMax: null };
+  const changeCatalog = vi.fn(ownedCatalog.changeCatalog);
+  render(
+    <StoreContext.Provider value={{ state, set: vi.fn(), shared: { ...ownedCatalog, changeCatalog } }}>
+      <SuppliersPage />
+    </StoreContext.Provider>,
+  );
+  expect(screen.getByText('Отсутствующий товар')).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Карточка/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Добавить товар' }));
+  const dialog = screen.getByRole('dialog', { name: 'Добавить товар' });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: /Код 1С/ }), { target: { value: '0099' } });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: /Наименование/ }), { target: { value: 'Новый товар' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(changeCatalog).toHaveBeenCalledWith(
+    { kind: 'save-product', product: { code: '0099', name: 'Новый товар', article: '' }, isNew: true },
+    expect.any(String), { catalog: state.catalog, catalogRevision: 1 },
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Неактивные · —' }));
+  expect(screen.getByText(/Загрузите MIN\/MAX, чтобы определить активность товаров/)).toBeVisible();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+});
 
 it('separates products by exact 1C code even when their articles match', () => {
   renderWithStore(<SuppliersPage />, catalogState());

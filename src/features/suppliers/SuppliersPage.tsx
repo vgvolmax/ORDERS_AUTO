@@ -13,7 +13,7 @@ import {
 import { SUPPLIER_POOL } from '../../domain/supplierPool';
 import { currentCatalogLink } from '../../appbox/supplierCatalogBridge';
 import { SharedCatalogPanel } from './SharedCatalogPanel';
-import { changeCatalogAssignment, type CatalogProduct } from '../../domain/supplierCatalog';
+import { changeCatalogAssignment } from '../../domain/supplierCatalog';
 import { CatalogProductDialog } from './CatalogProductDialog';
 import { BulkSupplierDialog, ProductSupplierDialog } from './SupplierAssignmentDialogs';
 import {
@@ -33,13 +33,13 @@ interface SupplierSelection {
 
 export function SuppliersPage() {
   const { state, shared } = useStore();
-  const catalogMode = shared?.catalogRevision != null;
+  const catalogOnly = shared?.catalogRevision != null && !state.minMax;
   return (
     <main className="suppliers-page compact-workspace">
       <header>
         <p className="eyebrow">Закупка</p>
         <h1>Поставщики</h1>
-        {!catalogMode && <p>Постоянный справочник товаров и поставщиков. Назначения сохраняются независимо от рабочих сеансов.</p>}
+        {!catalogOnly && <p>Постоянный справочник товаров и поставщиков. Назначения сохраняются независимо от рабочих сеансов.</p>}
       </header>
       <SharedCatalogPanel compact />
       {!state.catalog && state.supplierAssignments === undefined ? (
@@ -57,7 +57,9 @@ function SupplierWorkspace({
   assignments: SupplierAssignment[];
 }) {
   const { state, set, commit, shared } = useStore();
-  const catalogMode = shared?.catalogRevision != null;
+  const ownsCatalog = shared?.catalogRevision != null;
+  const hasMinMax = state.minMax !== null;
+  const catalogOnly = ownsCatalog && !hasMinMax;
   const readOnly = shared?.catalogReadOnly ?? (currentCatalogLink()?.document?.canEdit === false);
   const derived = useDerivedState(state);
   const [view, setView] = useState<'products' | 'inactive' | 'suppliers'>('products');
@@ -74,7 +76,7 @@ function SupplierWorkspace({
     null,
   );
   const [dialog, setDialog] = useState<AssignmentDialog | null>(null);
-  const [productEditor, setProductEditor] = useState<{ product?: CatalogProduct; base: CatalogBase } | null>(null);
+  const [newProductBase, setNewProductBase] = useState<CatalogBase | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const savingRef = useRef(false);
@@ -96,9 +98,9 @@ function SupplierWorkspace({
   );
   const selectedCodes = useMemo(
     () => selection?.snapshotId === state.snapshotId
-    ? selection.skuCodes.filter((skuCode) => productsByCode.has(skuCode) && (catalogMode || currentCodes.has(skuCode)))
+      ? selection.skuCodes.filter((skuCode) => productsByCode.has(skuCode) && (catalogOnly || currentCodes.has(skuCode)))
       : [],
-    [productsByCode, currentCodes, catalogMode, selection, state.snapshotId],
+    [productsByCode, currentCodes, catalogOnly, selection, state.snapshotId],
   );
   const demandCodes = useMemo(
     () => new Set(derived.purchaseDemand.filter((line) => line.purchaseQty > 0).map((line) => line.skuCode)),
@@ -130,7 +132,7 @@ function SupplierWorkspace({
     setSaving(true);
     setError('');
     try {
-      if (shared && catalogMode) {
+      if (shared && ownsCatalog) {
         await shared.changeCatalog({ kind: 'assign', command }, success);
         return true;
       }
@@ -176,14 +178,6 @@ function SupplierWorkspace({
     }
   }
 
-  function editProduct(product?: CatalogProduct) {
-    if (!shared || !catalogMode || readOnly) return;
-    setProductEditor({
-      ...(product && { product }),
-      base: { catalog: state.catalog, catalogRevision: shared.catalogRevision },
-    });
-  }
-
   function showProducts(supplier: string, role: SupplierRole) {
     setFilters({ ...defaultProductFilters, supplier, role });
     setInactiveFilters({ ...defaultProductFilters, supplier, role });
@@ -193,26 +187,28 @@ function SupplierWorkspace({
 
   return (
     <>
-      {!catalogMode && <PurchasingDataAlert issues={derived.projection.dataIssues} />}
+      {!catalogOnly && <PurchasingDataAlert issues={derived.projection.dataIssues} />}
       <div className="workspace-tabs supplier-views" role="group" aria-label="Представления поставщиков">
         <button ref={productTab} aria-pressed={view === 'products'} onClick={() => setView('products')}>
-          Товары · {catalogMode ? products?.length ?? 0 : state.minMax ? currentCodes.size : '—'}
+          Товары · {catalogOnly ? products?.length ?? 0 : hasMinMax ? currentCodes.size : '—'}
         </button>
-        {!catalogMode && <button aria-pressed={view === 'inactive'} onClick={() => setView('inactive')}>
-          Неактивные · {state.minMax ? inactiveCount : '—'}
-        </button>}
+        <button aria-pressed={view === 'inactive'} onClick={() => setView('inactive')}>
+          Неактивные · {hasMinMax ? inactiveCount : '—'}
+        </button>
         <button aria-pressed={view === 'suppliers'} onClick={() => setView('suppliers')}>
           По поставщикам
         </button>
       </div>
       <div className="supplier-view-panels">
-        {catalogMode && !readOnly && view !== 'suppliers' && (
-          <Button className="secondary" onClick={() => editProduct()}>Добавить товар</Button>
+        {ownsCatalog && !readOnly && view === 'products' && (
+          <Button className="secondary" onClick={() => setNewProductBase({ catalog: state.catalog, catalogRevision: shared.catalogRevision })}>
+            Добавить товар
+          </Button>
         )}
         <SupplierProducts
           active={view !== 'suppliers'}
-          mode={catalogMode ? 'catalog' : view === 'inactive' ? 'inactive' : 'current'}
-          hasMinMax={state.minMax !== null}
+          mode={view === 'inactive' ? 'inactive' : catalogOnly ? 'catalog' : 'current'}
+          hasMinMax={hasMinMax}
           {...(shared && { catalogReadOnly: shared.catalogReadOnly })}
           products={products ?? []}
           currentCodes={currentCodes}
@@ -224,14 +220,13 @@ function SupplierWorkspace({
           selectedCodes={selectedCodes}
           onSelect={select}
           onOpenProduct={(skuCode) => openDialog({ skuCode })}
-          {...(catalogMode && !readOnly && { onEditProduct: editProduct })}
           onOpenBulk={(visibleCodes) => openDialog({ skuCodes: selectedCodes, visibleCodes })}
         />
         {view === 'suppliers' && (
           <>
-            {!catalogMode && <p className="muted">Количество связей — по всему справочнику, суммы закупки — по MIN/MAX выбранного сеанса. Неактивные товары доступны в отдельной вкладке.</p>}
+            {!catalogOnly && <p className="muted">Количество связей — по всему справочнику, суммы закупки — по MIN/MAX выбранного сеанса. Неактивные товары доступны в отдельной вкладке.</p>}
             <SupplierRoster
-              catalogMode={catalogMode}
+              catalogMode={catalogOnly}
               catalogAssignments={assignmentsByCode}
               productsByCode={productsByCode}
               orders={derived.projection.orders}
@@ -241,14 +236,13 @@ function SupplierWorkspace({
           </>
         )}
       </div>
-      {productEditor && shared && (
+      {newProductBase && shared && (
         <CatalogProductDialog
-          product={productEditor.product}
           onSave={(product) => shared.changeCatalog(
-            { kind: 'save-product', product, isNew: !productEditor.product },
-            'Карточка товара сохранена.', productEditor.base,
+            { kind: 'save-product', product, isNew: true },
+            'Товар добавлен.', newProductBase,
           )}
-          onClose={() => setProductEditor(null)}
+          onClose={() => setNewProductBase(null)}
         />
       )}
       {product && (

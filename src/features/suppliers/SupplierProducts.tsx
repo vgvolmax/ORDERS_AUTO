@@ -41,7 +41,6 @@ export function SupplierProducts({
   selectedCodes,
   onSelect,
   onOpenProduct,
-  onEditProduct,
   onOpenBulk,
 }: {
   active: boolean;
@@ -58,7 +57,6 @@ export function SupplierProducts({
   selectedCodes: string[];
   onSelect: (codes: string[]) => void;
   onOpenProduct: (code: string) => void;
-  onEditProduct?: (product: CatalogProduct) => void;
   onOpenBulk: (visibleCodes: string[]) => void;
 }) {
   const inactive = mode === 'inactive';
@@ -252,16 +250,6 @@ export function SupplierProducts({
               render: (sku) => (
                 <Button className="secondary" aria-label={`Связи ${sku.code}`} onClick={() => onOpenProduct(sku.code)}>
                   Связи
-                </Button>
-              ),
-            }] satisfies VirtualColumn<CatalogProduct>[] : []),
-            ...(onEditProduct ? [{
-              key: 'product',
-              header: 'Карточка',
-              width: '108px',
-              render: (sku) => (
-                <Button className="secondary" aria-label={`Карточка ${sku.code}`} onClick={() => onEditProduct(sku)}>
-                  Карточка
                 </Button>
               ),
             }] satisfies VirtualColumn<CatalogProduct>[] : []),
