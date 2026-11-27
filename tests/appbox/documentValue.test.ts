@@ -5,6 +5,8 @@ import {
   type Collection, type SeedRecord, type WorkingDocumentBridge,
 } from '../../src/appbox/documentValue';
 import { OrdersDocument } from '../../src/appbox/ordersDocument';
+import { createInitialState } from '../../src/app/initialState';
+import { workspaceFromState } from '../../src/app/workspaceSession';
 import { createAutosaveLifecycle } from '../../src/appbox/autosaveLifecycle';
 import { type SharedSupplierCatalog } from '../../src/domain/sharedSupplierCatalog';
 
@@ -15,7 +17,7 @@ function problem(status: number, code: string) {
   return Object.assign(new Error(code), { status, code });
 }
 
-function memoryDocument() {
+function memoryDocument(id = 'doc') {
   const rows = new Map<Collection, Map<string, RecordValue>>();
   const receipts = new Map<string, { revision: number }>();
   let revision = 0;
@@ -43,7 +45,7 @@ function memoryDocument() {
         throw problem(409, 'DOCUMENT_CHANGED');
       const result = page(query.collection, query.after);
       const document = {
-        id: 'doc', title: 'Закупка', role: state.role, revision,
+        id, title: 'Закупка', role: state.role, revision,
         ...(state.team && { workspace: { id: 'team', name: 'Отдел закупки' } }),
       };
       if (result.next) state.turnPage?.();
@@ -352,8 +354,8 @@ test('collects the team history through paginated session reads and prefers the 
     revisions: [{ kind: 'reopened' as const, at }],
   });
   const first = memoryDocument();
-  const second = memoryDocument();
-  const third = memoryDocument();
+  const second = memoryDocument('second');
+  const third = memoryDocument('third');
   first.state.team = true;
   const original = report('second', '2026-11-25T09:00:00.000Z');
   const unrelated = report('third', '2026-11-26T09:00:00.000Z');
@@ -381,4 +383,89 @@ test('collects the team history through paginated session reads and prefers the 
   expect(reads).toEqual(expect.arrayContaining(['second:invoices', 'third:invoices']));
   expect(reads.every((entry) => entry.endsWith(':invoices'))).toBe(true);
   expect(await new OrdersDocument(first.api).loadInvoiceHistory()).toEqual([stale]);
+});
+
+test('reads and edits one workspace catalog from different report documents using the base role', async () => {
+  const north = memoryDocument();
+  const south = memoryDocument();
+  const primary = memoryDocument();
+  const peer = memoryDocument();
+  primary.state.team = peer.state.team = true;
+  const connect = (doc: typeof primary, base: typeof primary) => new OrdersDocument({
+    ...doc.api,
+    async read(query) {
+      const result = await doc.api.read(query);
+      return { ...result, document: { ...result.document, workspaceBase: 'session' as const } };
+    },
+    base: { read: base.api.read, command: base.api.command },
+  });
+  const author = connect(primary, north);
+  const colleague = connect(peer, north);
+  const otherSpace = connect(peer, south);
+  expect((await author.loadSession()).catalog).toBeNull();
+  await author.changeCatalog({ kind: 'create' }, await author.loadSession());
+  await author.changeCatalog({ kind: 'add-supplier', name: 'Общий поставщик' }, await author.loadSession());
+  expect((await colleague.loadSession()).catalog?.suppliers).toContain('Общий поставщик');
+  expect((await otherSpace.loadSession()).catalog).toBeNull();
+  expect(primary.commands).toHaveLength(0);
+  expect(peer.commands).toHaveLength(0);
+  north.state.role = 'view';
+  expect(await colleague.hasUpdate()).toBe(true);
+  const view = await colleague.loadSession();
+  expect(view.catalogReadOnly).toBe(true);
+  await expect(colleague.changeCatalog({ kind: 'add-supplier', name: 'Запрещённый' }, view))
+    .rejects.toThrow(/просмотр/);
+  expect((await readPayload<SharedSupplierCatalog>(north.api, 'catalog')).value?.suppliers).not.toContain('Запрещённый');
+});
+
+test('reopens an existing report with a legacy file hash and uses a content key for a changed report', async () => {
+  const base = memoryDocument('base');
+  const legacy = memoryDocument('legacy');
+  base.state.team = true;
+  const minMax = {
+    skus: [{ code: '001', article: 'A', name: 'Товар', referencePrice: 1, reportedTotalStock: 0 }],
+    branchStocks: [{ skuCode: '001', branch: 'Склад', stock: 0, min: 1, max: 3 }],
+    branches: ['Склад'],
+  };
+  const workspace = (report: typeof minMax, title: string) => workspaceFromState(createInitialState({
+    minMax: report, minMaxFileName: title,
+  }));
+  legacy.seed(await seedPayload('work', {
+    workspace: workspace(minMax, 'Прежний файл.xlsx'), files: [], catalog: null, catalogSource: null,
+  }));
+  const opened: string[] = [];
+  const created: string[] = [];
+  const bridge: WorkingDocumentBridge = {
+    ...base.api,
+    base: base.api,
+    async read(query) {
+      const result = await base.api.read(query);
+      return { ...result, document: { ...result.document, workspaceBase: 'root' } };
+    },
+    async listSessions() {
+      return { items: [{ id: 'legacy', title: 'Прежний сеанс', updatedAt: 1 }], next: null };
+    },
+    async readSession({ documentId, ...query }) {
+      expect(documentId).toBe('legacy');
+      return legacy.api.read(query);
+    },
+    async openSession({ documentId }) {
+      opened.push(documentId);
+      return { documentId };
+    },
+    async openOrCreate(input) {
+      created.push(input.intakeKey);
+      return { document: { id: 'new', title: input.title, revision: 0, role: 'edit' }, replayed: false };
+    },
+  };
+  const app = new OrdersDocument(bridge);
+  await app.loadSession();
+  expect(await app.openReport(workspace(minMax, 'Новое имя.xlsx'), [])).toBe('legacy');
+  expect(opened).toEqual(['legacy']);
+  expect(created).toHaveLength(0);
+  const changed = { ...minMax, branchStocks: [{ ...minMax.branchStocks[0]!, stock: 2 }] };
+  expect(await app.openReport(workspace(changed, 'Новое имя.xlsx'), [])).toBe('new');
+  await app.openReport(workspace(changed, 'Копия.xlsx'), []);
+  expect(created).toHaveLength(2);
+  expect(created[1]).toBe(created[0]);
 });

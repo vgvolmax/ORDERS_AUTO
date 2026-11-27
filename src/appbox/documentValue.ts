@@ -8,6 +8,7 @@ export interface DocSummary {
   role: 'owner' | 'edit' | 'view';
   revision: number;
   workspace?: { id: string; name: string };
+  workspaceBase?: 'root' | 'session';
 }
 
 export interface WorkingRecord {
@@ -56,15 +57,19 @@ export interface WorkingSession {
   updatedAt: number;
 }
 
-export interface WorkingDocumentBridge {
+export interface WorkingDocumentStore {
   read(query: DocumentPageQuery): Promise<DocumentPage>;
+  command(input: Command): Promise<{ revision: number; replayed?: boolean }>;
+}
+
+export interface WorkingDocumentBridge extends WorkingDocumentStore {
+  base?: WorkingDocumentStore;
   listSessions?(query?: { after?: string; limit?: number }): Promise<{
     items: WorkingSession[];
     next: string | null;
   }>;
   readSession?(query: DocumentPageQuery & { documentId: string }): Promise<DocumentPage>;
   openSession?(input: { documentId: string }): Promise<{ documentId: string }>;
-  command(input: Command): Promise<{ revision: number; replayed?: boolean }>;
   source(name: string, page?: { after?: string; sourceId?: string; revision?: number }): Promise<{
     id: string;
     revision: number;
@@ -109,7 +114,7 @@ function retryable(error: unknown): boolean {
   return typeof status !== 'number' || status === 0 || status === 408 || status === 429 || status >= 500;
 }
 
-async function write(api: WorkingDocumentBridge, command: Command) {
+async function write(api: WorkingDocumentStore, command: Command) {
   try {
     return await api.command(command);
   } catch (error) {
@@ -182,7 +187,7 @@ async function decompress(payload: string): Promise<Uint8Array[]> {
   }
 }
 
-async function decode<T>(records: readonly PayloadRow[]): Promise<T | null> {
+async function decode<T>(records: readonly PayloadRow[], fields?: readonly string[]): Promise<T | null> {
   const rows = new Map(records.map(({ id, values }) => [id, values.payload]));
   const payload = rows.get(payloadHeaderId);
   if (payload === undefined) return null;
@@ -190,6 +195,7 @@ async function decode<T>(records: readonly PayloadRow[]): Promise<T | null> {
     const { sections } = parseHeader(payload);
     const entries: Array<[string, unknown]> = [];
     for (const [name, ids] of sections) {
+      if (fields && name !== null && !fields.includes(name)) continue;
       const reader = new TextDecoder('utf-8', { fatal: true });
       const parts: string[] = [];
       for (const id of ids) {
@@ -292,10 +298,10 @@ function readRecords(api: Pick<WorkingDocumentBridge, 'read'>, collection: Colle
 }
 
 export async function readPayload<T>(
-  api: Pick<WorkingDocumentBridge, 'read'>, collection: Collection,
+  api: Pick<WorkingDocumentBridge, 'read'>, collection: Collection, fields?: readonly string[],
 ): Promise<PayloadSnapshot<T>> {
   const snapshot = await readRecords(api, collection);
-  return { ...snapshot, value: await decode<T>(snapshot.records) };
+  return { ...snapshot, value: await decode<T>(snapshot.records, fields) };
 }
 
 export async function readSourcePayload<T>(api: WorkingDocumentBridge, name: string): Promise<{
@@ -332,7 +338,7 @@ function chunkIds(header: Header): Set<string> {
   return new Set(header.sections.flatMap(([, ids]) => ids));
 }
 
-async function reclaim(api: WorkingDocumentBridge, collection: Collection, obsolete: readonly WorkingRecord[]) {
+async function reclaim(api: WorkingDocumentStore, collection: Collection, obsolete: readonly WorkingRecord[]) {
   for (let index = 0; index < obsolete.length; index += writeBatchSize) {
     // A cleanup failure cannot roll back a generation already known to be committed.
     await Promise.allSettled(obsolete.slice(index, index + writeBatchSize).map((record) => write(api, {
@@ -343,7 +349,7 @@ async function reclaim(api: WorkingDocumentBridge, collection: Collection, obsol
 }
 
 async function reclaimStaged(
-  api: WorkingDocumentBridge, collection: Collection, staged: ReadonlyMap<string, string>,
+  api: WorkingDocumentStore, collection: Collection, staged: ReadonlyMap<string, string>,
 ): Promise<void> {
   if (!staged.size) return;
   try {
@@ -355,7 +361,7 @@ async function reclaimStaged(
 }
 
 export async function savePayload<T>(
-  api: WorkingDocumentBridge, collection: Collection, previous: PayloadSnapshot<unknown>, value: T,
+  api: WorkingDocumentStore, collection: Collection, previous: PayloadSnapshot<unknown>, value: T,
   awaitReceipt?: (replay: () => Promise<number | undefined>) => Promise<number>,
 ): Promise<number> {
   if (previous.document.role === 'view') throw new Error('Рабочий документ доступен только для просмотра.');

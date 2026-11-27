@@ -20,7 +20,7 @@ import { Button } from '../components/ui';
 import { ordersDocument, type OrdersDocument } from '../appbox/ordersDocument';
 import { connectHostAutosave } from '../appbox/autosaveLifecycle';
 import { save } from '../export/download';
-import { WorkspaceConflictError, type WorkspaceFile } from '../domain/workspace';
+import { WorkspaceConflictError } from '../domain/workspace';
 import { WorkspaceMasthead, WorkspaceSidebar } from './WorkspaceChrome';
 
 type RemoteSession = Awaited<ReturnType<OrdersDocument['loadSession']>>;
@@ -175,9 +175,11 @@ export function App() {
               save: saveWorkspace,
               saveView: saveWorkspaceView,
               ...(shared && { async loadLatest() {
-                await shared.checkCatalog();
                 const prepared = await shared.prepareSession();
-                await shared.checkCatalog();
+                if (prepared.session.workspaceCatalog) {
+                  prepared.activate();
+                  if (session.current === nextSession) setSharedSession(prepared.session);
+                } else await shared.checkCatalog();
                 return stateFromRemote(prepared.session);
               } }),
               recoverCatalog: recoverSupplierCatalog,
@@ -243,7 +245,7 @@ export function App() {
             prepared.activate();
             setSharedSession(prepared.session);
             deferred = false;
-            return next;
+            return { ...next, page: saved.page };
           });
           if (current) setRemoteChanged(deferred);
         } else {
@@ -309,7 +311,7 @@ export function App() {
     page: state.page,
     branches: state.minMax && (state.catalog || state.supplierAssignments) ? state.minMax.branches : undefined,
     invoiceHistoryAccess: Boolean(sharedSession?.document.workspace),
-    supplierAccess: Boolean(sharedSession && !sharedSession.document.workspace &&
+    supplierAccess: Boolean(sharedSession && (sharedSession.workspaceCatalog || !sharedSession.document.workspace) &&
       (!sharedSession.catalogReadOnly || sharedSession.catalogRevision !== null)),
     onNavigate: (page: AppState['page']) => {
       if (page === 'invoices' && invoiceContext?.workspaceId !== state.workspaceId)
@@ -357,6 +359,7 @@ export function App() {
     catalogReadOnly: sharedSession.catalogReadOnly,
     catalogRevision: sharedSession.catalogRevision,
     sourceConnected: sharedSession.sourceConnected,
+    workspaceCatalog: sharedSession.workspaceCatalog,
     sourceUnavailable: sharedSession.sourceUnavailable,
     setDraft: shared.saves.setDraft,
     async changeCatalog(
@@ -379,7 +382,7 @@ export function App() {
         });
       });
     },
-    ...(sharedSession.document.workspace && { async openReport(patch: Partial<AppState>, file: WorkspaceFile) {
+    ...(sharedSession.document.workspace && { async openReport(patch: Partial<AppState>) {
       const initial = attachSupplierCatalog(createInitialState({
         settings: state.settings,
         rebalance: {
@@ -394,8 +397,8 @@ export function App() {
       const intake = createWorkspaceSession({
         initial,
         async save(value, _expected, files) {
-          const result = await shared.openReport(value, files ?? [], file.bytes);
-          if (result.document.id === sharedSession.document.id)
+          const id = await shared.openReport(value, files ?? []);
+          if (id === sharedSession.document.id)
             owner?.transient({ toast: 'Этот отчёт уже открыт в текущем сеансе.' });
         },
         publish() {},

@@ -133,7 +133,7 @@ export function ImportPage() {
           minMaxIssues: result.issues,
           rawImports: { minMax: ref, suppliers: null },
           pendingFiles: [{ ...ref, bytes }],
-        }, { ...ref, bytes });
+        });
         return;
       }
       if (kind === 'min' && shared && state.minMax && !shared.openReport)
@@ -227,8 +227,8 @@ export function ImportPage() {
       </Alert>}
       {failures.sup && <Alert tone="danger">Поставщики: {failures.sup}</Alert>}
       {shared?.openReport ? (
-        <p>Новый MIN/MAX откроется в отдельном документе пространства «{shared.team}».
-          Повторная загрузка того же файла откроет существующий сеанс.</p>
+        <p>Новый отчёт с изменёнными данными создаст сеанс в пространстве «{shared.team}».
+          Отчёт с теми же данными откроет существующий сеанс.</p>
       ) : configured && !shared ? (
         <p>
           После успешной загрузки текущий сеанс останется в истории. Новый
@@ -256,7 +256,7 @@ export function ImportPage() {
           />
         </section>
         <section aria-label="Подключение поставщиков">
-          {!configured && <><h2>2. Источник поставщиков</h2>
+          {!configured && <><h2>{shared?.workspaceCatalog ? '2. Общий справочник' : '2. Источник поставщиков'}</h2>
             {!shared?.team && <p>Откройте справочник JSON или выберите стартовый Excel.</p>}</>}
           {(shared || !configured || !state.minMax) && <SharedCatalogPanel compact />}
           {!shared?.team && <FileCard

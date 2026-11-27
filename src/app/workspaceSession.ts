@@ -349,7 +349,9 @@ export function createWorkspaceSession({
             const latest = await loadLatest();
             if (!latest || latest.workspaceId !== previous.workspaceId ||
                 latest.snapshotId !== previous.snapshotId ||
-                latest.workspaceRevision <= previous.workspaceRevision) throw error;
+                latest.workspaceRevision < previous.workspaceRevision ||
+                (latest.workspaceRevision === previous.workspaceRevision &&
+                  latest.catalog?.revision === previous.catalog?.revision)) throw error;
             rebase(previous, latest);
             previous = adoptLatest(latest);
           }

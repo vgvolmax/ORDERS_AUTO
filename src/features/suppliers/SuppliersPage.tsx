@@ -81,7 +81,12 @@ function SupplierWorkspace({
   const [error, setError] = useState('');
   const savingRef = useRef(false);
   const productTab = useRef<HTMLButtonElement>(null);
-  const products = state.catalog?.products ?? state.minMax?.skus;
+  const products = useMemo(() => {
+    const saved = state.catalog?.products;
+    if (!shared?.workspaceCatalog || !saved || !state.minMax) return saved ?? state.minMax?.skus;
+    const known = new Set(saved.map(({ code }) => code));
+    return [...saved, ...state.minMax.skus.filter(({ code }) => !known.has(code))];
+  }, [state.catalog, state.minMax, shared?.workspaceCatalog]);
   const suppliers = state.catalog?.suppliers ?? SUPPLIER_POOL;
   const currentCodes = useMemo(() => new Set(state.minMax?.skus.map((sku) => sku.code)), [state.minMax]);
   const inactiveCount = useMemo(
