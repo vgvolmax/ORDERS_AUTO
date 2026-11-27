@@ -4,19 +4,17 @@ import { Dialog } from '../../components/Dialog';
 import { Alert, Button, Input } from '../../components/ui';
 import type { CatalogProduct } from '../../domain/supplierCatalog';
 
-export function CatalogProductDialog({ product, onSave, onClose }: {
-  product?: CatalogProduct | undefined;
+export function CatalogProductDialog({ onSave, onClose }: {
   onSave: (value: CatalogProduct) => Promise<void>;
   onClose: () => void;
 }) {
-  const [code, setCode] = useState(product?.code ?? '');
-  const [name, setName] = useState(product?.name ?? '');
-  const [article, setArticle] = useState(product?.article ?? '');
-  const [unit, setUnit] = useState(product?.unit ?? '');
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [article, setArticle] = useState('');
+  const [unit, setUnit] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  useAppBoxDraft(code !== (product?.code ?? '') || name !== (product?.name ?? '') ||
-    article !== (product?.article ?? '') || unit !== (product?.unit ?? ''), onClose);
+  useAppBoxDraft(Boolean(code || name || article || unit), onClose);
 
   async function save() {
     if (saving || !code.trim() || !name.trim()) return;
@@ -26,7 +24,7 @@ export function CatalogProductDialog({ product, onSave, onClose }: {
       await onSave({ code, name, article, ...(unit.trim() && { unit }) });
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Не удалось сохранить карточку товара.');
+      setError(reason instanceof Error ? reason.message : 'Не удалось добавить товар.');
     } finally {
       setSaving(false);
     }
@@ -34,7 +32,7 @@ export function CatalogProductDialog({ product, onSave, onClose }: {
 
   return (
     <Dialog
-      title={product ? 'Карточка товара' : 'Добавить товар'}
+      title="Добавить товар"
       onClose={() => { if (!saving) onClose(); }}
       actions={
         <Button disabled={saving || !code.trim() || !name.trim()} onClick={() => void save()}>
@@ -48,7 +46,7 @@ export function CatalogProductDialog({ product, onSave, onClose }: {
         void save();
       }}>
         <label className="supplier-dialog-field">Код 1С
-          <Input value={code} onChange={(event) => setCode(event.target.value)} required readOnly={saving || Boolean(product)} />
+          <Input value={code} onChange={(event) => setCode(event.target.value)} required readOnly={saving} />
         </label>
         <label className="supplier-dialog-field">Наименование
           <Input value={name} onChange={(event) => setName(event.target.value)} required readOnly={saving} />
