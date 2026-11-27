@@ -22,7 +22,7 @@ export async function loadInvoiceHistoryOverview(signal?: AbortSignal): Promise<
 export async function openInvoiceHistorySession(documentId: string) {
   const shared = ordersDocument();
   if (!shared) throw new Error('Открытие сессии доступно внутри AppBox.');
-  return shared.openInvoiceHistorySession(documentId);
+  return shared.openSession(documentId);
 }
 
 function validateAppend(records: InvoiceHistoryRecord[], record: InvoiceHistoryRecord, expectedRevisions: number) {

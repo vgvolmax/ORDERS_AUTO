@@ -13,7 +13,7 @@ import { createInitialState } from '../app/initialState';
 import { createAutosaveLifecycle } from './autosaveLifecycle';
 import {
   payloadHeaderId, readPayload, readSourcePayload, savePayload, seedPayload,
-  type PayloadSnapshot, type Collection, type WorkingDocumentBridge, type WorkingRecord,
+  type PayloadSnapshot, type Collection, type WorkingDocumentBridge, type WorkingRecord, type WorkingSession,
 } from './documentValue';
 
 type EncodedFile = Omit<WorkspaceFile, 'bytes'> & { base64: string };
@@ -270,6 +270,29 @@ export class OrdersDocument {
     return (await readPayload<InvoiceHistoryRecord[]>(this.api, 'invoices')).value ?? [];
   }
 
+  async listSessions(signal?: AbortSignal): Promise<WorkingSession[] | null> {
+    const { listSessions, openSession } = this.api;
+    if (!listSessions || !openSession) return null;
+
+    const sessions = new Map<string, WorkingSession>();
+    const seenCursors = new Set<string>();
+    let after: string | undefined;
+    do {
+      signal?.throwIfAborted();
+      const page = await listSessions.call(this.api, { ...(after ? { after } : {}), limit: 50 });
+      signal?.throwIfAborted();
+      for (const item of page.items) {
+        if (!sessions.has(item.id)) sessions.set(item.id, item);
+      }
+      after = page.next ?? undefined;
+      if (after) {
+        if (seenCursors.has(after)) throw new Error('Не удалось дочитать список сеансов AppBox.');
+        seenCursors.add(after);
+      }
+    } while (after);
+    return [...sessions.values()];
+  }
+
   async loadInvoiceHistoryOverview(signal?: AbortSignal): Promise<InvoiceHistoryOverview> {
     const current = await readPayload<InvoiceHistoryRecord[]>({
       read: (query) => {
@@ -281,11 +304,11 @@ export class OrdersDocument {
     const workspace = current.document.workspace;
     if (!workspace) return { records };
     const context = { name: workspace.name, currentDocumentId: current.document.id };
-    const { listSessions, readSession, openSession } = this.api;
-    if (!listSessions || !readSession || !openSession)
-      return { records, workspace: { ...context, sessions: null } };
+    const { readSession } = this.api;
+    const items = readSession ? await this.listSessions(signal) : null;
+    if (!items || !readSession) return { records, workspace: { ...context, sessions: null } };
 
-    const sessions = new Map<string, string>();
+    const sessions = new Map(items.map(({ id, title }) => [id, title]));
     const copies = new Map<string, { record: InvoiceHistoryRecord; documentId: string }>();
     const collect = (documentId: string, invoices: InvoiceHistoryRecord[]) => {
       for (const record of invoices) {
@@ -296,34 +319,22 @@ export class OrdersDocument {
       }
     };
     collect(current.document.id, records);
-    const seenCursors = new Set<string>();
-    let after: string | undefined;
-    do {
+    for (const { id } of items) {
       signal?.throwIfAborted();
-      const page = await listSessions.call(this.api, { ...(after ? { after } : {}), limit: 50 });
-      for (const { id, title } of page.items) {
-        if (sessions.has(id)) continue;
-        sessions.set(id, title);
-        if (id === current.document.id) continue;
-        const snapshot = await readPayload<InvoiceHistoryRecord[]>({
-          read: (query) => {
-            signal?.throwIfAborted();
-            return readSession.call(this.api, { ...query, documentId: id });
-          },
-        }, 'invoices');
-        collect(id, snapshot.value ?? []);
-      }
-      after = page.next ?? undefined;
-      if (after) {
-        if (seenCursors.has(after)) throw new Error('Не удалось дочитать список сессий AppBox.');
-        seenCursors.add(after);
-      }
-    } while (after);
+      if (id === current.document.id) continue;
+      const snapshot = await readPayload<InvoiceHistoryRecord[]>({
+        read: (query) => {
+          signal?.throwIfAborted();
+          return readSession.call(this.api, { ...query, documentId: id });
+        },
+      }, 'invoices');
+      collect(id, snapshot.value ?? []);
+    }
     return { records: [...copies.values()].map(({ record }) => record), workspace: { ...context, sessions } };
   }
 
-  async openInvoiceHistorySession(documentId: string) {
-    if (!this.api.openSession) throw new Error('Открытие сессии доступно после обновления AppBox.');
+  async openSession(documentId: string) {
+    if (!this.api.openSession) throw new Error('Открытие сеанса доступно после обновления AppBox.');
     return this.api.openSession({ documentId });
   }
 
