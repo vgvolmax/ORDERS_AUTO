@@ -5,6 +5,7 @@ import {
 import { applyCatalogChange, type CatalogBase, type CatalogChange } from '../domain/catalogChange';
 import type { InvoiceHistoryRecord } from '../domain/invoiceHistory';
 import type { SupplierCatalog } from '../domain/supplierCatalog';
+import { minMaxReportKey } from '../domain/minMaxReportKey';
 import type {
   StoredWorkspace, WorkspaceFile, WorkspaceView,
 } from '../domain/workspace';
@@ -14,6 +15,7 @@ import { createAutosaveLifecycle } from './autosaveLifecycle';
 import {
   payloadHeaderId, readPayload, readSourcePayload, savePayload, seedPayload,
   type PayloadSnapshot, type Collection, type WorkingDocumentBridge, type WorkingRecord, type WorkingSession,
+  type WorkingDocumentStore, type DocSummary,
 } from './documentValue';
 
 type EncodedFile = Omit<WorkspaceFile, 'bytes'> & { base64: string };
@@ -26,6 +28,7 @@ interface WorkspacePayload {
 
 export interface InvoiceHistoryOverview {
   records: InvoiceHistoryRecord[];
+  currentRecords?: InvoiceHistoryRecord[];
   workspace?: {
     name: string;
     currentDocumentId: string;
@@ -78,12 +81,20 @@ export class OrdersDocument {
   private personalCatalog = false;
   private savedCatalogHeader: number | null = null;
   private revokedSource = false;
+  private workspaceCatalog = false;
+  private catalogRole: DocSummary['role'] | undefined;
+  private sessionRole?: DocSummary['role'];
+  private currentDocumentId?: string;
+  private invoiceSnapshots = new Map<string, { revision: number | null; records: InvoiceHistoryRecord[] }>();
+  private reportKeys = new Map<string, string | null>();
   catalog: SupplierCatalog | null = null;
 
   constructor(private readonly api: WorkingDocumentBridge) {}
 
-  private async publishPayload<T>(collection: Collection, previous: PayloadSnapshot<unknown>, value: T) {
-    const revision = await savePayload(this.api, collection, previous, value, this.saves.awaitReceipt);
+  private async publishPayload<T>(
+    collection: Collection, previous: PayloadSnapshot<unknown>, value: T, store: WorkingDocumentStore = this.api,
+  ) {
+    const revision = await savePayload(store, collection, previous, value, this.saves.awaitReceipt);
     this.saves.acknowledge();
     return revision;
   }
@@ -103,18 +114,27 @@ export class OrdersDocument {
     return { ...snapshot, workspace };
   }
 
+  private baseStore(document: DocSummary): WorkingDocumentStore | null {
+    if (!document.workspaceBase) return null;
+    if (!this.api.base) throw new Error('Обновите AppBox для работы с базой пространства.');
+    return this.api.base;
+  }
+
   async prepareSession() {
     const snapshot = await this.load();
-    const linked = await this.readSource();
+    const base = this.baseStore(snapshot.document);
+    const linked = base ? null : await this.readSource();
     const source = linked && { id: linked.id, revision: linked.revision };
-    const sourceUnavailable = !linked && Boolean(this.source || snapshot.value?.catalogSource);
+    const sourceUnavailable = !base && !linked && Boolean(this.source || snapshot.value?.catalogSource);
     const { workspace } = snapshot;
     const sku = workspace?.data.minMax?.skus ?? [];
     const personalCatalog = !linked && !sourceUnavailable && !snapshot.document.workspace;
-    const owned = personalCatalog ? await readPayload<SharedSupplierCatalog>(this.api, 'catalog') : null;
+    const catalogStore = base ?? (personalCatalog ? this.api : null);
+    const owned = catalogStore ? await readPayload<SharedSupplierCatalog>(catalogStore, 'catalog') : null;
     const catalogRevision = owned ? payloadRevision(owned.records) : null;
+    const storedCatalog = owned?.value && applySharedCatalog(null, parseSharedCatalog(owned.value));
     const catalog = linked ? applySharedCatalog(null, parseSharedCatalog(linked.value), sku)
-      : owned?.value ? applySharedCatalog(null, parseSharedCatalog(owned.value))
+      : storedCatalog ? { ...storedCatalog, revision: catalogRevision ?? storedCatalog.revision }
         : personalCatalog ? snapshot.value?.catalog ?? null : null;
     if (!catalog && (sourceUnavailable || snapshot.document.workspace) && workspace)
       delete workspace.data.supplierAssignments;
@@ -122,12 +142,17 @@ export class OrdersDocument {
     return {
       session: {
         document: snapshot.document, workspace, catalog, sourceUnavailable,
-        catalogReadOnly: !personalCatalog || snapshot.document.role === 'view',
+        catalogReadOnly: !owned || owned.document.role === 'view',
+        workspaceCatalog: Boolean(base),
         catalogRevision,
         sourceConnected: source !== null,
       },
       activate: () => {
         this.catalog = catalog;
+        this.workspaceCatalog = Boolean(base);
+        this.catalogRole = owned?.document.role;
+        this.sessionRole = snapshot.document.role;
+        this.currentDocumentId = snapshot.document.id;
         this.savedHeader = header;
         this.revokedSource = sourceUnavailable;
         this.source = source;
@@ -157,22 +182,37 @@ export class OrdersDocument {
 
   async changeCatalog(change: CatalogChange, base: CatalogBase) {
     const work = await this.load();
-    if (work.document.workspace || this.revokedSource || work.value?.catalogSource || await this.readSource())
+    const workspaceStore = this.baseStore(work.document);
+    const store = workspaceStore ?? this.api;
+    if (!workspaceStore && (work.document.workspace || this.revokedSource || work.value?.catalogSource || await this.readSource()))
       throw new Error('Редактируйте справочник в исходном документе AppBox.');
 
     for (let attempt = 0; ; attempt++) {
-      const snapshot = await readPayload<SharedSupplierCatalog>(this.api, 'catalog');
+      const snapshot = await readPayload<SharedSupplierCatalog>(store, 'catalog');
       if (snapshot.document.role === 'view') throw new Error('Справочник доступен только для просмотра.');
       const revision = payloadRevision(snapshot.records);
-      const current = snapshot.value ? applySharedCatalog(null, parseSharedCatalog(snapshot.value)) : work.value?.catalog ?? null;
-      const next = applyCatalogChange(change, { catalog: current, catalogRevision: revision }, base);
+      const current = snapshot.value ? applySharedCatalog(null, parseSharedCatalog(snapshot.value))
+        : workspaceStore ? null : work.value?.catalog ?? null;
+      const codes = change.kind === 'assign' ? ('skuCodes' in change.command ? change.command.skuCodes : [change.command.skuCode])
+        : change.kind === 'save-product' && !change.isNew ? [change.product.code] : [];
+      const rows = workspaceStore ? work.workspace?.data.minMax?.skus.filter(({ code }) => codes.includes(code)) ?? [] : [];
+      const withReportProducts = (catalog: SupplierCatalog | null) => {
+        if (!catalog || !rows.length) return catalog;
+        const known = new Set(catalog.products.map(({ code }) => code));
+        const missing = rows.filter(({ code }) => !known.has(code));
+        return missing.length ? { ...catalog, products: [...catalog.products, ...missing] } : catalog;
+      };
+      const next = applyCatalogChange(change, { catalog: withReportProducts(current), catalogRevision: revision }, {
+        ...base, catalog: withReportProducts(base.catalog),
+      });
       try {
         const catalogRevision = next === current && revision !== null ? revision
-          : await this.publishPayload('catalog', snapshot, parseSharedCatalog(sharedCatalogFromLocal(next)));
+          : await this.publishPayload('catalog', snapshot, parseSharedCatalog(sharedCatalogFromLocal(next)), store);
         this.savedCatalogHeader = catalogRevision;
         this.ownedCatalog = true;
-        this.catalog = next;
-        return { catalog: next, catalogRevision };
+        const saved = { ...next, revision: catalogRevision };
+        this.catalog = saved;
+        return { catalog: saved, catalogRevision };
       } catch (error) {
         if (!isWriteConflict(error)) throw error;
         if (attempt >= 2)
@@ -192,6 +232,12 @@ export class OrdersDocument {
   }
 
   async checkCatalog(): Promise<void> {
+    if (this.workspaceCatalog) {
+      const page = await this.api.base!.read({ collection: 'catalog', limit: 1 });
+      if (payloadRevision(page.records) !== this.savedCatalogHeader)
+        throw new WorkspaceConflictError('Общий справочник изменился. Сверьте текущие данные.');
+      return;
+    }
     if (this.revokedSource)
       throw new Error('Общий справочник недоступен. Проверьте подключение в AppBox.');
     if (await this.catalogChanged())
@@ -200,8 +246,13 @@ export class OrdersDocument {
 
   async hasUpdate(checkSource = true): Promise<boolean> {
     const head = await this.api.read({ collection: 'work', limit: 1 });
-    if (payloadRevision(head.records) !== this.savedHeader) return true;
+    if (payloadRevision(head.records) !== this.savedHeader || head.document.role !== this.sessionRole) return true;
     if (!checkSource) return false;
+    const base = this.baseStore(head.document);
+    if (base) {
+      const catalog = await base.read({ collection: 'catalog', limit: 1 });
+      return payloadRevision(catalog.records) !== this.savedCatalogHeader || catalog.document.role !== this.catalogRole;
+    }
     if (await this.catalogChanged()) return true;
     if (!this.personalCatalog) return false;
     const catalog = await this.api.read({ collection: 'catalog', limit: 1 });
@@ -237,7 +288,7 @@ export class OrdersDocument {
       this.savedHeader = await this.publishPayload('work', snapshot, {
         workspace: localViewFree(workspace),
         files: [...outgoing.values()],
-        catalog: this.ownedCatalog ? null : catalog ?? snapshot.value?.catalog ?? null,
+        catalog: this.workspaceCatalog || this.ownedCatalog ? null : catalog ?? snapshot.value?.catalog ?? null,
         catalogSource: this.source?.id ?? null,
       } satisfies WorkspacePayload);
     } catch (error) {
@@ -245,25 +296,46 @@ export class OrdersDocument {
       throw error;
     }
     this.view = workspaceView(workspace.data);
-    if (!this.source && !this.ownedCatalog) this.catalog = catalog ?? snapshot.value?.catalog ?? null;
+    if (!this.workspaceCatalog && !this.source && !this.ownedCatalog) this.catalog = catalog ?? snapshot.value?.catalog ?? null;
   }
 
-  async openReport(
-    workspace: StoredWorkspace, files: WorkspaceFile[], bytes: ArrayBuffer,
-  ) {
+  async openReport(workspace: StoredWorkspace, files: WorkspaceFile[]) {
+    const { minMax, minMaxIssues, minMaxFileName } = workspace.data;
+    if (!minMax) throw new Error('Загрузите отчёт Мин–Макс.');
+    const intakeKey = await minMaxReportKey(minMax, minMaxIssues);
+    if (this.workspaceCatalog) {
+      const existing = await this.findReport(intakeKey);
+      if (existing) return existing;
+    }
     await this.checkCatalog();
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    const intakeKey = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     const records = await seedPayload('work', {
       workspace: localViewFree(workspace),
       files: files.map(encodeFile),
       catalog: null,
       catalogSource: this.source?.id ?? null,
     } satisfies WorkspacePayload);
-    const title = 'Закупки · ' + (workspace.data.minMaxFileName ?? 'MIN/MAX').slice(0, 110);
-    return this.api.openOrCreate({
+    const title = 'Закупки · ' + (minMaxFileName ?? 'MIN/MAX').slice(0, 110);
+    const result = await this.api.openOrCreate({
       title, commandId: crypto.randomUUID(), intakeKey, initialData: { formatVersion: 1, records },
     });
+    return result.document.id;
+  }
+
+  private async findReport(key: string) {
+    const { readSession } = this.api;
+    const items = readSession ? await this.listSessions() : null;
+    if (!items || !readSession)
+      throw new Error('Обновите AppBox для проверки ранее сохранённых сеансов.');
+    for (const { id } of items) {
+      if (!this.reportKeys.has(id)) {
+        const { value } = await readPayload<Pick<WorkspacePayload, 'workspace'>>({
+          read: (query) => readSession.call(this.api, { ...query, documentId: id }),
+        }, 'work', ['workspace']);
+        const data = value?.workspace.data;
+        this.reportKeys.set(id, data?.minMax ? await minMaxReportKey(data.minMax, data.minMaxIssues ?? []) : null);
+      }
+      if (this.reportKeys.get(id) === key) return id === this.currentDocumentId ? id : (await this.openSession(id)).documentId;
+    }
   }
 
   async loadInvoiceHistory() {
@@ -293,20 +365,34 @@ export class OrdersDocument {
     return [...sessions.values()];
   }
 
+  private async invoiceSnapshot(
+    api: Pick<WorkingDocumentStore, 'read'>, signal?: AbortSignal,
+  ) {
+    const read = async (query: Parameters<WorkingDocumentStore['read']>[0]) => {
+      signal?.throwIfAborted();
+      const page = await api.read(query);
+      signal?.throwIfAborted();
+      return page;
+    };
+    const head = await read({ collection: 'invoices', limit: 1 });
+    const cached = this.invoiceSnapshots.get(head.document.id);
+    if (cached?.revision === payloadRevision(head.records))
+      return { document: head.document, records: cached.records };
+    const snapshot = await readPayload<InvoiceHistoryRecord[]>({ read }, 'invoices');
+    const records = snapshot.value ?? [];
+    this.invoiceSnapshots.set(snapshot.document.id, { revision: payloadRevision(snapshot.records), records });
+    return { document: snapshot.document, records };
+  }
+
   async loadInvoiceHistoryOverview(signal?: AbortSignal): Promise<InvoiceHistoryOverview> {
-    const current = await readPayload<InvoiceHistoryRecord[]>({
-      read: (query) => {
-        signal?.throwIfAborted();
-        return this.api.read(query);
-      },
-    }, 'invoices');
-    const records = current.value ?? [];
+    const current = await this.invoiceSnapshot(this.api, signal);
+    const { records } = current;
     const workspace = current.document.workspace;
     if (!workspace) return { records };
     const context = { name: workspace.name, currentDocumentId: current.document.id };
     const { readSession } = this.api;
     const items = readSession ? await this.listSessions(signal) : null;
-    if (!items || !readSession) return { records, workspace: { ...context, sessions: null } };
+    if (!items || !readSession) return { records, currentRecords: records, workspace: { ...context, sessions: null } };
 
     const sessions = new Map(items.map(({ id, title }) => [id, title]));
     const copies = new Map<string, { record: InvoiceHistoryRecord; documentId: string }>();
@@ -319,18 +405,22 @@ export class OrdersDocument {
       }
     };
     collect(current.document.id, records);
-    for (const { id } of items) {
-      signal?.throwIfAborted();
-      if (id === current.document.id) continue;
-      const snapshot = await readPayload<InvoiceHistoryRecord[]>({
-        read: (query) => {
-          signal?.throwIfAborted();
-          return readSession.call(this.api, { ...query, documentId: id });
-        },
-      }, 'invoices');
-      collect(id, snapshot.value ?? []);
+    const base = this.baseStore(current.document);
+    if (base && current.document.workspaceBase !== 'root') {
+      const root = await this.invoiceSnapshot(base, signal);
+      collect(root.document.id, root.records);
     }
-    return { records: [...copies.values()].map(({ record }) => record), workspace: { ...context, sessions } };
+    for (const { id } of items) {
+      if (id === current.document.id) continue;
+      const snapshot = await this.invoiceSnapshot({
+        read: (query) => readSession.call(this.api, { ...query, documentId: id }),
+      }, signal);
+      collect(id, snapshot.records);
+    }
+    return {
+      records: [...copies.values()].map(({ record }) => record), currentRecords: records,
+      workspace: { ...context, sessions },
+    };
   }
 
   async openSession(documentId: string) {

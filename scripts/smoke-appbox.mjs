@@ -15,15 +15,13 @@ if (manifest.formatVersion !== 1 || manifest.mode !== 'stateless' || manifest.en
   throw new Error('Incompatible AppBox manifest');
 }
 const workingDocument = manifest.workingDocument;
-const supplierCatalog = manifest.workingDocumentInputs?.supplier_catalog;
 if (workingDocument?.schemaVersion !== 1 || workingDocument.sdkVersion !== 1 ||
     ['work', 'catalog', 'invoices'].some((collection) => {
       const payload = workingDocument.collections?.[collection]?.fields?.payload;
       return payload?.schema?.type !== 'string' || payload.required !== true;
-    }) || supplierCatalog?.kind !== 'projection' || supplierCatalog.collection !== 'catalog' ||
-    supplierCatalog.fields?.length !== 1 || supplierCatalog.fields[0] !== 'payload' ||
-    supplierCatalog.fieldTypes?.payload !== 'string') {
-  throw new Error('Missing Orders Auto working document or supplier catalog input');
+    }) || manifest.workingDocumentScope !== 'workspace' ||
+    manifest.workingDocumentBaseEditing !== 'assigned' || manifest.workingDocumentInputs) {
+  throw new Error('The Orders Auto package needs a workspace base with assigned catalog editors');
 }
 if (entries.some((file) => file.dir || /\.svg$/i.test(file.name))) {
   throw new Error('Unsupported AppBox ZIP entries');

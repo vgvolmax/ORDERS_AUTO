@@ -38,10 +38,11 @@ export interface Store {
     catalogReadOnly: boolean;
     catalogRevision: number | null;
     sourceConnected: boolean;
+    workspaceCatalog?: boolean;
     sourceUnavailable: boolean;
     setDraft: (key: string, discard?: () => void) => void;
     changeCatalog: (change: CatalogChange, toast: string, base?: CatalogBase) => Promise<void>;
-    openReport?: (patch: Partial<AppState>, file: WorkspaceFile) => Promise<void>;
+    openReport?: (patch: Partial<AppState>) => Promise<void>;
   };
 }
 

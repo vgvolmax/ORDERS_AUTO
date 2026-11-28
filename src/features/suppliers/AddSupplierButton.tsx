@@ -14,7 +14,7 @@ export function AddSupplierButton() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const editor = useRef<HTMLDivElement>(null);
-  const readOnly = shared ? shared.catalogReadOnly || shared.sourceUnavailable || !shared.editable
+  const readOnly = shared ? shared.catalogReadOnly || shared.sourceUnavailable || (!shared.workspaceCatalog && !shared.editable)
     : currentCatalogLink()?.document?.canEdit === false;
   useAppBoxDraft(open && Boolean(name.trim()), () => setOpen(false));
 

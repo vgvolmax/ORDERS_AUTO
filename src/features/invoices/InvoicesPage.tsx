@@ -203,23 +203,40 @@ export function InvoicesPage({
   useEffect(() => {
     if (view !== 'history') return;
     const load = new AbortController();
-    setOverviewLoading(true);
-    setOverviewError('');
-    setRecordsError('');
-    void loadInvoiceHistoryOverview(load.signal).then((result) => {
-      if (!load.signal.aborted) {
+    let pending = false;
+    let team = false;
+    const refresh = async (initial = false) => {
+      if (pending || load.signal.aborted || (!initial && (!team || document.visibilityState === 'hidden'))) return;
+      pending = true;
+      if (initial) {
+        setOverviewLoading(true);
+        setRecordsError('');
+      }
+      try {
+        const result = await loadInvoiceHistoryOverview(load.signal);
+        if (load.signal.aborted) return;
+        team = Boolean(result.workspace?.sessions);
         setOverview(result);
         if (!result.workspace) setRecords(result.records);
+        else if (result.currentRecords) setRecords(result.currentRecords);
+        setOverviewError('');
+      } catch {
+        if (!load.signal.aborted)
+          setOverviewError('Историю сессий не удалось обновить. Повторите загрузку сводки.');
+      } finally {
+        pending = false;
+        if (initial && !load.signal.aborted) setOverviewLoading(false);
       }
-    }).catch(() => {
-      if (!load.signal.aborted) {
-        setOverview(null);
-        setOverviewError('Историю сессий не удалось собрать. Обновите сводку.');
-      }
-    }).finally(() => {
-      if (!load.signal.aborted) setOverviewLoading(false);
-    });
-    return () => load.abort();
+    };
+    void refresh(true);
+    const timer = window.setInterval(() => void refresh(), 5000);
+    const focus = () => void refresh();
+    window.addEventListener('focus', focus);
+    return () => {
+      load.abort();
+      window.clearInterval(timer);
+      window.removeEventListener('focus', focus);
+    };
   }, [view, overviewReload]);
 
   useEffect(() => {

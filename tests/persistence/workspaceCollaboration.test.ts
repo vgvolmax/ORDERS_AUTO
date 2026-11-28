@@ -4,6 +4,7 @@ import { createWorkspaceSession, stateFromWorkspace, workspaceFromState } from '
 import { WorkspaceConflictError } from '../../src/domain/workspace';
 import { checkOrderLines, checkOrderReview } from '../../src/features/orders/orderCollaboration';
 import { applyOrderQtyChange } from '../../src/domain/orderWorkflow';
+import { createSupplierCatalog } from '../../src/domain/supplierCatalog';
 import { seedSupplierAssignments } from '../../src/domain/supplierAssignments';
 import { baseState } from '../ui/renderWithStore';
 
@@ -95,4 +96,27 @@ it('accepts the first snapshot of the same open document', async () => {
     workspaceRevision: 0,
     page: 'suppliers',
   });
+});
+
+it('retries an independent order edit against a new catalog revision in the same session', async () => {
+  const team = teamSession();
+  const catalog = createSupplierCatalog(team.initial)!;
+  const initial = { ...team.initial, catalog };
+  const latest = { ...initial, catalog: { ...catalog, revision: catalog.revision + 1 } };
+  let saved = false;
+  let outdated = true;
+  const session = createWorkspaceSession({
+    initial,
+    async save(value) {
+      if (saved) throw new Error('Repeated save');
+      if (value.data.edits.length > 0 && outdated)
+        throw new WorkspaceConflictError();
+      saved = true;
+    },
+    loadLatest: async () => { outdated = false; return latest; },
+    publish() {},
+  });
+  await edit(session, 'Ленина', 2);
+  expect(saved).toBe(true);
+  expect(session.getState().edits).toEqual([{ skuCode: 'SKU1', branch: 'Ленина', qty: 2 }]);
 });

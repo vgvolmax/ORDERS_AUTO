@@ -159,11 +159,8 @@ export async function packageAppBox(
         sdkVersion: 1,
         collections: { work: payloadCollection, catalog: payloadCollection, invoices: payloadCollection },
       },
-      workingDocumentInputs: {
-        supplier_catalog: {
-          kind: 'projection', collection: 'catalog', fields: ['payload'], fieldTypes: { payload: 'string' },
-        },
-      },
+      workingDocumentScope: 'workspace',
+      workingDocumentBaseEditing: 'assigned',
     };
     fs.writeFileSync(path.join(copy, 'appbox.json'), JSON.stringify(manifest, null, 2) + '\n');
     const names = validate(copy);

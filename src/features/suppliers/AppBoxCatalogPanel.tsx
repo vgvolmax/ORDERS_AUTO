@@ -53,7 +53,12 @@ export function AppBoxCatalogPanel() {
     <section className="shared-catalog-panel panel" aria-label="Справочник AppBox">
       <h2>Справочник AppBox</h2>
       <p className="muted">
-        {shared.sourceUnavailable ? 'Источник недоступен. Проверьте подключение в AppBox.' :
+        {shared.workspaceCatalog ? hasCatalog
+          ? editor ? 'Общий справочник этого пространства. Правки видны во всех сеансах.'
+            : 'Общий справочник этого пространства доступен для просмотра.'
+          : editor ? 'Создайте общий справочник или восстановите его из резервной копии.'
+            : 'Администратор пространства ещё не настроил общий справочник.'
+        : shared.sourceUnavailable ? 'Источник недоступен. Проверьте подключение в AppBox.' :
           shared.sourceConnected ? 'Подключён общий справочник отдела. Откройте исходный документ, чтобы изменить товары и связи.' :
             shared.team ? 'Администратор подключает общий справочник в разделе «Источники» AppBox.' :
               hasCatalog ? editor ? 'Изменения в справочнике сохраняются в AppBox и видны в подключённых сеансах.'

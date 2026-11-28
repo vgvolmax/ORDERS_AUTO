@@ -256,7 +256,7 @@ describe('InvoicesPage', () => {
 
 });
 
-it('shows saved refusals from another team session and opens that session from the breakdown', async () => {
+it('refreshes refusals from another team session on focus and opens that session from the breakdown', async () => {
   const at = '2026-11-25T09:00:00.000Z';
   const record: InvoiceHistoryRecord = {
     id: historyOrderKey('archive', ['b']), sourceId: 'archive', orderIds: ['b'], basis: 'preferred',
@@ -268,15 +268,17 @@ it('shows saved refusals from another team session and opens that session from t
       }] }],
     }],
   };
-  const overview = vi.spyOn(invoiceHistory, 'loadInvoiceHistoryOverview').mockResolvedValue({
-    records: [record],
-    workspace: { name: 'Закупки', currentDocumentId: 'current', sessions: new Map([['archive', 'Прошлый MIN/MAX']]) },
-  });
+  const workspace = { name: 'Закупки', currentDocumentId: 'current', sessions: new Map([['archive', 'Прошлый MIN/MAX']]) };
+  const overview = vi.spyOn(invoiceHistory, 'loadInvoiceHistoryOverview')
+    .mockResolvedValueOnce({ records: [], workspace })
+    .mockResolvedValue({ records: [record], workspace });
   const open = vi.spyOn(invoiceHistory, 'openInvoiceHistorySession').mockResolvedValue({ documentId: 'archive' });
   try {
     render(<InvoicesPage />);
     fireEvent.click(screen.getByRole('button', { name: 'История отказов' }));
-    await waitFor(() => expect(overview).toHaveBeenCalledTimes(1));
+    await screen.findByText('Все доступные сессии пространства «Закупки»');
+    expect(overview).toHaveBeenCalledTimes(1);
+    fireEvent(window, new Event('focus'));
     const details = await screen.findByRole('button', { name: 'Открыть заказы: ООО Командный поставщик' });
     fireEvent.click(details);
     const session = screen.getByRole('button', { name: 'Открыть сессию «Прошлый MIN/MAX»' });
